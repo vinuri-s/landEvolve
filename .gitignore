@@ -1,0 +1,24 @@
+# Python bytecode caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+qt_env/
+venv/
+env/
+ENV/
+
+# Project outputs you mentioned
+resources/outputs/
+
+# Mypy cache
+.mypy_cache/
+
+# IDE/editor
+.vscode/
+.idea/
+
+# Common extras
+.DS_Store
+.pytest_cache/
