@@ -153,7 +153,7 @@ class SimulationWindow(QMainWindow):
             # Load Google Maps if coordinates available
             if hasattr(self.selected_location, "latitude") and hasattr(self.selected_location, "longitude"):
                 if self.selected_location.latitude and self.selected_location.longitude:
-                    self.load_google_maps(
+                    self.load_leaflet_map(  # Changed from load_google_maps
                         self.selected_location.latitude,
                         self.selected_location.longitude
                     )
@@ -180,23 +180,21 @@ class SimulationWindow(QMainWindow):
         """
         self.ui.webView.setHtml(html)
     
-    def load_google_maps(self, latitude, longitude):
-        """Load Google Maps with satellite view and terrain using the given coordinates"""
-        # Replace with your actual Google Maps API key
-        api_key = "AIzaSyDlPZ_FWTtHrYqHKjNM2PqMkDBZr1aw5NE"
-        
+    def load_leaflet_map(self, latitude, longitude):
+        """Load Leaflet.js with satellite view using the given coordinates"""
         html_content = f"""
         <!DOCTYPE html>
         <html>
         <head>
-            <title>Google Maps</title>
-            <meta http-equiv="Content-Security-Policy" content="
-                default-src 'self' https://*.googleapis.com https://*.gstatic.com; 
-                img-src 'self' data: https://*.google.com https://*.googleapis.com https://*.gstatic.com;
-                style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; 
-                font-src 'self' https://fonts.gstatic.com;
-                script-src 'self' 'unsafe-inline' 'unsafe-eval' https://maps.googleapis.com https://maps.gstatic.com;
-            ">
+            <title>Leaflet Map</title>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+                integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+                crossorigin=""/>
+            <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+                    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+                    crossorigin=""></script>
             <style>
                 #map {{
                     width: 100%;
@@ -215,25 +213,25 @@ class SimulationWindow(QMainWindow):
             <div id="map"></div>
             
             <script>
-                function initMap() {{
-                    const location = {{ lat: {latitude}, lng: {longitude} }};
-                    const map = new google.maps.Map(document.getElementById("map"), {{
-                        center: location,
-                        zoom: 14,
-                        mapTypeId: 'satellite',
-                        tilt: 45  // Enable 45-degree imagery (if available)
-                    }});
-                    
-                    // Use AdvancedMarkerElement instead of deprecated Marker
-                    const marker = new google.maps.marker.AdvancedMarkerElement({{
-                        position: location,
-                        map: map,
-                        title: "Selected Location"
-                    }});
-                }}
-            </script>
-            <script async defer
-                src="https://maps.googleapis.com/maps/api/js?key={api_key}&callback=initMap&loading=async">
+                // Initialize the map
+                const map = L.map('map').setView([{latitude}, {longitude}], 14);
+                
+                // Add satellite tile layer (using Esri World Imagery)
+                L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{{z}}/{{y}}/{{x}}', {{
+                    attribution: 'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics',
+                    maxZoom: 18
+                }}).addTo(map);
+                
+                // Add terrain layer (using OpenTopoMap)
+                L.tileLayer('https://{{s}}.tile.opentopomap.org/{{z}}/{{x}}/{{y}}.png', {{
+                    maxZoom: 17,
+                    attribution: 'Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, <a href="http://viewfinderpanoramas.org">SRTM</a> | Map style: &copy; <a href="https://opentopomap.org">OpenTopoMap</a>',
+                    opacity: 0.5
+                }}).addTo(map);
+                
+                // Add marker for selected location
+                L.marker([{latitude}, {longitude}]).addTo(map)
+                    .bindPopup('Selected Location');
             </script>
         </body>
         </html>
