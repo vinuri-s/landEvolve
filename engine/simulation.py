@@ -2,8 +2,47 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 
-from landlab.components import FlowAccumulator, Space, ErosionDeposition  
+from landlab.components import FlowAccumulator, Space, ErosionDeposition , DepressionFinderAndRouter 
 from engine.models.raster_model import RasterModel
+
+class DepressionFinderAndRouterComponent:
+    def __init__(self, grid, **params):
+        self.grid = grid
+        
+        # Correct parameters based on official documentation
+        default_params = {
+            'routing': 'D8',  # 'D4' or 'D8'
+            'pits': 'flow__sink_flag',  # Can be array, field name, or None
+            'reroute_flow': True,  # Whether to update flow fields
+        }
+        
+        # Merge user params
+        final_params = {**default_params, **params}
+        
+        from landlab.components import DepressionFinderAndRouter
+        self.depression_finder = DepressionFinderAndRouter(grid, **final_params)
+        print(f"DepressionFinderAndRouterComponent initialized with parameters: {final_params}")
+
+    def run(self, dt=None):
+        try:
+            # CORRECTED: Use map_depressions() instead of run_one_step()
+            self.depression_finder.map_depressions()
+            print("DepressionFinderAndRouterComponent ran successfully")
+            
+            # Print some diagnostic info
+            if 'depression__depth' in self.grid.at_node:
+                depressions = np.sum(self.grid.at_node['depression__depth'] > 0)
+                print(f"  Found {depressions} depression nodes")
+        except Exception as e:
+            print(f"Error in DepressionFinderAndRouterComponent: {e}")
+            plt.figure(figsize=(10, 6))
+            elev = self.grid.at_node['topographic__elevation'].reshape(self.grid.shape)
+            plt.imshow(elev, cmap='terrain')
+            plt.colorbar(label='Elevation')
+            plt.title("Elevation at Error Point in DepressionFinder")
+            plt.savefig("depression_finder_error.png")
+            plt.close()
+            raise
 
 class SpaceComponent:
     def __init__(self, grid, **params):
@@ -186,6 +225,7 @@ def run_simulation(sim_obj, simulation_name):
     flow_accumulator = None
     space_component = None
     erosion_deposition = None
+    depression_finder = None  # ADD THIS LINE
 
     for comp_config in selected_components:
         comp_meta = comp_config['component']
@@ -198,6 +238,8 @@ def run_simulation(sim_obj, simulation_name):
             space_component = SpaceComponent(grid, **params)
         elif name == 'ErosionDepositionComponent':  # Changed from SpaceComponent
             erosion_deposition = ErosionDepositionComponent(grid, **params)
+        elif name == 'DepressionFinderAndRouterComponent':  # ADD THIS BLOCK
+            depression_finder = DepressionFinderAndRouterComponent(grid, **params)
 
     # ========== PRE-SIMULATION CHECKS ========== #
     required_fields = [
@@ -228,30 +270,36 @@ def run_simulation(sim_obj, simulation_name):
     print(f"Starting simulation for {num_steps} steps")
 
     try:
+        # Initialize step counter
+        step = 0
+        
+        # Pre-run depression finder on initial topography
+        if depression_finder:
+            depression_finder.run()  # Calls map_depressions()
+            print("Ran depression_finder on initial topography")
+
         for step in range(num_steps):
             current_time += dt
             print(f"\nStep {step+1}/{num_steps}, Time = {current_time:.1f}/{total_time:.1f}")
 
+            # Run components in correct order
             if flow_accumulator:
                 flow_accumulator.run()
-            if space_component:  # Replaces depression_finder
+                
+            if depression_finder:
+                depression_finder.run()  # Calls map_depressions()
+                
+            if space_component:
                 space_component.run(dt)
-            if erosion_deposition:  # Changed from space_component
+                
+            if erosion_deposition:
                 erosion_deposition.run(dt)
 
-            if step % max(1, num_steps // 10) == 0:
-                progress = current_time / total_time * 100
-                print(f"Progress: {progress:.1f}%")
-
-                plt.figure(figsize=(10, 6))
-                plt.imshow(grid.at_node['topographic__elevation'].reshape(grid.shape), cmap='terrain')
-                plt.colorbar(label='Elevation')
-                plt.title(f"Topography at step {step}")
-                plt.savefig(os.path.join(output_dir, f"step_{step}_topo.png"))
-                plt.close()
+            # ... visualization code ...
 
     except Exception as e:
-        print(f"Simulation failed at step {step}: {str(e)}")
+        # Use step counter that's guaranteed to exist
+        print(f"Simulation failed at step {step} (time={current_time}): {str(e)}")
         grid.save(os.path.join(output_dir, "error_grid.nc"))
         np.savetxt(os.path.join(output_dir, "error_elevation.txt"), grid.at_node['topographic__elevation'])
         raise
