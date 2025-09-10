@@ -2,7 +2,7 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 
-from landlab.components import FlowAccumulator, Space, ErosionDeposition  
+from landlab.components import FlowAccumulator, Space, ErosionDeposition, SpaceLargeScaleEroder  
 from engine.models.raster_model import RasterModel
 
 class SpaceComponent:
@@ -153,6 +153,78 @@ class ErosionDepositionComponent:
             plt.close()
             raise
 
+class SpaceLargeScaleEroderComponent:
+    def __init__(self, grid, **params):
+        self.grid = grid
+        
+        # Default parameters for SpaceLargeScaleEroder
+        default_params = {
+            'K_sed': 0.00001,
+            'K_br': 0.0000001,
+            'F_f': 0.0,
+            'phi': 0.3,
+            'H_star': 0.1,
+            'v_s': 0.001,
+            'm_sp': 0.5,
+            'n_sp': 1.0,
+            'sp_crit_sed': 0.0,
+            'sp_crit_br': 0.0,
+            'discharge_field': 'surface_water__discharge',
+            'thickness_lim': 100.0
+        }
+        
+        # Handle sp_crit parameter conversion
+        if 'sp_crit' in params:
+            sp_crit_val = params.pop('sp_crit')
+            params.setdefault('sp_crit_sed', sp_crit_val)
+            params.setdefault('sp_crit_br', sp_crit_val)
+        
+        # Merge user params
+        final_params = {**default_params, **params}
+        
+        # ===== ADD REQUIRED FIELDS FOR SPACE ===== #
+        self._add_required_fields()
+        
+        # Initialize SpaceLargeScaleEroder component
+        self.space_large = SpaceLargeScaleEroder(grid, **final_params)
+        print(f"SpaceLargeScaleEroderComponent initialized with parameters: {final_params}")
+
+    def _add_required_fields(self):
+        """Add required fields for SpaceLargeScaleEroder component if missing"""
+        # Add soil depth field (initialized to 1.0m)
+        if 'soil__depth' not in self.grid.at_node:
+            self.grid.add_ones('soil__depth', at='node', dtype=float)
+            print("Added 'soil__depth' field initialized to 1.0m")
+        
+        # Add bedrock elevation field
+        if 'bedrock__elevation' not in self.grid.at_node:
+            # Calculate bedrock elevation: surface - soil depth
+            surface = self.grid.at_node['topographic__elevation']
+            soil_depth = self.grid.at_node['soil__depth']
+            bedrock_elev = surface - soil_depth
+            self.grid.add_field('bedrock__elevation', bedrock_elev, at='node')
+            print("Added 'bedrock__elevation' field")
+
+    def run(self, dt):
+        try:
+            # Ensure soil depth is always non-negative
+            np.clip(self.grid.at_node['soil__depth'], 0, None, 
+                   out=self.grid.at_node['soil__depth'])
+            
+            self.space_large.run_one_step(dt)
+            print("SpaceLargeScaleEroderComponent ran successfully")
+        except Exception as e:
+            print(f"Error in SpaceLargeScaleEroderComponent: {e}")
+            # Add error visualization
+            plt.figure(figsize=(10, 6))
+            soil_depth = self.grid.at_node['soil__depth'].reshape(self.grid.shape)
+            plt.imshow(soil_depth, cmap='viridis')
+            plt.colorbar(label='Soil Depth (m)')
+            plt.title("Soil Depth at Error Point in SpaceLargeScaleEroderComponent")
+            plt.savefig("space_large_error_soil_depth.png")
+            plt.close()
+            raise        
+
 def run_simulation(sim_obj, simulation_name):
     input_tif = sim_obj['input_tiff_path']
     total_time = sim_obj['simulation_period']
@@ -186,6 +258,7 @@ def run_simulation(sim_obj, simulation_name):
     flow_accumulator = None
     space_component = None
     erosion_deposition = None
+    space_large_component = None
 
     for comp_config in selected_components:
         comp_meta = comp_config['component']
@@ -198,6 +271,8 @@ def run_simulation(sim_obj, simulation_name):
             space_component = SpaceComponent(grid, **params)
         elif name == 'ErosionDepositionComponent':  # Changed from SpaceComponent
             erosion_deposition = ErosionDepositionComponent(grid, **params)
+        elif name == 'SpaceLargeScaleEroderComponent':  # Add this condition
+            space_large_component = SpaceLargeScaleEroderComponent(grid, **params)
 
     # ========== PRE-SIMULATION CHECKS ========== #
     required_fields = [
@@ -238,6 +313,8 @@ def run_simulation(sim_obj, simulation_name):
                 space_component.run(dt)
             if erosion_deposition:  # Changed from space_component
                 erosion_deposition.run(dt)
+            if space_large_component:  # Add this condition
+                space_large_component.run(dt)
 
             if step % max(1, num_steps // 10) == 0:
                 progress = current_time / total_time * 100
