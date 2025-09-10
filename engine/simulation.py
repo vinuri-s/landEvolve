@@ -2,8 +2,80 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 
-from landlab.components import FlowAccumulator, DepressionFinderAndRouter, ErosionDeposition
+from landlab.components import FlowAccumulator, Space, ErosionDeposition  
 from engine.models.raster_model import RasterModel
+
+class SpaceComponent:
+    def __init__(self, grid, **params):
+        self.grid = grid
+        
+        # Default parameters for Space
+        default_params = {
+            'K_sed': 0.00001,
+            'K_br': 0.0000001,
+            'F_f': 0.0,
+            'phi': 0.3,
+            'H_star': 0.1,
+            'v_s': 0.001,
+            'm_sp': 0.5,
+            'n_sp': 1.0,
+            'sp_crit_sed': 0.0,
+            'sp_crit_br': 0.0,
+            'discharge_field': 'surface_water__discharge',
+            'solver': 'basic'
+        }
+        
+        # Handle sp_crit parameter conversion
+        if 'sp_crit' in params:
+            sp_crit_val = params.pop('sp_crit')
+            params.setdefault('sp_crit_sed', sp_crit_val)
+            params.setdefault('sp_crit_br', sp_crit_val)
+        
+        # Merge user params
+        final_params = {**default_params, **params}
+        
+        # ===== ADD REQUIRED FIELDS FOR SPACE ===== #
+        self._add_required_fields()
+        
+        # Initialize Space component
+        self.space = Space(grid, **final_params)
+        print(f"SpaceComponent initialized with parameters: {final_params}")
+
+    def _add_required_fields(self):
+        """Add required fields for Space component if missing"""
+        # Add soil depth field (initialized to 1.0m)
+        if 'soil__depth' not in self.grid.at_node:
+            self.grid.add_ones('soil__depth', at='node', dtype=float)
+            print("Added 'soil__depth' field initialized to 1.0m")
+        
+        # Add bedrock elevation field
+        if 'bedrock__elevation' not in self.grid.at_node:
+            # Calculate bedrock elevation: surface - soil depth
+            surface = self.grid.at_node['topographic__elevation']
+            soil_depth = self.grid.at_node['soil__depth']
+            bedrock_elev = surface - soil_depth
+            self.grid.add_field('bedrock__elevation', bedrock_elev, at='node')
+            print("Added 'bedrock__elevation' field")
+
+    def run(self, dt):
+        try:
+            # Ensure soil depth is always non-negative
+            np.clip(self.grid.at_node['soil__depth'], 0, None, 
+                   out=self.grid.at_node['soil__depth'])
+            
+            self.space.run_one_step(dt)
+            print("SpaceComponent ran successfully")
+        except Exception as e:
+            print(f"Error in SpaceComponent: {e}")
+            # Add error visualization
+            plt.figure(figsize=(10, 6))
+            soil_depth = self.grid.at_node['soil__depth'].reshape(self.grid.shape)
+            plt.imshow(soil_depth, cmap='viridis')
+            plt.colorbar(label='Soil Depth (m)')
+            plt.title("Soil Depth at Error Point in SpaceComponent")
+            plt.savefig("space_error_soil_depth.png")
+            plt.close()
+            raise
 
 class FlowAccumulatorComponent:
     def __init__(self, grid, flow_director='D8', runoff_rate=1.0):
@@ -35,23 +107,6 @@ class FlowAccumulatorComponent:
                 print("WARNING: flow__receiver_node field not created!")
         except Exception as e:
             print(f"Error in FlowAccumulator: {e}")
-            raise
-
-class DepressionFinderComponent:
-    def __init__(self, grid):
-        self.grid = grid
-        self.depression_finder = DepressionFinderAndRouter(grid)
-        print("DepressionFinder initialized")
-
-    def run(self, dt=None):
-        try:
-            self.depression_finder.run_one_step()
-            print("DepressionFinder ran successfully")
-            if 'flood_status_code' in self.grid.at_node:
-                unique_status = np.unique(self.grid.at_node['flood_status_code'])
-                print(f"Depression flood_status_code unique values: {unique_status}")
-        except Exception as e:
-            print(f"Error in DepressionFinder: {e}")
             raise
 
 
@@ -129,7 +184,7 @@ def run_simulation(sim_obj, simulation_name):
 
     # ========== COMPONENT INITIALIZATION ========== #
     flow_accumulator = None
-    depression_finder = None
+    space_component = None
     erosion_deposition = None
 
     for comp_config in selected_components:
@@ -139,20 +194,33 @@ def run_simulation(sim_obj, simulation_name):
 
         if name == 'FlowAccumulatorComponent':
             flow_accumulator = FlowAccumulatorComponent(grid, **params)
-        elif name == 'DepressionFinderComponent':
-            depression_finder = DepressionFinderComponent(grid)
+        elif name == 'SpaceComponent':  # New component
+            space_component = SpaceComponent(grid, **params)
         elif name == 'ErosionDepositionComponent':  # Changed from SpaceComponent
             erosion_deposition = ErosionDepositionComponent(grid, **params)
 
     # ========== PRE-SIMULATION CHECKS ========== #
     required_fields = [
         'topographic__elevation',
-        'water__unit_flux_in'
+        'water__unit_flux_in',
+        # Add these fields for Space compatibility
+        'soil__depth',
+        'bedrock__elevation'
     ]
     for field in required_fields:
         if field not in grid.at_node:
             print(f"WARNING: Missing field {field} - attempting to add")
-            grid.add_zeros(field, at='node')
+            # Add default values
+            if field == 'soil__depth':
+                grid.add_ones(field, at='node', dtype=float)
+            elif field == 'bedrock__elevation':
+                # Calculate bedrock elevation: surface - soil depth
+                surface = grid.at_node['topographic__elevation']
+                soil_depth = grid.at_node.get('soil__depth', np.ones(grid.number_of_nodes))
+                bedrock_elev = surface - soil_depth
+                grid.add_field(field, bedrock_elev, at='node')
+            else:
+                grid.add_zeros(field, at='node')
 
     # ========== SIMULATION LOOP ========== #
     num_steps = int(total_time / dt)
@@ -166,8 +234,8 @@ def run_simulation(sim_obj, simulation_name):
 
             if flow_accumulator:
                 flow_accumulator.run()
-            if depression_finder:
-                depression_finder.run()
+            if space_component:  # Replaces depression_finder
+                space_component.run(dt)
             if erosion_deposition:  # Changed from space_component
                 erosion_deposition.run(dt)
 
