@@ -4,11 +4,13 @@ import rasterio
 import os
 
 class RasterModel:
-    def __init__(self, geo_tiff_file=None, shape=None, xy_spacing=None, xy_of_lower_left=(0., 0.), xy_of_reference=(0., 0.), bc=None):
+    def __init__(self, geo_tiff_file=None, geology_file=None, shape=None, xy_spacing=None, 
+                 xy_of_lower_left=(0., 0.), xy_of_reference=(0., 0.), bc=None):
         """
         Initialize the RasterModel class with a RasterModelGrid, either from parameters or a GeoTIFF file.
-
+        
         :param geo_tiff_file: str, path to the GeoTIFF file containing elevation data.
+        :param geology_file: str, path to the GeoTIFF file containing geology data.
         :param shape: tuple of int, shape of the grid in nodes (nrows, ncols), used only when geo_tiff_file is not provided.
         :param xy_spacing: float, spacing between grid cells (assumes square pixels).
         :param xy_of_lower_left: tuple, (x, y) coordinates of the lower left corner.
@@ -29,9 +31,6 @@ class RasterModel:
                 if nodata_value is not None:
                     elevation_data[elevation_data == nodata_value] = np.nan
 
-                # Optional: Fill NaNs with a reasonable value, e.g., min elevation
-                # elevation_data = np.nan_to_num(elevation_data, nan=np.nanmin(elevation_data))
-
                 self.transform = src.transform  # Geo-transform matrix
                 self.crs = src.crs if src.crs else None  # Handle missing CRS
                 xy_spacing = src.res[0]  # Extract pixel spacing (assumes square pixels)
@@ -41,6 +40,19 @@ class RasterModel:
 
             # ✅ Ensure elevation data matches Landlab's 1D node structure
             self.grid.at_node['topographic__elevation'] = elevation_data.flatten()
+            
+            # ✅ Load geology data if provided
+            if geology_file:
+                with rasterio.open(geology_file) as src:
+                    geology_data = src.read(1).astype(np.int32)
+                    
+                    # Mask out NoData values
+                    nodata_value = src.nodata
+                    if nodata_value is not None:
+                        geology_data[geology_data == nodata_value] = -1
+                    
+                    # Store geology data in grid
+                    self.grid.at_node['geology__type'] = geology_data.flatten()
 
         else:
             # ✅ Initialize grid manually if no GeoTIFF is provided
@@ -48,6 +60,7 @@ class RasterModel:
 
             # ✅ Initialize elevation data with zeros
             self.grid.add_zeros('node', 'topographic__elevation')
+            
 
     def get_simulation_output_folder(self, simulation_name):
         """Returns the correct output folder path for a given simulation."""
