@@ -252,11 +252,11 @@ class SpaceLargeScaleEroderComponent:
                     
                     # Map geology codes to erodibility values
                     erodibility_map = {
-                        1: 0.0000001,  # Example values
-                        2: 0.0000002,
+                        1: 0.0000300,  # Example values
+                        2: 0.0002000,
                         3: 0.0000003,
-                        4: 0.0000003,
-                        5: 0.0000003
+                        4: 0.0003000,
+                        5: 0.0000300
                     }
                     
                     # Create K_br array based on geology codes
@@ -266,6 +266,18 @@ class SpaceLargeScaleEroderComponent:
 
                     # Assign to final_params
                     final_params['K_br'] = k_br_array.flatten().astype(float)
+
+                     # ======== NUMERICAL CHECK ========
+                    k_br = final_params['K_br']
+                    unique_values = np.unique(k_br)
+                    print("Numerical check: K_br values assigned to nodes")
+                    print("Number of unique K_br values:", len(unique_values))
+                    print("Min K_br:", np.nanmin(k_br))
+                    print("Max K_br:", np.nanmax(k_br))
+                    print("Mean K_br:", np.nanmean(k_br))
+                    print("Std Dev K_br:", np.nanstd(k_br))
+                    print("Unique K_br values:", unique_values)
+                    # ===================================
 
                     
             except Exception as e:
