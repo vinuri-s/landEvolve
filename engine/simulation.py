@@ -2,7 +2,7 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 
-from landlab.components import FlowAccumulator, Space, ErosionDeposition, SpaceLargeScaleEroder, SinkFiller  
+from landlab.components import FlowAccumulator, Space, ErosionDeposition, SpaceLargeScaleEroder, SinkFillerBarnes
 from engine.models.raster_model import RasterModel
 
 class SpaceComponent:
@@ -250,14 +250,29 @@ def run_simulation(sim_obj, simulation_name):
         # REMOVED: Soil and bedrock fields (not needed for ErosionDeposition)
         
         # Find outlet and set boundary condition
-        outlet_id = np.argmin(z)
-        grid.set_watershed_boundary_condition_outlet_id(outlet_id, z, -9999.0)
+        # outlet_id = np.argmin(z)
+        # grid.set_watershed_boundary_condition_outlet_id(outlet_id, z, -9999.0)
+
+       # 1. Set outlet boundary
+        outlet_id = np.argmin(grid.at_node['topographic__elevation'])
+        grid.set_watershed_boundary_condition_outlet_id(
+            outlet_id,
+            grid.at_node['topographic__elevation'],
+            -9999.0
+        )
         print(f"Outlet set at node {outlet_id}")
 
+        # # 2. Fill depressions using SinkFillerBarnes
+        # sink_filler = SinkFillerBarnes(grid)
+        # sink_filler.run_one_step()
+
+        # print("Sink filling completed")
+
+
         # ----------------- SINK FILLER ADDED -----------------
-        sink_filler = SinkFiller(grid)
-        sink_filler.fill_pits()
-        print("SinkFiller applied: depressions removed")
+        # sink_filler = SinkFiller(grid)
+        # sink_filler.fill_pits()
+        # print("SinkFiller applied: depressions removed")
         # -----------------------------------------------------
 
     except Exception as e:
