@@ -2,7 +2,7 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 
-from landlab.components import FlowAccumulator, Space, ErosionDeposition, SpaceLargeScaleEroder  
+from landlab.components import FlowAccumulator, Space, ErosionDeposition, SpaceLargeScaleEroder, SinkFillerBarnes
 from engine.models.raster_model import RasterModel
 
 class SpaceComponent:
@@ -97,14 +97,17 @@ class FlowAccumulatorComponent:
         )
         print(f"FlowAccumulator initialized with flow_director: {flow_director}")
 
+        # Optional: print flow receivers once after initialization for sanity check
+        self.flow_accumulator.run_one_step()
+        if 'flow__receiver_node' in grid.at_node:
+            print("Sample flow receivers (post-initialization):", grid.at_node['flow__receiver_node'][:10])
+        else:
+            print("WARNING: flow__receiver_node field not created!")
+
     def run(self, dt=None):
         try:
             self.flow_accumulator.run_one_step()
             print("FlowAccumulator ran successfully")
-            if 'flow__receiver_node' in self.grid.at_node:
-                print("Flow receivers sample:", self.grid.at_node['flow__receiver_node'][:5])
-            else:
-                print("WARNING: flow__receiver_node field not created!")
         except Exception as e:
             print(f"Error in FlowAccumulator: {e}")
             raise
@@ -247,12 +250,35 @@ def run_simulation(sim_obj, simulation_name):
         # REMOVED: Soil and bedrock fields (not needed for ErosionDeposition)
         
         # Find outlet and set boundary condition
-        outlet_id = np.argmin(z)
-        grid.set_watershed_boundary_condition_outlet_id(outlet_id, z, -9999.0)
+        # outlet_id = np.argmin(z)
+        # grid.set_watershed_boundary_condition_outlet_id(outlet_id, z, -9999.0)
+
+       # 1. Set outlet boundary
+        outlet_id = np.argmin(grid.at_node['topographic__elevation'])
+        grid.set_watershed_boundary_condition_outlet_id(
+            outlet_id,
+            grid.at_node['topographic__elevation'],
+            -9999.0
+        )
         print(f"Outlet set at node {outlet_id}")
+
+        # # 2. Fill depressions using SinkFillerBarnes
+        # sink_filler = SinkFillerBarnes(grid)
+        # sink_filler.run_one_step()
+
+        # print("Sink filling completed")
+
+
+        # ----------------- SINK FILLER ADDED -----------------
+        # sink_filler = SinkFiller(grid)
+        # sink_filler.fill_pits()
+        # print("SinkFiller applied: depressions removed")
+        # -----------------------------------------------------
+
     except Exception as e:
         print(f"Grid initialization failed: {str(e)}")
         raise
+
 
     # ========== COMPONENT INITIALIZATION ========== #
     flow_accumulator = None
