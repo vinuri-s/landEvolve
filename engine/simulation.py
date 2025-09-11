@@ -1,6 +1,8 @@
 import os
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib import colors
+import rasterio
 
 from landlab.components import FlowAccumulator, Space, ErosionDeposition, SpaceLargeScaleEroder, SinkFillerBarnes
 from engine.models.raster_model import RasterModel
@@ -8,6 +10,10 @@ from engine.models.raster_model import RasterModel
 class SpaceComponent:
     def __init__(self, grid, **params):
         self.grid = grid
+        
+        # Extract lithology parameters
+        lithology_type = params.pop('lithology_type', 'Uniform')
+        geology_file = params.pop('geology_file', None)
         
         # Default parameters for Space
         default_params = {
@@ -33,6 +39,44 @@ class SpaceComponent:
         
         # Merge user params
         final_params = {**default_params, **params}
+        
+        # Handle heterogeneous lithology if specified
+        if lithology_type == 'Heterogeneous' and geology_file:
+            try:
+                # Load geology TIFF and create K_br array
+                with rasterio.open(geology_file) as src:
+                    geology_data = src.read(1)
+
+                     # Replace NoData (15) with NaN
+                    geology_data = np.where(geology_data == 15, np.nan, geology_data)
+
+                    print("Unique geology codes in raster (after masking):", np.unique(geology_data[~np.isnan(geology_data)]))
+                    
+                    # Ensure geology data matches grid shape
+                    if geology_data.shape != grid.shape:
+                        raise ValueError("Geology file dimensions don't match DEM")
+                    
+                    # Map geology codes to erodibility values
+                    # You can customize this mapping based on your geology
+                    erodibility_map = {
+                        1: 0.0000001,  # Example values
+                        2: 0.0000200,
+                        3: 0.0000003,
+                        4: 0.0001000,
+                        5: 0.0006000
+                    }
+                    
+                    # Provide default erodibility if geology code not found
+                    default_erodibility = 1e-7  # you can adjust this baseline value
+                    k_br_array = np.vectorize(lambda x: erodibility_map.get(x, default_erodibility))(geology_data)
+
+                    # Assign to final_params
+                    final_params['K_br'] = k_br_array.flatten().astype(float)
+
+                    
+            except Exception as e:
+                print(f"Error loading geology file: {e}")
+                print("Falling back to uniform lithology")
         
         # ===== ADD REQUIRED FIELDS FOR SPACE ===== #
         self._add_required_fields()
@@ -160,6 +204,10 @@ class SpaceLargeScaleEroderComponent:
     def __init__(self, grid, **params):
         self.grid = grid
         
+        # Extract lithology parameters
+        lithology_type = params.pop('lithology_type', 'Uniform')
+        geology_file = params.pop('geology_file', None)
+        
         # Default parameters for SpaceLargeScaleEroder
         default_params = {
             'K_sed': 0.00001,
@@ -184,6 +232,45 @@ class SpaceLargeScaleEroderComponent:
         
         # Merge user params
         final_params = {**default_params, **params}
+        
+        # Handle heterogeneous lithology if specified
+        if lithology_type == 'Heterogeneous' and geology_file:
+            try:
+                # Load geology TIFF and create K_br array
+                with rasterio.open(geology_file) as src:
+                    geology_data = src.read(1)
+
+                     # Replace NoData (15) with NaN
+                    geology_data = np.where(geology_data == 15, np.nan, geology_data)
+
+                    print("Unique geology codes in raster (after masking):", np.unique(geology_data[~np.isnan(geology_data)]))
+
+                    
+                    # Ensure geology data matches grid shape
+                    if geology_data.shape != grid.shape:
+                        raise ValueError("Geology file dimensions don't match DEM")
+                    
+                    # Map geology codes to erodibility values
+                    erodibility_map = {
+                        1: 0.0000001,  # Example values
+                        2: 0.0000002,
+                        3: 0.0000003,
+                        4: 0.0000003,
+                        5: 0.0000003
+                    }
+                    
+                    # Create K_br array based on geology codes
+                    # Provide default erodibility if geology code not found
+                    default_erodibility = 1e-7  # you can adjust this baseline value
+                    k_br_array = np.vectorize(lambda x: erodibility_map.get(x, default_erodibility))(geology_data)
+
+                    # Assign to final_params
+                    final_params['K_br'] = k_br_array.flatten().astype(float)
+
+                    
+            except Exception as e:
+                print(f"Error loading geology file: {e}")
+                print("Falling back to uniform lithology")
         
         # ===== ADD REQUIRED FIELDS FOR SPACE ===== #
         self._add_required_fields()
@@ -233,16 +320,23 @@ def run_simulation(sim_obj, simulation_name):
     total_time = sim_obj['simulation_period']
     dt = sim_obj['time_step']
     selected_components = sim_obj['selected_components']
+    
+    # Check if any component needs geology data
+    geology_file = None
+    for comp_config in selected_components:
+        params = comp_config.get('params', {})
+        if params.get('lithology_type') == 'Heterogeneous' and params.get('geology_file'):
+            geology_file = params.get('geology_file')
+            break
 
     output_dir = os.path.join("resources", "outputs", simulation_name)
     os.makedirs(output_dir, exist_ok=True)
-
 
     # ========== GRID INITIALIZATION ========== #
     print("Loading DEM:", input_tif)
     try:
         # Use RasterModel class to read the GeoTIFF and get the grid
-        raster_model = RasterModel(geo_tiff_file=input_tif)
+        raster_model = RasterModel(geo_tiff_file=input_tif, geology_file=geology_file)
         grid = raster_model.grid
         z = grid.at_node['topographic__elevation'].copy()
         print(f"Grid created with {grid.number_of_nodes} nodes")
@@ -389,12 +483,16 @@ def run_simulation(sim_obj, simulation_name):
     plt.savefig(os.path.join(output_dir, "topo_change.png"))
     plt.close()
 
-        # ========== SOIL TRANSPORT MAP ========== #
+    # ========== SOIL TRANSPORT MAP ========== #
     if 'sediment__flux' in grid.at_node:
-        sediment_flux = grid.at_node['sediment__flux']
+        sediment_flux = grid.at_node['sediment__flux'].reshape(grid.shape)
 
         plt.figure(figsize=(12, 8))
-        plt.imshow(sediment_flux.reshape(grid.shape), cmap='plasma')
+
+        # Use LogNorm to stretch the color scale for small and large values
+        norm = colors.LogNorm(vmin=max(1e-12, np.nanmin(sediment_flux)), vmax=np.nanmax(sediment_flux))
+
+        plt.imshow(sediment_flux, cmap='viridis', norm=norm)
         plt.colorbar(label='Sediment Flux (m³/m²/s)')
         plt.title("Soil Transport Map (Sediment Flux)")
         soil_transport_path = os.path.join(output_dir, "soil_transport.png")
