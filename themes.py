@@ -1,6 +1,6 @@
 # pylint: disable=E0611
 
-"""Theme management for the landscape evolution GUI."""
+"""Theme management for the UI."""
 
 from PyQt6.QtGui import QColor, QPalette
 from PyQt6.QtWidgets import QApplication
