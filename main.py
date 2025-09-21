@@ -1,6 +1,6 @@
 # pylint: disable=E0611
 
-"""Main module for the landscape evolution GUI."""
+"""Main module for the app."""
 
 import sys
 from PyQt6.QtWidgets import QApplication
