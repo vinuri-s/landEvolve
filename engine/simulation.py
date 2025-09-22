@@ -31,12 +31,6 @@ class SpaceComponent:
             'solver': 'basic'
         }
         
-        # Handle sp_crit parameter conversion
-        if 'sp_crit' in params:
-            sp_crit_val = params.pop('sp_crit')
-            params.setdefault('sp_crit_sed', sp_crit_val)
-            params.setdefault('sp_crit_br', sp_crit_val)
-        
         # Merge user params
         final_params = {**default_params, **params}
         
@@ -72,6 +66,9 @@ class SpaceComponent:
 
                     # Assign to final_params
                     final_params['K_br'] = k_br_array.flatten().astype(float)
+
+                    # Set sediment erodibility to be 100x K_br
+                    final_params['K_sed'] = final_params['K_br'] * 100
 
                     
             except Exception as e:
@@ -181,11 +178,6 @@ class SpaceLargeScaleEroderComponent:
             'thickness_lim': 100.0
         }
         
-        # Handle sp_crit parameter conversion
-        if 'sp_crit' in params:
-            sp_crit_val = params.pop('sp_crit')
-            params.setdefault('sp_crit_sed', sp_crit_val)
-            params.setdefault('sp_crit_br', sp_crit_val)
         
         # Merge user params
         final_params = {**default_params, **params}
@@ -223,6 +215,9 @@ class SpaceLargeScaleEroderComponent:
 
                     # Assign to final_params
                     final_params['K_br'] = k_br_array.flatten().astype(float)
+
+                    # Set sediment erodibility to be 100x K_br
+                    final_params['K_sed'] = final_params['K_br'] * 100
 
                      # ======== NUMERICAL CHECK ========
                     k_br = final_params['K_br']
