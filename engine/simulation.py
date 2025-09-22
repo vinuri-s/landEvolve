@@ -279,7 +279,7 @@ class SpaceLargeScaleEroderComponent:
             plt.close()
             raise        
 
-def run_simulation(sim_obj, simulation_name):
+def run_simulation(sim_obj, simulation_name, signal_emitter=None):
     input_tif = sim_obj['input_tiff_path']
     total_time = sim_obj['simulation_period']
     dt = sim_obj['time_step']
@@ -296,7 +296,13 @@ def run_simulation(sim_obj, simulation_name):
     output_dir = os.path.join("resources", "outputs", simulation_name)
     os.makedirs(output_dir, exist_ok=True)
 
+    if signal_emitter:
+        signal_emitter.progress.emit("Initializing simulation environment", 10)
+
     # ========== GRID INITIALIZATION ========== #
+    if signal_emitter:
+        signal_emitter.progress.emit("Loading DEM data", 20)
+        
     print("Loading DEM:", input_tif)
     try:
         # Use RasterModel class to read the GeoTIFF and get the grid
@@ -316,8 +322,12 @@ def run_simulation(sim_obj, simulation_name):
 
     except Exception as e:
         print(f"Grid initialization failed: {str(e)}")
+        if signal_emitter:
+            signal_emitter.progress.emit(f"Error: {str(e)}", -1)
         raise
 
+    if signal_emitter:
+        signal_emitter.progress.emit("Setting up simulation components", 30)
 
     # ========== COMPONENT INITIALIZATION ========== #
     flow_accumulator = None
@@ -331,12 +341,21 @@ def run_simulation(sim_obj, simulation_name):
 
         if name == 'FlowAccumulatorComponent':
             flow_accumulator = FlowAccumulatorComponent(grid, **params)
+            if signal_emitter:
+                signal_emitter.progress.emit("Initialized Flow Accumulator", 35)
         elif name == 'SpaceComponent':  
             space_component = SpaceComponent(grid, **params)
+            if signal_emitter:
+                signal_emitter.progress.emit("Initialized Space Component", 40)
         elif name == 'SpaceLargeScaleEroderComponent':  
             space_large_component = SpaceLargeScaleEroderComponent(grid, **params)
+            if signal_emitter:
+                signal_emitter.progress.emit("Initialized Space Large Scale Eroder", 45)
 
     # ========== PRE-SIMULATION CHECKS ========== #
+    if signal_emitter:
+        signal_emitter.progress.emit("Performing pre-simulation checks", 50)
+        
     required_fields = [
         'topographic__elevation',
         'water__unit_flux_in',
@@ -363,9 +382,22 @@ def run_simulation(sim_obj, simulation_name):
     current_time = 0.0
     print(f"Starting simulation for {num_steps} steps")
 
+    if signal_emitter:
+        signal_emitter.progress.emit("Starting simulation loop", 55)
+
     try:
         for step in range(num_steps):
             current_time += dt
+            
+            # Update progress
+            if signal_emitter and step % max(1, num_steps // 10) == 0:
+                progress = 55 + int((current_time / total_time) * 35)  # 55-90% range
+                signal_emitter.progress.emit(
+                    f"Running simulation step {step+1}/{num_steps} "
+                    f"({current_time:.1f}/{total_time:.1f} years)",
+                    progress
+                )
+                
             print(f"\nStep {step+1}/{num_steps}, Time = {current_time:.1f}/{total_time:.1f}")
 
             if flow_accumulator:
@@ -375,10 +407,8 @@ def run_simulation(sim_obj, simulation_name):
             if space_large_component:  
                 space_large_component.run(dt)
 
+            # Save intermediate results every 10% of progress
             if step % max(1, num_steps // 10) == 0:
-                progress = current_time / total_time * 100
-                print(f"Progress: {progress:.1f}%")
-
                 plt.figure(figsize=(10, 6))
                 plt.imshow(grid.at_node['topographic__elevation'].reshape(grid.shape), cmap='terrain')
                 plt.colorbar(label='Elevation')
@@ -390,7 +420,13 @@ def run_simulation(sim_obj, simulation_name):
         print(f"Simulation failed at step {step}: {str(e)}")
         grid.save(os.path.join(output_dir, "error_grid.nc"))
         np.savetxt(os.path.join(output_dir, "error_elevation.txt"), grid.at_node['topographic__elevation'])
+        
+        if signal_emitter:
+            signal_emitter.progress.emit(f"Error at step {step}: {str(e)}", -1)
         raise
+
+    if signal_emitter:
+        signal_emitter.progress.emit("Simulation completed, processing results", 90)
 
     # ========== OUTPUT PROCESSING ========== #
     print("Simulation completed successfully. Saving results...")
@@ -423,6 +459,9 @@ def run_simulation(sim_obj, simulation_name):
     plt.close()
 
     # ========== SOIL TRANSPORT MAP ========== #
+    if signal_emitter:
+        signal_emitter.progress.emit("Generating soil transport visualization", 95)
+        
     if 'sediment__flux' in grid.at_node:
         sediment_flux = grid.at_node['sediment__flux'].reshape(grid.shape)
 
@@ -439,16 +478,16 @@ def run_simulation(sim_obj, simulation_name):
         plt.close()
     else:
         print("WARNING: 'sediment__flux' field not found. Soil transport map will not be plotted.")
+        soil_transport_path = None
 
+    if signal_emitter:
+        signal_emitter.progress.emit("Simulation complete", 100)
 
     return {
         "output_dir": os.path.abspath(output_dir),
-        "initial_plot": input_plot_path,  # Add this
+        "initial_plot": input_plot_path,
         "final_plot": os.path.join(output_dir, "final_topo.png"),
         "change_plot": os.path.join(output_dir, "topo_change.png"),
         "soil_transport_plot": soil_transport_path,
         "input_tif": input_plot_path
     }
-
-
-

@@ -12,6 +12,7 @@ import logging
 from views.simulation_results import SimulationResultsWindow  # Add import
 from PyQt6 import QtWidgets
 from PyQt6 import QtCore
+from PyQt6.QtCore import QThread
 
 logger = logging.getLogger(__name__)
 
@@ -261,29 +262,55 @@ class SimulationWindow(QMainWindow):
         
         session.close()
 
+    # views/simulation_window.py (partial update - just the start_simulation method)
+
+
+    # views/simulation_window.py (partial update - just the start_simulation method)
     def start_simulation(self):
         sim_params = self.collect_simulation_params()
         if not sim_params:
             return
         
         try:
-            # Show loading indicator
-            QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.CursorShape.WaitCursor)
-            
-            # Run simulation
-            result = self.controller.run_simulation(sim_params)
-            
-            # Show results window
-            self.results_window = SimulationResultsWindow(result['results'])
+            # Show results window with loading state immediately
+            self.results_window = SimulationResultsWindow()
             self.results_window.show()
+            
+            # Connect to controller signals for status updates
+            self.controller.status_update.connect(self.results_window.update_status)
+            self.controller.simulation_complete.connect(self.on_simulation_finished)
+            self.controller.simulation_error.connect(self.on_simulation_error)
+            
+            # Start the simulation in a separate thread
+            worker_thread = self.controller.run_simulation(sim_params)
+            worker_thread.start()
             
         except Exception as e:
             QMessageBox.critical(
                 self, "Simulation Error",
-                f"Error during simulation:\n{str(e)}"
+                f"Error starting simulation:\n{str(e)}"
             )
-        finally:
-            QtWidgets.QApplication.restoreOverrideCursor()        
+            
+    def on_simulation_finished(self, result):
+        """Handle simulation completion"""
+        try:
+            # Update results window with actual results
+            self.results_window.show_results(result['results'])
+            
+        except Exception as e:
+            QMessageBox.critical(
+                self, "Results Error",
+                f"Error displaying results:\n{str(e)}"
+            )
+            
+    def on_simulation_error(self, error_message):
+        """Handle simulation errors"""
+        QMessageBox.critical(
+            self, "Simulation Error",
+            f"Error during simulation:\n{error_message}"
+        )
+        if hasattr(self, 'results_window'):
+            self.results_window.close()       
         
     def collect_simulation_params(self):
         """Collect all simulation parameters into a dict"""
