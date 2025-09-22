@@ -91,19 +91,34 @@ class DynamicFormWidget(QWidget):
                 self.fields[label] = line_edit  # Store only the line edit for data retrieval
                 self.form_layout.addRow(label, file_widget)
         
-        # Set up conditional visibility for geology_file based on lithology_type
-        if 'lithology_type' in self.fields and 'geology_file' in self.fields:
+        # Fields to hide/show
+        conditional_fields = ['geology_file', 'K_sed', 'K_br']
+
+        if 'lithology_type' in self.fields:
             lithology_combo = self.fields['lithology_type']
-            geology_file_widget = self.form_layout.labelForField(self.fields['geology_file'].parent())
             
-            def update_geology_visibility():
+            def update_fields_visibility():
                 is_heterogeneous = lithology_combo.currentText() == 'Heterogeneous'
-                self.fields['geology_file'].parent().setVisible(is_heterogeneous)
-                if geology_file_widget:
-                    geology_file_widget.setVisible(is_heterogeneous)
+                for field_name in conditional_fields:
+                    if field_name in self.fields:
+                        widget = self.fields[field_name]
+                        # Get the label associated with this field in the QFormLayout
+                        label_item = self.form_layout.labelForField(widget)
+                        
+                        # Hide/show both label and field
+                        if field_name in ['K_sed', 'K_br']:
+                            visible = not is_heterogeneous
+                        else:  # geology_file
+                            visible = is_heterogeneous
+                            
+                        widget.setVisible(visible)
+                        if label_item:
+                            label_item.setVisible(visible)
             
-            lithology_combo.currentTextChanged.connect(update_geology_visibility)
-            update_geology_visibility()  # Initial update
+            lithology_combo.currentTextChanged.connect(update_fields_visibility)
+            update_fields_visibility()  # Initial update
+
+
 
     def get_form_data(self):
         data = {}
