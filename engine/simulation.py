@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from matplotlib import colors
 import rasterio
 
-from landlab.components import FlowAccumulator, Space, ErosionDeposition, SpaceLargeScaleEroder, SinkFillerBarnes
+from landlab.components import FlowAccumulator, Space, SpaceLargeScaleEroder
 from engine.models.raster_model import RasterModel
 
 class SpaceComponent:
@@ -59,7 +59,7 @@ class SpaceComponent:
                     # Map geology codes to erodibility values
                     # You can customize this mapping based on your geology
                     erodibility_map = {
-                        1: 0.0000001,  # Example values
+                        1: 0.0000001,  
                         2: 0.0000200,
                         3: 0.0000003,
                         4: 0.0001000,
@@ -156,49 +156,6 @@ class FlowAccumulatorComponent:
             print(f"Error in FlowAccumulator: {e}")
             raise
 
-
-class ErosionDepositionComponent:
-    def __init__(self, grid, **params):
-        self.grid = grid
-
-        # Default ErosionDeposition parameters
-        default_params = {
-            'K': 0.00001,         # Erodibility
-            'v_s': 0.001,         # Settling velocity [L/T]
-            'm_sp': 0.5,          # Discharge exponent
-            'n_sp': 1.0,          # Slope exponent
-            'sp_crit': 0.0,       # Critical stream power
-            'F_f': 0.0,           # Fraction of fines
-            'discharge_field': 'surface_water__discharge',
-            'solver': 'basic',
-            'dt_min': 0.001
-        }
-        # Merge user params, overwrite defaults if provided
-        final_params = {**default_params, **params}
-
-        # Check required fields exist
-        if 'topographic__elevation' not in grid.at_node:
-            raise ValueError("ErosionDepositionComponent requires 'topographic__elevation' field")
-
-        self.ed = ErosionDeposition(grid, **final_params)
-        print(f"ErosionDepositionComponent initialized with parameters: {final_params}")
-
-    def run(self, dt):
-        try:
-            if 'flow__receiver_node' not in self.grid.at_node:
-                raise RuntimeError("Flow receivers not found! Run FlowAccumulator first.")
-            self.ed.run_one_step(dt=dt)
-            print("ErosionDepositionComponent ran successfully")
-        except Exception as e:
-            print(f"Error in ErosionDepositionComponent: {e}")
-            plt.figure(figsize=(10, 6))
-            elev = self.grid.at_node['topographic__elevation'].reshape(self.grid.shape)
-            plt.imshow(elev, cmap='terrain')
-            plt.colorbar(label='Elevation')
-            plt.title("Elevation at Error Point in ErosionDepositionComponent")
-            plt.savefig("ed_error_elevation.png")
-            plt.close()
-            raise
 
 class SpaceLargeScaleEroderComponent:
     def __init__(self, grid, **params):
@@ -353,12 +310,6 @@ def run_simulation(sim_obj, simulation_name):
         z = grid.at_node['topographic__elevation'].copy()
         print(f"Grid created with {grid.number_of_nodes} nodes")
 
-        # REMOVED: Soil and bedrock fields (not needed for ErosionDeposition)
-        
-        # Find outlet and set boundary condition
-        # outlet_id = np.argmin(z)
-        # grid.set_watershed_boundary_condition_outlet_id(outlet_id, z, -9999.0)
-
        # 1. Set outlet boundary
         outlet_id = np.argmin(grid.at_node['topographic__elevation'])
         grid.set_watershed_boundary_condition_outlet_id(
@@ -368,19 +319,6 @@ def run_simulation(sim_obj, simulation_name):
         )
         print(f"Outlet set at node {outlet_id}")
 
-        # # 2. Fill depressions using SinkFillerBarnes
-        # sink_filler = SinkFillerBarnes(grid)
-        # sink_filler.run_one_step()
-
-        # print("Sink filling completed")
-
-
-        # ----------------- SINK FILLER ADDED -----------------
-        # sink_filler = SinkFiller(grid)
-        # sink_filler.fill_pits()
-        # print("SinkFiller applied: depressions removed")
-        # -----------------------------------------------------
-
     except Exception as e:
         print(f"Grid initialization failed: {str(e)}")
         raise
@@ -389,7 +327,6 @@ def run_simulation(sim_obj, simulation_name):
     # ========== COMPONENT INITIALIZATION ========== #
     flow_accumulator = None
     space_component = None
-    erosion_deposition = None
     space_large_component = None
 
     for comp_config in selected_components:
@@ -399,18 +336,15 @@ def run_simulation(sim_obj, simulation_name):
 
         if name == 'FlowAccumulatorComponent':
             flow_accumulator = FlowAccumulatorComponent(grid, **params)
-        elif name == 'SpaceComponent':  # New component
+        elif name == 'SpaceComponent':  
             space_component = SpaceComponent(grid, **params)
-        elif name == 'ErosionDepositionComponent':  # Changed from SpaceComponent
-            erosion_deposition = ErosionDepositionComponent(grid, **params)
-        elif name == 'SpaceLargeScaleEroderComponent':  # Add this condition
+        elif name == 'SpaceLargeScaleEroderComponent':  
             space_large_component = SpaceLargeScaleEroderComponent(grid, **params)
 
     # ========== PRE-SIMULATION CHECKS ========== #
     required_fields = [
         'topographic__elevation',
         'water__unit_flux_in',
-        # Add these fields for Space compatibility
         'soil__depth',
         'bedrock__elevation'
     ]
@@ -441,11 +375,9 @@ def run_simulation(sim_obj, simulation_name):
 
             if flow_accumulator:
                 flow_accumulator.run()
-            if space_component:  # Replaces depression_finder
+            if space_component:  
                 space_component.run(dt)
-            if erosion_deposition:  # Changed from space_component
-                erosion_deposition.run(dt)
-            if space_large_component:  # Add this condition
+            if space_large_component:  
                 space_large_component.run(dt)
 
             if step % max(1, num_steps // 10) == 0:
