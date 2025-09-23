@@ -76,9 +76,25 @@ class Ui_SimulationSetup(object):
         self.addComponentBtn = QtWidgets.QPushButton("Add Component")
         components_layout.addWidget(self.addComponentBtn)
         
-        # Run Simulation button - in left panel
+        # Run Simulation button - in left panel with dark green styling
         self.viewSimulationBtn = QtWidgets.QPushButton("Run Simulation")
         self.viewSimulationBtn.setMinimumHeight(40)
+        self.viewSimulationBtn.setStyleSheet("""
+            QPushButton {
+                font-size: 14px;
+                font-weight: bold;
+                padding: 10px 20px;
+                background-color: #006400;  /* Dark green */
+                color: white;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: #008000;  /* Slightly lighter dark green on hover */
+            }
+            QPushButton:pressed {
+                background-color: #004d00;  /* Even darker when pressed */
+            }
+        """)
         left_layout.addWidget(self.viewSimulationBtn)
         
         # Add to splitter
@@ -105,5 +121,3 @@ class Ui_SimulationSetup(object):
 
         # Final setup
         SimulationSetup.setCentralWidget(self.centralwidget)
-        
-       
