@@ -30,9 +30,7 @@ class Ui_Home(object):
         # Description
         self.descriptionLabel = QtWidgets.QLabel(
             "<h2>About LandEvolve</h2>"
-            "<p>LandEvolve is a professional landscape evolution modeling tool that enables researchers "
-            "to simulate, analyze, and visualize Earth surface processes. It supports scenario-based "
-            "forecasting and long-term terrain change analysis.</p>"
+            "<p>LandEvolve is a research-oriented landscape evolution modelling tool developed on top of the Python-based Landlab library. It allows researchers to simulate, analyze, and visualize Earth surface processes, with a focus on scenario-based forecasting and long-term terrain change analysis.</p>"
         )
         self.descriptionLabel.setWordWrap(True)
         self.descriptionLabel.setAlignment(QtCore.Qt.AlignmentFlag.AlignTop)
