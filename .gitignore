@@ -22,3 +22,5 @@ resources/outputs/
 # Common extras
 .DS_Store
 .pytest_cache/
+
+*.tif
