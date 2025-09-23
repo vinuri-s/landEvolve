@@ -24,3 +24,4 @@ resources/outputs/
 .pytest_cache/
 
 *.tif
+resources/inputs/**/*.tif
