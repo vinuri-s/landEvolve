@@ -9,7 +9,7 @@ from views.add_component import AddComponentDlg
 from views.ui_generated.simulation import Ui_SimulationSetup
 import os
 import logging
-from views.simulation_results import SimulationResultsWindow  # Add import
+from views.simulation_results import SimulationResultsWindow  # Updated import
 from PyQt6 import QtWidgets
 from PyQt6 import QtCore
 
@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 class SimulationWindow(QMainWindow):
     DEFAULT_PERIOD = 100
     DEFAULT_TIME_STEP = 10
+    
     def __init__(self):
         super().__init__()
         
@@ -37,6 +38,24 @@ class SimulationWindow(QMainWindow):
         self.ui.compTableWidget.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.ui.compTableWidget.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
 
+        # Style the Run Simulation button with dark green
+        self.ui.viewSimulationBtn.setStyleSheet("""
+            QPushButton {
+                font-size: 14px;
+                font-weight: bold;
+                padding: 10px 20px;
+                background-color: #006400;
+                color: white;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: #008000;
+            }
+            QPushButton:pressed {
+                background-color: #004d00;
+            }
+        """)
+        
         # Configure WebEngineView settings
         self.configure_web_engine()
         
@@ -70,10 +89,22 @@ class SimulationWindow(QMainWindow):
             QMessageBox.warning(self, "No Components", "Please add at least one component before viewing the simulation.")
             return
         
-        # Here you would typically start the simulation with the added components
-        print("Starting simulation with components:", self.added_components)
-        self.start_simulation()
+        # Collect simulation parameters
+        sim_params = self.collect_simulation_params()
+        if not sim_params:
+            return
         
+        # Immediately show results window with progress indicator
+        self.show_simulation_results(sim_params)
+        
+    def show_simulation_results(self, sim_params):
+        """Show simulation results window immediately"""
+        self.results_window = SimulationResultsWindow(sim_params, self.controller)
+        self.results_window.show()
+        
+        # Optional: minimize or hide the setup window
+        self.showMinimized()
+
     def load_initial_data(self):
         # Set initial/default values for spin boxes
         self.ui.simulationPeriodLineEdit.setText(str(self.DEFAULT_PERIOD))
@@ -122,18 +153,12 @@ class SimulationWindow(QMainWindow):
         # Column 1: Component description
         self.ui.compTableWidget.setItem(row, 1, QTableWidgetItem(component.description or "No description"))
 
-        # Optional: Column 2: Parameters summary
-        # param_summary = ", ".join(f"{k}={v}" for k, v in form_data.items())
-        # self.ui.compTableWidget.setItem(row, 2, QTableWidgetItem(param_summary))
-
         # Add Remove button in last column
         remove_btn = QPushButton("Remove")
         remove_btn.clicked.connect(lambda _, r=row: self.remove_component_row(r))
         self.ui.compTableWidget.setCellWidget(row, 2, remove_btn)
 
-
         
-    
     def remove_component_row(self, row):
         comp_id = self.added_components[row]['component'].id
         self.added_components = [c for c in self.added_components if c['component'].id != comp_id]
@@ -153,7 +178,7 @@ class SimulationWindow(QMainWindow):
             # Load Google Maps if coordinates available
             if hasattr(self.selected_location, "latitude") and hasattr(self.selected_location, "longitude"):
                 if self.selected_location.latitude and self.selected_location.longitude:
-                    self.load_leaflet_map(  # Changed from load_google_maps
+                    self.load_leaflet_map(
                         self.selected_location.latitude,
                         self.selected_location.longitude
                     )
@@ -261,30 +286,6 @@ class SimulationWindow(QMainWindow):
         
         session.close()
 
-    def start_simulation(self):
-        sim_params = self.collect_simulation_params()
-        if not sim_params:
-            return
-        
-        try:
-            # Show loading indicator
-            QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.CursorShape.WaitCursor)
-            
-            # Run simulation
-            result = self.controller.run_simulation(sim_params)
-            
-            # Show results window
-            self.results_window = SimulationResultsWindow(result['results'])
-            self.results_window.show()
-            
-        except Exception as e:
-            QMessageBox.critical(
-                self, "Simulation Error",
-                f"Error during simulation:\n{str(e)}"
-            )
-        finally:
-            QtWidgets.QApplication.restoreOverrideCursor()        
-        
     def collect_simulation_params(self):
         """Collect all simulation parameters into a dict"""
         sim_obj = {}
