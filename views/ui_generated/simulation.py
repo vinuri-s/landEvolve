@@ -17,7 +17,7 @@ class Ui_SimulationSetup(object):
         self.splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
         self.mainLayout.addWidget(self.splitter, 1)  # Takes available space
 
-        # --- Left Panel (Location Setup) ---
+        # --- Left Panel (Location Setup + Simulation Components + Button) ---
         left_container = QtWidgets.QWidget()
         left_layout = QtWidgets.QVBoxLayout(left_container)
         left_layout.setContentsMargins(0, 0, 0, 0)
@@ -51,33 +51,17 @@ class Ui_SimulationSetup(object):
         self.timeStepLineEdit = QtWidgets.QLineEdit()
         location_form.addRow(self.timeStepLabel, self.timeStepLineEdit)
         
-        # Description
+        # Description - with more vertical space
         self.descriptionLabel = QtWidgets.QLabel("Description:")
         self.descriptionTextEdit = QtWidgets.QTextEdit()
         self.descriptionTextEdit.setReadOnly(True)
-        self.descriptionTextEdit.setMaximumHeight(30)   # Limit height to 80 pixels
+        self.descriptionTextEdit.setMinimumHeight(80)   # Increased minimum height
+        self.descriptionTextEdit.setMaximumHeight(120)  # Increased maximum height
         location_form.addRow(self.descriptionLabel, self.descriptionTextEdit)
-        
-        # Google Earth view
-        self.earthGroup = QtWidgets.QGroupBox("Location Preview")
-        left_layout.addWidget(self.earthGroup, 1)  # Takes available space
-        
-        earth_layout = QtWidgets.QVBoxLayout(self.earthGroup)
-        self.webView = QWebEngineView()
-        earth_layout.addWidget(self.webView)
-        
-        # Add to splitter
-        self.splitter.addWidget(left_container)
-
-        # --- Right Panel (Component Selection) ---
-        right_container = QtWidgets.QWidget()
-        right_layout = QtWidgets.QVBoxLayout(right_container)
-        right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.setSpacing(12)
         
         # Components group
         self.componentsGroup = QtWidgets.QGroupBox("Simulation Components")
-        right_layout.addWidget(self.componentsGroup, 1)  # Takes available space
+        left_layout.addWidget(self.componentsGroup, 1)  # Takes available space
         
         components_layout = QtWidgets.QVBoxLayout(self.componentsGroup)
         
@@ -92,18 +76,34 @@ class Ui_SimulationSetup(object):
         self.addComponentBtn = QtWidgets.QPushButton("Add Component")
         components_layout.addWidget(self.addComponentBtn)
         
+        # Run Simulation button - in left panel
+        self.viewSimulationBtn = QtWidgets.QPushButton("Run Simulation")
+        self.viewSimulationBtn.setMinimumHeight(40)
+        left_layout.addWidget(self.viewSimulationBtn)
+        
+        # Add to splitter
+        self.splitter.addWidget(left_container)
+
+        # --- Right Panel (Location Preview) ---
+        right_container = QtWidgets.QWidget()
+        right_layout = QtWidgets.QVBoxLayout(right_container)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Google Earth view - takes the whole right side
+        self.earthGroup = QtWidgets.QGroupBox("Location Preview")
+        right_layout.addWidget(self.earthGroup)
+        
+        earth_layout = QtWidgets.QVBoxLayout(self.earthGroup)
+        self.webView = QWebEngineView()
+        earth_layout.addWidget(self.webView)
+        
         # Add to splitter
         self.splitter.addWidget(right_container)
 
-        # Set initial splitter sizes
-        self.splitter.setSizes([400, 400])
-        
-        # --- Bottom Button ---
-        self.viewSimulationBtn = QtWidgets.QPushButton("Run Simulation")
-        self.viewSimulationBtn.setMinimumHeight(40)
-        self.mainLayout.addWidget(self.viewSimulationBtn)
+        # Set initial splitter sizes - give more space to the right side (preview)
+        self.splitter.setSizes([300, 500])  # Left: 300, Right: 500
 
         # Final setup
         SimulationSetup.setCentralWidget(self.centralwidget)
         
-        # Remove hard-coded styling - will use QSS files instead
+       
