@@ -1,11 +1,22 @@
+import matplotlib
+matplotlib.use('Agg') 
+
 import os
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import colors
 import rasterio
+from PyQt6.QtCore import QObject, pyqtSignal
 
 from landlab.components import FlowAccumulator, Space, SpaceLargeScaleEroder
 from engine.models.raster_model import RasterModel
+
+
+class SimulationProgress(QObject):
+    """Progress tracking for simulation"""
+    progress_updated = pyqtSignal(int, str)  # percentage, status message
+    simulation_finished = pyqtSignal(dict)   # results
+    simulation_error = pyqtSignal(str)       # error message
 
 class SpaceComponent:
     def __init__(self, grid, **params):
@@ -279,12 +290,13 @@ class SpaceLargeScaleEroderComponent:
             plt.close()
             raise        
 
-def run_simulation(sim_obj, simulation_name):
+def run_simulation(sim_obj, simulation_name, progress_callback=None):
+    """Run simulation with progress tracking"""
     input_tif = sim_obj['input_tiff_path']
     total_time = sim_obj['simulation_period']
     dt = sim_obj['time_step']
     selected_components = sim_obj['selected_components']
-    
+
     # Check if any component needs geology data
     geology_file = None
     for comp_config in selected_components:
@@ -297,6 +309,9 @@ def run_simulation(sim_obj, simulation_name):
     os.makedirs(output_dir, exist_ok=True)
 
     # ========== GRID INITIALIZATION ========== #
+    if progress_callback:
+        progress_callback(5, "Loading DEM and initializing grid...")
+
     print("Loading DEM:", input_tif)
     try:
         # Use RasterModel class to read the GeoTIFF and get the grid
@@ -305,7 +320,7 @@ def run_simulation(sim_obj, simulation_name):
         z = grid.at_node['topographic__elevation'].copy()
         print(f"Grid created with {grid.number_of_nodes} nodes")
 
-       # 1. Set outlet boundary
+        # Set outlet boundary
         outlet_id = np.argmin(grid.at_node['topographic__elevation'])
         grid.set_watershed_boundary_condition_outlet_id(
             outlet_id,
@@ -315,11 +330,15 @@ def run_simulation(sim_obj, simulation_name):
         print(f"Outlet set at node {outlet_id}")
 
     except Exception as e:
-        print(f"Grid initialization failed: {str(e)}")
+        error_msg = f"Grid initialization failed: {str(e)}"
+        if progress_callback:
+            progress_callback(0, error_msg)
         raise
 
-
     # ========== COMPONENT INITIALIZATION ========== #
+    if progress_callback:
+        progress_callback(15, "Initializing simulation components...")
+
     flow_accumulator = None
     space_component = None
     space_large_component = None
@@ -331,12 +350,15 @@ def run_simulation(sim_obj, simulation_name):
 
         if name == 'FlowAccumulatorComponent':
             flow_accumulator = FlowAccumulatorComponent(grid, **params)
-        elif name == 'SpaceComponent':  
+        elif name == 'SpaceComponent':
             space_component = SpaceComponent(grid, **params)
-        elif name == 'SpaceLargeScaleEroderComponent':  
+        elif name == 'SpaceLargeScaleEroderComponent':
             space_large_component = SpaceLargeScaleEroderComponent(grid, **params)
 
     # ========== PRE-SIMULATION CHECKS ========== #
+    if progress_callback:
+        progress_callback(20, "Performing pre-simulation checks...")
+
     required_fields = [
         'topographic__elevation',
         'water__unit_flux_in',
@@ -346,11 +368,9 @@ def run_simulation(sim_obj, simulation_name):
     for field in required_fields:
         if field not in grid.at_node:
             print(f"WARNING: Missing field {field} - attempting to add")
-            # Add default values
             if field == 'soil__depth':
                 grid.add_ones(field, at='node', dtype=float)
             elif field == 'bedrock__elevation':
-                # Calculate bedrock elevation: surface - soil depth
                 surface = grid.at_node['topographic__elevation']
                 soil_depth = grid.at_node.get('soil__depth', np.ones(grid.number_of_nodes))
                 bedrock_elev = surface - soil_depth
@@ -366,36 +386,42 @@ def run_simulation(sim_obj, simulation_name):
     try:
         for step in range(num_steps):
             current_time += dt
-            print(f"\nStep {step+1}/{num_steps}, Time = {current_time:.1f}/{total_time:.1f}")
+
+            # Update progress (20% to 80% for simulation loop)
+            if progress_callback:
+                simulation_progress = 20 + (step / num_steps) * 60
+                progress_callback(
+                    int(simulation_progress),
+                    f"Running simulation... Step {step+1}/{num_steps} ({current_time:.1f}/{total_time:.1f} years)"
+                )
 
             if flow_accumulator:
                 flow_accumulator.run()
-            if space_component:  
+            if space_component:
                 space_component.run(dt)
-            if space_large_component:  
+            if space_large_component:
                 space_large_component.run(dt)
 
+            # Print progress every 10% of steps
             if step % max(1, num_steps // 10) == 0:
-                progress = current_time / total_time * 100
-                print(f"Progress: {progress:.1f}%")
-
-                plt.figure(figsize=(10, 6))
-                plt.imshow(grid.at_node['topographic__elevation'].reshape(grid.shape), cmap='terrain')
-                plt.colorbar(label='Elevation')
-                plt.title(f"Topography at step {step}")
-                plt.savefig(os.path.join(output_dir, f"step_{step}_topo.png"))
-                plt.close()
+                progress_percent = (step / num_steps) * 100
+                print(f"Progress: {progress_percent:.1f}%")
 
     except Exception as e:
-        print(f"Simulation failed at step {step}: {str(e)}")
+        error_msg = f"Simulation failed at step {step}: {str(e)}"
+        if progress_callback:
+            progress_callback(0, error_msg)
         grid.save(os.path.join(output_dir, "error_grid.nc"))
         np.savetxt(os.path.join(output_dir, "error_elevation.txt"), grid.at_node['topographic__elevation'])
         raise
 
     # ========== OUTPUT PROCESSING ========== #
+    if progress_callback:
+        progress_callback(85, "Processing simulation results...")
+
     print("Simulation completed successfully. Saving results...")
 
-     # Plot initial topography
+    # Plot initial topography
     plt.figure(figsize=(10, 6))
     plt.imshow(z.reshape(grid.shape), cmap='terrain')
     plt.colorbar(label='Elevation (m)')
@@ -407,30 +433,40 @@ def run_simulation(sim_obj, simulation_name):
     final_elev = grid.at_node['topographic__elevation']
     np.savetxt(os.path.join(output_dir, "final_elevation.txt"), final_elev)
 
+    # Final topography
+    if progress_callback:
+        progress_callback(90, "Generating final topography plot...")
+
     plt.figure(figsize=(12, 8))
     plt.imshow(final_elev.reshape(grid.shape), cmap='terrain')
     plt.colorbar(label='Elevation (m)')
     plt.title("Final Topography")
-    plt.savefig(os.path.join(output_dir, "final_topo.png"))
+    final_plot_path = os.path.join(output_dir, "final_topo.png")
+    plt.savefig(final_plot_path)
     plt.close()
+
+    # Topographic change
+    if progress_callback:
+        progress_callback(95, "Generating change visualization...")
 
     diff = final_elev - z
     plt.figure(figsize=(12, 8))
     plt.imshow(diff.reshape(grid.shape), cmap='coolwarm', vmin=-1, vmax=1)
     plt.colorbar(label='Elevation Change (m)')
     plt.title("Topographic Change")
-    plt.savefig(os.path.join(output_dir, "topo_change.png"))
+    change_plot_path = os.path.join(output_dir, "topo_change.png")
+    plt.savefig(change_plot_path)
     plt.close()
 
-    # ========== SOIL TRANSPORT MAP ========== #
+    # Soil transport map
+    if progress_callback:
+        progress_callback(98, "Generating soil transport map...")
+
+    soil_transport_path = None
     if 'sediment__flux' in grid.at_node:
         sediment_flux = grid.at_node['sediment__flux'].reshape(grid.shape)
-
         plt.figure(figsize=(12, 8))
-
-        # Use LogNorm to stretch the color scale for small and large values
         norm = colors.LogNorm(vmin=max(1e-12, np.nanmin(sediment_flux)), vmax=np.nanmax(sediment_flux))
-
         plt.imshow(sediment_flux, cmap='viridis', norm=norm)
         plt.colorbar(label='Sediment Flux (m³/m²/s)')
         plt.title("Soil Transport Map (Sediment Flux)")
@@ -440,15 +476,14 @@ def run_simulation(sim_obj, simulation_name):
     else:
         print("WARNING: 'sediment__flux' field not found. Soil transport map will not be plotted.")
 
+    if progress_callback:
+        progress_callback(100, "Simulation completed successfully!")
 
     return {
         "output_dir": os.path.abspath(output_dir),
-        "initial_plot": input_plot_path,  # Add this
-        "final_plot": os.path.join(output_dir, "final_topo.png"),
-        "change_plot": os.path.join(output_dir, "topo_change.png"),
+        "initial_plot": input_plot_path,
+        "final_plot": final_plot_path,
+        "change_plot": change_plot_path,
         "soil_transport_plot": soil_transport_path,
         "input_tif": input_plot_path
     }
-
-
-

@@ -4,13 +4,12 @@ from db.database import Database
 from db.db_session import DatabaseSession
 from db.models import Location
 from db.respository import LocationRepository
-from engine.engine_interface import run_simulation_engine
+from engine.engine_interface import run_simulation_engine, SimulationWorker
 
 class SimulationController:
     def __init__(self):
         super().__init__()
         self.db_session = DatabaseSession().get_session()
-
         self.location_repo = LocationRepository(self.db_session)
 
     def get_locations(self):
@@ -23,7 +22,12 @@ class SimulationController:
         return self.location_repo.get_resolutions_by_location(location_id)
     
     def run_simulation(self, sim_params):
+        """Run simulation synchronously (for backward compatibility)"""
         return run_simulation_engine(sim_params)
+    
+    def create_simulation_worker(self, sim_params):
+        """Create a simulation worker for asynchronous execution with progress tracking"""
+        return SimulationWorker(sim_params)
     
     def get_next_simulation_number(self):
         """Get next available simulation number"""
