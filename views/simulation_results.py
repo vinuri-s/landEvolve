@@ -14,8 +14,7 @@ class SimulationResultsWindow(QMainWindow):
         self.sim_params = sim_params
         self.simulation_controller = simulation_controller
         self.image_paths = {}
-        self.current_step = 0
-        self.total_steps = 10  # Simulate progress steps
+        self.simulation_worker = None
         
         # Set window title with simulation number
         sim_number = sim_params.get('simulation_number', 1)
@@ -24,51 +23,43 @@ class SimulationResultsWindow(QMainWindow):
         # Connect 3D button
         self.ui.view3DButton.clicked.connect(self.view_in_3d)
         
-        # Start simulation progress
-        self.start_simulation_progress()
+        # Start real simulation with progress tracking
+        self.start_real_simulation()
     
-    def start_simulation_progress(self):
-        """Start the simulation progress simulation"""
-        self.ui.statusLabel.setText("Running simulation...")
-        self.timer = QTimer()
-        self.timer.timeout.connect(self.update_progress)
-        self.timer.start(500)  # Update every 500ms
-    
-    def update_progress(self):
-        """Update progress bar and status"""
-        self.current_step += 1
-        progress = int((self.current_step / self.total_steps) * 100)
-        self.ui.progressBar.setValue(progress)
+    def start_real_simulation(self):
+        """Start the simulation with real progress tracking"""
+        self.ui.statusLabel.setText("Initializing simulation...")
+        self.ui.progressBar.setValue(0)
         
-        # Update status messages based on progress
-        if self.current_step < 3:
-            self.ui.statusLabel.setText("Initializing simulation components...")
-        elif self.current_step < 6:
-            self.ui.statusLabel.setText("Running landscape evolution model...")
-        elif self.current_step < 9:
-            self.ui.statusLabel.setText("Processing results and generating visualizations...")
-        else:
-            self.ui.statusLabel.setText("Finalizing simulation output...")
+        # Create and configure simulation worker
+        self.simulation_worker = self.simulation_controller.create_simulation_worker(self.sim_params)
+        self.simulation_worker.progress_updated.connect(self.update_progress)
+        self.simulation_worker.finished.connect(self.on_simulation_finished)
+        self.simulation_worker.error_occurred.connect(self.on_simulation_error)
         
-        # When progress is complete, load actual results
-        if self.current_step >= self.total_steps:
-            self.timer.stop()
-            self.run_actual_simulation()
+        # Start the simulation in a separate thread
+        self.simulation_worker.start()
     
-    def run_actual_simulation(self):
-        """Run the actual simulation and load results"""
-        try:
-            # Run the actual simulation
-            result = self.simulation_controller.run_simulation(self.sim_params)
-            self.image_paths = result['results']
-            
-            # Update UI with results
-            self.show_results()
-            
-        except Exception as e:
-            self.ui.statusLabel.setText(f"Simulation error: {str(e)}")
-            self.ui.progressBar.setValue(0)
+    def update_progress(self, percentage, status_message):
+        """Update progress bar and status with real simulation progress"""
+        self.ui.progressBar.setValue(percentage)
+        self.ui.statusLabel.setText(status_message)
     
+    def on_simulation_finished(self, result):
+        """Handle simulation completion"""
+        self.image_paths = result['results']
+        self.show_results()
+    
+    def on_simulation_error(self, error_message):
+        """Handle simulation errors"""
+        self.ui.statusLabel.setText(f"Simulation error: {error_message}")
+        self.ui.progressBar.setValue(0)
+        
+        # Show error message to user
+        from PyQt6.QtWidgets import QMessageBox
+        QMessageBox.critical(self, "Simulation Error", 
+                           f"The simulation encountered an error:\n\n{error_message}")
+
     def show_results(self):
         """Display the simulation results"""
         # Hide the entire status group to remove top panel
@@ -89,8 +80,6 @@ class SimulationResultsWindow(QMainWindow):
             self.load_image(self.ui.soilImageView, self.image_paths['soil_transport_plot'], "Soil transport data not available")
         else:
             self.ui.soilImageView.setText("Soil transport data not available")
-
-
 
     def load_image(self, label, path, error_message):
         """Load an image into a QLabel with better scaling"""
@@ -142,5 +131,10 @@ class SimulationResultsWindow(QMainWindow):
             "This will open the results in ArcGIS Platform for 3D exploration.\n\n"
             "Feature coming soon!"
         )
-        # TODO: Integrate with ArcGIS platform
-        # This is where you'll add the ArcGIS integration code
+
+    def closeEvent(self, event):
+        """Handle window close event"""
+        if self.simulation_worker and self.simulation_worker.isRunning():
+            self.simulation_worker.terminate()
+            self.simulation_worker.wait()
+        super().closeEvent(event)
