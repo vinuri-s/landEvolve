@@ -130,7 +130,8 @@ class SpaceComponent:
             raise
 
 class FlowAccumulatorComponent:
-    def __init__(self, grid, flow_director='D8', runoff_rate=1.0):
+    def __init__(self, grid, flow_director='D8', runoff_rate=1.0,
+                 depression_finder='DepressionFinderAndRouter'):
         self.grid = grid
 
         # Add water input field if not present
@@ -141,28 +142,51 @@ class FlowAccumulatorComponent:
                     runoff_rate * np.ones(grid.number_of_nodes),
                     at='node'
                 )
-        
-        # Initialize FlowAccumulator with the specified flow_director
+
+        # Check and close internal no-data nodes
+        if 'topographic__elevation' in grid.at_node:
+            elevation = grid.at_node['topographic__elevation']
+            no_data_nodes = np.where(
+                np.isnan(elevation) | (elevation == -9999.0)
+            )[0]
+            for node in no_data_nodes:
+                grid.status_at_node[node] = grid.BC_NODE_IS_CLOSED
+
+            # Ensure at least one open boundary node (the outlet)
+            perimeter_nodes = grid.perimeter_nodes
+            valid_perimeter_nodes = [n for n in perimeter_nodes if n not in no_data_nodes]
+            if not valid_perimeter_nodes:
+                raise RuntimeError("No valid perimeter nodes to set as outlet")
+            outlet = valid_perimeter_nodes[np.argmin(elevation[valid_perimeter_nodes])]
+            grid.status_at_node[outlet] = grid.BC_NODE_IS_FIXED_VALUE
+            print(f"Outlet set at node {outlet}")
+
+        # Initialize FlowAccumulator with depression finder
         self.flow_accumulator = FlowAccumulator(
             grid,
-            flow_director=flow_director
+            flow_director=flow_director,
+            depression_finder=depression_finder
         )
-        print(f"FlowAccumulator initialized with flow_director: {flow_director}")
+        print(f"FlowAccumulator initialized with flow_director: {flow_director}, "
+              f"depression_finder: {depression_finder}")
 
-        # Optional: print flow receivers once after initialization for sanity check
-        self.flow_accumulator.run_one_step()
-        if 'flow__receiver_node' in grid.at_node:
-            print("Sample flow receivers (post-initialization):", grid.at_node['flow__receiver_node'][:10])
-        else:
-            print("WARNING: flow__receiver_node field not created!")
+        # Run once safely and ensure field exists
+        try:
+            self.flow_accumulator.run_one_step()
+            if 'flow__receiver_node' not in grid.at_node:
+                raise RuntimeError("flow__receiver_node not created after initialization")
+            print("Sample flow receivers (post-initialization):", 
+                  grid.at_node['flow__receiver_node'][:10])
+        except Exception as e:
+            raise RuntimeError(f"FlowAccumulator initialization failed: {e}")
 
     def run(self, dt=None):
+        """Run one step of flow accumulation"""
         try:
             self.flow_accumulator.run_one_step()
             print("FlowAccumulator ran successfully")
         except Exception as e:
-            print(f"Error in FlowAccumulator: {e}")
-            raise
+            raise RuntimeError(f"Error in FlowAccumulator: {e}")
 
 
 class SpaceLargeScaleEroderComponent:
