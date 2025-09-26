@@ -15,3 +15,5 @@ with rasterio.open("resources/inputs/wairewa/wairewa_catchment_8m.tif") as src:
 
 with rasterio.open("resources/inputs/wairewa/wairewa_catchment_1m.tif") as src:
     print(src.dtypes, src.shape)
+
+
