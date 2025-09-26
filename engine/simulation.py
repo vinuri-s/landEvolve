@@ -320,13 +320,30 @@ def run_simulation(sim_obj, simulation_name, progress_callback=None):
         z = grid.at_node['topographic__elevation'].copy()
         print(f"Grid created with {grid.number_of_nodes} nodes")
 
-        # Set outlet boundary
-        outlet_id = np.argmin(grid.at_node['topographic__elevation'])
+        # ===== SET WATERSHED BOUNDARY ===== #
+        elevation = grid.at_node['topographic__elevation']
+        no_data_value = -9999.0  # DEM no-data
+
+        # Create a masked array to ignore no_data values
+        masked_elev = np.ma.masked_equal(elevation, no_data_value)
+
+        # Find the outlet as the node with minimum valid elevation
+        outlet_id = np.argmin(masked_elev)
+
+        # Set the watershed boundary
+        # - automatically sets all perimeter nodes as closed
+        # - sets the outlet node as BC_NODE_IS_FIXED_VALUE
         grid.set_watershed_boundary_condition_outlet_id(
             outlet_id,
-            grid.at_node['topographic__elevation'],
-            -9999.0
+            elevation,
+            no_data_value
         )
+
+        # Optional: ensure any no_data nodes inside the grid are set as closed
+        no_data_nodes = np.where(elevation == no_data_value)[0]
+        for node in no_data_nodes:
+            grid.status_at_node[node] = grid.BC_NODE_IS_CLOSED
+
         print(f"Outlet set at node {outlet_id}")
 
     except Exception as e:
