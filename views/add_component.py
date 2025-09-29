@@ -77,13 +77,3 @@ class AddComponentDlg(QDialog):
         if layout is None:
             layout = QVBoxLayout(self.ui.dynamic_frame)
         layout.addWidget(self.dynamic_form)
-            
-        
-
-        
-        
-        
-        
-        
-
-    
