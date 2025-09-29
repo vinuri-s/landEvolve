@@ -8,7 +8,7 @@ from matplotlib import colors
 import rasterio
 from PyQt6.QtCore import QObject, pyqtSignal
 
-from landlab.components import FlowAccumulator, Space, SpaceLargeScaleEroder
+from landlab.components import FlowAccumulator, Space, SpaceLargeScaleEroder, DepthDependentDiffuser
 from engine.models.raster_model import RasterModel
 
 
@@ -288,6 +288,50 @@ class SpaceLargeScaleEroderComponent:
             plt.title("Soil Depth at Error Point in SpaceLargeScaleEroderComponent")
             plt.savefig("space_large_error_soil_depth.png")
             plt.close()
+            raise
+
+
+class DepthDependentDiffuserComponent:
+    def __init__(self, grid, **params):
+        self.grid = grid
+        
+        # Default parameters
+        default_params = {
+            "linear_diffusivity": 0.01,       # m²/yr
+            "soil_transport_decay_depth": 0.5 # m
+        }
+        
+        final_params = {**default_params, **params}
+        
+        # Ensure required fields
+        self._add_required_fields()
+        
+        # Initialize component
+        self.diffuser = DepthDependentDiffuser(grid, **final_params)
+        print(f"DepthDependentDiffuser initialized with parameters: {final_params}")
+    
+    def _add_required_fields(self):
+        """Ensure required fields exist."""
+        if "soil__depth" not in self.grid.at_node:
+            self.grid.add_ones("soil__depth", at="node", dtype=float)
+            print("Added 'soil__depth' field initialized to 1.0m")
+
+        if "soil_production__rate" not in self.grid.at_node:
+            # Default: constant production (e.g., 0.0001 m/yr)
+            self.grid.add_field(
+                "soil_production__rate",
+                0.0001 * np.ones(self.grid.number_of_nodes),
+                at="node",
+                dtype=float
+            )
+            print("Added 'soil_production__rate' field initialized to 1e-4 m/yr")
+
+    def run(self, dt):
+        try:
+            self.diffuser.run_one_step(dt)
+            print("DepthDependentDiffuser ran successfully")
+        except Exception as e:
+            print(f"Error in DepthDependentDiffuser: {e}")
             raise        
 
 def run_simulation(sim_obj, simulation_name, progress_callback=None):
@@ -359,6 +403,7 @@ def run_simulation(sim_obj, simulation_name, progress_callback=None):
     flow_accumulator = None
     space_component = None
     space_large_component = None
+    depth_diffuser_component = None
 
     for comp_config in selected_components:
         comp_meta = comp_config['component']
@@ -371,6 +416,8 @@ def run_simulation(sim_obj, simulation_name, progress_callback=None):
             space_component = SpaceComponent(grid, **params)
         elif name == 'SpaceLargeScaleEroderComponent':
             space_large_component = SpaceLargeScaleEroderComponent(grid, **params)
+        elif name == 'DepthDependentDiffuserComponent':
+            depth_diffuser_component = DepthDependentDiffuserComponent(grid, **params)
 
     # ========== PRE-SIMULATION CHECKS ========== #
     if progress_callback:
@@ -418,6 +465,8 @@ def run_simulation(sim_obj, simulation_name, progress_callback=None):
                 space_component.run(dt)
             if space_large_component:
                 space_large_component.run(dt)
+            if depth_diffuser_component:
+                depth_diffuser_component.run(dt)
 
             # Print progress every 10% of steps
             if step % max(1, num_steps // 10) == 0:
