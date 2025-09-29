@@ -31,6 +31,7 @@ class RasterModel:
                 if nodata_value is not None:
                     elevation_data[elevation_data == nodata_value] = np.nan
 
+                 # extracts the spatial information (location, CRS, and pixel size) from the GeoTIFF so Landlab knows how the grid fits in the real world.
                 self.transform = src.transform  # Geo-transform matrix
                 self.crs = src.crs if src.crs else None  # Handle missing CRS
                 xy_spacing = src.res[0]  # Extract pixel spacing (assumes square pixels)
