@@ -22,5 +22,3 @@ class ComponentController:
                 item['validation'] = param.validation
             config.append(item)
         return config
-    
-    
