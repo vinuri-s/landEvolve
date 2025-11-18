@@ -4,39 +4,87 @@ class Ui_SimulationResults(object):
     def setupUi(self, SimulationResults):
         SimulationResults.setObjectName("SimulationResults")
         SimulationResults.setWindowTitle("Simulation Results")
-        SimulationResults.resize(1400, 900)  # Increased window size
+        SimulationResults.resize(1400, 900)
         
         self.centralwidget = QtWidgets.QWidget(SimulationResults)
         self.verticalLayout = QtWidgets.QVBoxLayout(self.centralwidget)
         self.verticalLayout.setContentsMargins(20, 20, 20, 20)
         self.verticalLayout.setSpacing(15)
         
+        # Top bar with stats icon and status
+        self.topBarLayout = QtWidgets.QHBoxLayout()
+        
+        # Stats icon (initially hidden)
+        self.statsIconButton = QtWidgets.QPushButton()
+        self.statsIconButton.setFixedSize(32, 32)
+        self.statsIconButton.setVisible(False)
+        self.statsIconButton.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                border: none;
+                padding: 5px;
+            }
+            QPushButton:hover {
+                background-color: #e0e0e0;
+                border-radius: 3px;
+            }
+        """)
+        
+        # Set info icon
+        icon = QtGui.QIcon()
+        # You can use a built-in icon or load a custom one
+        # For now using text, you can replace with actual icon
+        self.statsIconButton.setText("📊")
+        self.statsIconButton.setToolTip("View Simulation Statistics")
+        
+        self.topBarLayout.addWidget(self.statsIconButton)
+        self.topBarLayout.addStretch()
+        
+        self.verticalLayout.addLayout(self.topBarLayout)
+        
         # Status section
         self.statusGroup = QtWidgets.QGroupBox("Simulation Status")
         self.statusLayout = QtWidgets.QVBoxLayout(self.statusGroup)
         
+        # Status label
         self.statusLabel = QtWidgets.QLabel("Initializing simulation...")
         self.statusLabel.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         self.statusLabel.setStyleSheet("font-size: 14px; font-weight: bold; padding: 10px;")
         self.statusLayout.addWidget(self.statusLabel)
         
+        # Progress bar
         self.progressBar = QtWidgets.QProgressBar()
         self.progressBar.setRange(0, 100)
         self.progressBar.setValue(0)
         self.progressBar.setMinimumHeight(25)
         self.statusLayout.addWidget(self.progressBar)
         
+        # Live stats display
+        self.liveStatsLayout = QtWidgets.QHBoxLayout()
+        
+        self.timeLabel = QtWidgets.QLabel("Time: 00:00:00")
+        self.timeLabel.setStyleSheet("font-size: 12px; color: #666;")
+        
+        self.ramLabel = QtWidgets.QLabel("RAM: 0 MB")
+        self.ramLabel.setStyleSheet("font-size: 12px; color: #666;")
+        
+        self.liveStatsLayout.addWidget(self.timeLabel)
+        self.liveStatsLayout.addStretch()
+        self.liveStatsLayout.addWidget(self.ramLabel)
+        
+        self.statusLayout.addLayout(self.liveStatsLayout)
+        
         self.verticalLayout.addWidget(self.statusGroup)
         
         # Images section (initially hidden)
         self.imagesGroup = QtWidgets.QGroupBox("Simulation Results")
-        self.imagesGroup.setVisible(False)  # Hide initially
+        self.imagesGroup.setVisible(False)
         self.imagesLayout = QtWidgets.QVBoxLayout(self.imagesGroup)
         
-        # Create a scroll area for the images to handle large layouts
+        # Create a scroll area for the images
         self.scrollArea = QtWidgets.QScrollArea()
         self.scrollArea.setWidgetResizable(True)
-        self.scrollArea.setMinimumHeight(600)  # Minimum height for scroll area
+        self.scrollArea.setMinimumHeight(600)
         
         # Container for the image grid
         self.imagesContainer = QtWidgets.QWidget()
@@ -44,7 +92,7 @@ class Ui_SimulationResults(object):
         self.gridLayout.setContentsMargins(10, 10, 10, 10)
         self.gridLayout.setSpacing(15)
         
-        # Create image labels with larger minimum sizes
+        # Create image labels
         self.inputImageLabel = QtWidgets.QLabel("Input DEM")
         self.inputImageLabel.setStyleSheet("font-size: 14px; font-weight: bold;")
         self.outputImageLabel = QtWidgets.QLabel("Output Topography")
@@ -54,10 +102,10 @@ class Ui_SimulationResults(object):
         self.soilImageLabel = QtWidgets.QLabel("Soil Transport")
         self.soilImageLabel.setStyleSheet("font-size: 14px; font-weight: bold;")
         
-        # Create image displays with much larger sizes
+        # Create image displays
         self.inputImageView = QtWidgets.QLabel()
         self.inputImageView.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-        self.inputImageView.setMinimumSize(500, 400)  # Much larger
+        self.inputImageView.setMinimumSize(500, 400)
         self.inputImageView.setStyleSheet("""
             QLabel {
                 border: 2px solid #ccc; 
@@ -99,7 +147,7 @@ class Ui_SimulationResults(object):
             }
         """)
         
-        # Add to grid layout - 2x2 grid for better space utilization
+        # Add to grid layout
         self.gridLayout.addWidget(self.inputImageLabel, 0, 0, QtCore.Qt.AlignmentFlag.AlignCenter)
         self.gridLayout.addWidget(self.inputImageView, 1, 0)
         self.gridLayout.addWidget(self.outputImageLabel, 0, 1, QtCore.Qt.AlignmentFlag.AlignCenter)
@@ -109,7 +157,7 @@ class Ui_SimulationResults(object):
         self.gridLayout.addWidget(self.soilImageLabel, 2, 1, QtCore.Qt.AlignmentFlag.AlignCenter)
         self.gridLayout.addWidget(self.soilImageView, 3, 1)
         
-        # Set stretch factors to make images expand properly
+        # Set stretch factors
         self.gridLayout.setRowStretch(1, 1)
         self.gridLayout.setRowStretch(3, 1)
         self.gridLayout.setColumnStretch(0, 1)
@@ -118,14 +166,14 @@ class Ui_SimulationResults(object):
         self.scrollArea.setWidget(self.imagesContainer)
         self.imagesLayout.addWidget(self.scrollArea)
         
-        self.verticalLayout.addWidget(self.imagesGroup, 1)  # Take most of the space
+        self.verticalLayout.addWidget(self.imagesGroup, 1)
         
         # 3D View button (initially hidden)
         self.buttonLayout = QtWidgets.QHBoxLayout()
         self.view3DButton = QtWidgets.QPushButton("View in 3D (ArcGIS)")
         self.view3DButton.setMinimumHeight(45)
         self.view3DButton.setMinimumWidth(200)
-        self.view3DButton.setVisible(False)  # Hide initially
+        self.view3DButton.setVisible(False)
         self.view3DButton.setStyleSheet("""
             QPushButton {
                 font-size: 16px;
