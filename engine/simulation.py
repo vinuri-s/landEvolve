@@ -212,16 +212,16 @@ class SpaceLargeScaleEroderComponent:
                     
                     # Map geology codes to erodibility values
                     erodibility_map = {
-                        1: 0.0000300,  # Example values
-                        2: 0.0002000,
-                        3: 0.0000003,
-                        4: 0.0003000,
-                        5: 0.0000300
+                        1: 0.003,  # Example values
+                        2: 0.00001,
+                        3: 0.0045,
+                        4: 0.003,
+                        5: 0.0045
                     }
                     
                     # Create K_br array based on geology codes
                     # Provide default erodibility if geology code not found
-                    default_erodibility = 1e-7  # you can adjust this baseline value
+                    default_erodibility = 1e-5  # you can adjust this baseline value
                     k_br_array = np.vectorize(lambda x: erodibility_map.get(x, default_erodibility))(geology_data)
 
                     # Assign to final_params
