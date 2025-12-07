@@ -12,6 +12,22 @@ from landlab.components import FlowAccumulator, Space, SpaceLargeScaleEroder, De
 from engine.models.raster_model import RasterModel
 
 
+def save_geotiff(filename, data, reference_tif):
+    """Save a 2D numpy array as a GeoTIFF using spatial metadata from an input DEM."""
+    with rasterio.open(reference_tif) as src:
+        profile = src.profile.copy()
+        profile.update({
+            "dtype": "float32",
+            "count": 1,
+            "compress": "lzw"
+        })
+
+    # Reshape to 2D
+    data_2d = data.reshape((profile["height"], profile["width"])).astype("float32")
+
+    with rasterio.open(filename, "w", **profile) as dst:
+        dst.write(data_2d, 1)
+
 class SimulationProgress(QObject):
     """Progress tracking for simulation"""
     progress_updated = pyqtSignal(int, str)  # percentage, status message
@@ -496,8 +512,16 @@ def run_simulation(sim_obj, simulation_name, progress_callback=None):
     plt.savefig(input_plot_path)
     plt.close()
 
+    # Save initial as GeoTIFF
+    initial_tif_path = os.path.join(output_dir, "initial_topo.tif")
+    save_geotiff(initial_tif_path, z, input_tif)
+
     final_elev = grid.at_node['topographic__elevation']
     np.savetxt(os.path.join(output_dir, "final_elevation.txt"), final_elev)
+
+    # Save final as GeoTIFF
+    final_tif_path = os.path.join(output_dir, "final_elevation.tif")
+    save_geotiff(final_tif_path, final_elev, input_tif)
 
     # Final topography
     if progress_callback:
@@ -523,6 +547,10 @@ def run_simulation(sim_obj, simulation_name, progress_callback=None):
     change_plot_path = os.path.join(output_dir, "topo_change.png")
     plt.savefig(change_plot_path)
     plt.close()
+
+    # Save difference map as GeoTIFF
+    difference_tif_path = os.path.join(output_dir, "elevation_difference.tif")
+    save_geotiff(difference_tif_path, diff, input_tif)
 
     # Soil transport map
     if progress_callback:
