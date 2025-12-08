@@ -1,0 +1,14 @@
+from app.services.base_service import BaseService
+from app.data.repositories.component_repository import ComponentRepository, ComponentParamRepository
+
+class ComponentService(BaseService):
+    def __init__(self, session=None):
+        super().__init__(session)
+        self.comp_repo = ComponentRepository(self.session)
+        self.param_repo = ComponentParamRepository(self.session)
+        
+    def get_all_components(self):
+        return self.comp_repo.get_all()
+        
+    def get_component_params(self, component_id):
+        return self.param_repo.get_by_component_id(component_id)

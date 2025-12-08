@@ -1,14 +1,17 @@
-# pylint: disable=E0611
-
-"""Main module for the app."""
-
 import sys
 from PyQt6.QtWidgets import QApplication
-from views.home_window import HomeWindow
-from themes import ThemeManager
+from app.ui.views.home_window import HomeWindow
+from app.ui.themes import ThemeManager
+from app.core.config import Config
+from app.data.database import db_manager
 
 def main():
     """Start the application, initialize theme, and show the main window."""
+    Config.init_directories()
+    
+    # Initialize database
+    db_manager.create_tables()
+
     app = QApplication(sys.argv)
 
     # Initialize theme manager
