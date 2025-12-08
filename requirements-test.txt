@@ -1,0 +1,15 @@
+# requirements-test.txt
+# Testing dependencies for LandEvolve
+
+pytest>=7.4.0
+pytest-qt>=4.2.0
+pytest-timeout>=2.1.0
+pytest-xdist>=3.3.0  # For parallel test execution
+pytest-cov>=4.1.0    # For coverage reports
+pytest-html>=3.2.0   # For HTML test reports
+
+# PyQt6 testing
+PyQt6>=6.4.0
+
+# Your existing dependencies should also be installed
+# Add any other dependencies from your main requirements.txt

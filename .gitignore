@@ -25,3 +25,13 @@ resources/outputs/
 
 *.tif
 resources/inputs/**/*.tif
+
+# Test outputs
+test/outputs/
+test/results/
+*.pyc
+__pycache__/
+.coverage
+.pytest_cache/
+htmlcov/
+*.egg-info/

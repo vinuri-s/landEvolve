@@ -67,6 +67,247 @@ class SpaceComponent:
                 # Load geology TIFF and create K_br array
                 with rasterio.open(geology_file) as src:
                     geology_data = src.read(1)
+                    geology_data = np.where(geology_data == 15, np.nan, geology_data)
+                    print("Unique geology codes in raster (after masking):", np.unique(geology_data[~np.isnan(geology_data)]))
+                    
+                    if geology_data.shape != grid.shape:
+                        raise ValueError("Geology file dimensions don't match DEM")
+                    
+                    erodibility_map = {
+                        1: 0.0000001,  
+                        2: 0.0000200,
+                        3: 0.0000003,
+                        4: 0.0001000,
+                        5: 0.0006000
+                    }
+                    
+                    default_erodibility = 1e-7
+                    k_br_array = np.vectorize(lambda x: erodibility_map.get(x, default_erodibility))(geology_data)
+                    final_params['K_br'] = k_br_array.flatten().astype(float)
+                    final_params['K_sed'] = final_params['K_br'] * 100
+                    
+            except Exception as e:
+                print(f"Error loading geology file: {e}")
+                print("Falling back to uniform lithology")
+        
+        # Add required fields BEFORE initializing Space
+        self._add_required_fields()
+        
+        # Initialize Space component
+        self.space = Space(grid, **final_params)
+        print(f"SpaceComponent initialized with parameters: {final_params}")
+
+    def _add_required_fields(self):
+        """Add required fields for Space component if missing"""
+        # Add soil depth field (initialized to 1.0m)
+        if 'soil__depth' not in self.grid.at_node:
+            self.grid.add_ones('soil__depth', at='node', dtype=float)
+            print("Added 'soil__depth' field initialized to 1.0m")
+        
+        # Add bedrock elevation field
+        if 'bedrock__elevation' not in self.grid.at_node:
+            # Calculate bedrock elevation: surface - soil depth
+            surface = self.grid.at_node['topographic__elevation'].copy()
+            soil_depth = self.grid.at_node['soil__depth'].copy()
+            
+            # Calculate with proper precision
+            bedrock_elev = surface - soil_depth
+            bedrock_elev = np.round(bedrock_elev, decimals=5)
+            
+            self.grid.add_field('bedrock__elevation', bedrock_elev, at='node')
+            print("Added 'bedrock__elevation' field")
+            
+            # Verify the relationship
+            topo = self.grid.at_node['topographic__elevation']
+            bedrock = self.grid.at_node['bedrock__elevation']
+            soil = self.grid.at_node['soil__depth']
+            
+            expected_topo = bedrock + soil
+            max_diff = np.nanmax(np.abs(topo - expected_topo))
+            
+            if max_diff > 0.01:
+                print(f"WARNING: Max difference in elevation equation: {max_diff:.6f} m")
+            else:
+                print(f"Elevation fields verified (max diff: {max_diff:.6f} m)")
+
+    def run(self, dt):
+        try:
+            # Ensure soil depth is always non-negative
+            np.clip(self.grid.at_node['soil__depth'], 0, None, 
+                   out=self.grid.at_node['soil__depth'])
+            
+            self.space.run_one_step(dt)
+            print("SpaceComponent ran successfully")
+        except Exception as e:
+            print(f"Error in SpaceComponent: {e}")
+            plt.figure(figsize=(10, 6))
+            soil_depth = self.grid.at_node['soil__depth'].reshape(self.grid.shape)
+            plt.imshow(soil_depth, cmap='viridis')
+            plt.colorbar(label='Soil Depth (m)')
+            plt.title("Soil Depth at Error Point in SpaceComponent")
+            plt.savefig("space_error_soil_depth.png")
+            plt.close()
+            raise
+
+
+# COMPLETE UPDATED CLASS for SpaceLargeScaleEroderComponent:
+
+class SpaceLargeScaleEroderComponent:
+    def __init__(self, grid, **params):
+        self.grid = grid
+        
+        # Extract lithology parameters
+        lithology_type = params.pop('lithology_type', 'Uniform')
+        geology_file = params.pop('geology_file', None)
+        
+        # Default parameters for SpaceLargeScaleEroder
+        default_params = {
+            'K_sed': 0.00001,
+            'K_br': 0.0000001,
+            'F_f': 0.0,
+            'phi': 0.3,
+            'H_star': 0.1,
+            'v_s': 0.001,
+            'm_sp': 0.5,
+            'n_sp': 1.0,
+            'sp_crit_sed': 0.0,
+            'sp_crit_br': 0.0,
+            'discharge_field': 'surface_water__discharge',
+            'thickness_lim': 100.0
+        }
+        
+        # Merge user params
+        final_params = {**default_params, **params}
+        
+        # Handle heterogeneous lithology if specified
+        if lithology_type == 'Heterogeneous' and geology_file:
+            try:
+                with rasterio.open(geology_file) as src:
+                    geology_data = src.read(1)
+                    geology_data = np.where(geology_data == 15, np.nan, geology_data)
+                    print("Unique geology codes in raster (after masking):", np.unique(geology_data[~np.isnan(geology_data)]))
+                    
+                    if geology_data.shape != grid.shape:
+                        raise ValueError("Geology file dimensions don't match DEM")
+                    
+                    erodibility_map = {
+                        1: 0.003,
+                        2: 0.00001,
+                        3: 0.0045,
+                        4: 0.003,
+                        5: 0.0045
+                    }
+                    
+                    default_erodibility = 1e-5
+                    k_br_array = np.vectorize(lambda x: erodibility_map.get(x, default_erodibility))(geology_data)
+                    final_params['K_br'] = k_br_array.flatten().astype(float)
+                    final_params['K_sed'] = final_params['K_br'] * 100
+
+                    # Numerical check
+                    k_br = final_params['K_br']
+                    unique_values = np.unique(k_br)
+                    print("Numerical check: K_br values assigned to nodes")
+                    print("Number of unique K_br values:", len(unique_values))
+                    print("Min K_br:", np.nanmin(k_br))
+                    print("Max K_br:", np.nanmax(k_br))
+                    print("Mean K_br:", np.nanmean(k_br))
+                    print("Std Dev K_br:", np.nanstd(k_br))
+                    print("Unique K_br values:", unique_values)
+                    
+            except Exception as e:
+                print(f"Error loading geology file: {e}")
+                print("Falling back to uniform lithology")
+        
+        # Add required fields BEFORE initializing SpaceLargeScaleEroder
+        self._add_required_fields()
+        
+        # Initialize SpaceLargeScaleEroder component
+        self.space_large = SpaceLargeScaleEroder(grid, **final_params)
+        print(f"SpaceLargeScaleEroderComponent initialized with parameters: {final_params}")
+
+    def _add_required_fields(self):
+        """Add required fields for SpaceLargeScaleEroder component if missing"""
+        # Add soil depth field (initialized to 1.0m)
+        if 'soil__depth' not in self.grid.at_node:
+            self.grid.add_ones('soil__depth', at='node', dtype=float)
+            print("Added 'soil__depth' field initialized to 1.0m")
+        
+        # Add bedrock elevation field
+        if 'bedrock__elevation' not in self.grid.at_node:
+            # Calculate bedrock elevation: surface - soil depth
+            surface = self.grid.at_node['topographic__elevation'].copy()
+            soil_depth = self.grid.at_node['soil__depth'].copy()
+            
+            # Calculate with proper precision
+            bedrock_elev = surface - soil_depth
+            bedrock_elev = np.round(bedrock_elev, decimals=5)
+            
+            self.grid.add_field('bedrock__elevation', bedrock_elev, at='node')
+            print("Added 'bedrock__elevation' field")
+            
+            # Verify the relationship
+            topo = self.grid.at_node['topographic__elevation']
+            bedrock = self.grid.at_node['bedrock__elevation']
+            soil = self.grid.at_node['soil__depth']
+            
+            expected_topo = bedrock + soil
+            max_diff = np.nanmax(np.abs(topo - expected_topo))
+            
+            if max_diff > 0.01:
+                print(f"WARNING: Max difference in elevation equation: {max_diff:.6f} m")
+            else:
+                print(f"Elevation fields verified (max diff: {max_diff:.6f} m)")
+
+    def run(self, dt):
+        try:
+            # Ensure soil depth is always non-negative
+            np.clip(self.grid.at_node['soil__depth'], 0, None, 
+                   out=self.grid.at_node['soil__depth'])
+            
+            self.space_large.run_one_step(dt)
+            print("SpaceLargeScaleEroderComponent ran successfully")
+        except Exception as e:
+            print(f"Error in SpaceLargeScaleEroderComponent: {e}")
+            plt.figure(figsize=(10, 6))
+            soil_depth = self.grid.at_node['soil__depth'].reshape(self.grid.shape)
+            plt.imshow(soil_depth, cmap='viridis')
+            plt.colorbar(label='Soil Depth (m)')
+            plt.title("Soil Depth at Error Point in SpaceLargeScaleEroderComponent")
+            plt.savefig("space_large_error_soil_depth.png")
+            plt.close()
+            raise
+    def __init__(self, grid, **params):
+        self.grid = grid
+        
+        # Extract lithology parameters
+        lithology_type = params.pop('lithology_type', 'Uniform')
+        geology_file = params.pop('geology_file', None)
+        
+        # Default parameters for Space
+        default_params = {
+            'K_sed': 0.00001,
+            'K_br': 0.0000001,
+            'F_f': 0.0,
+            'phi': 0.3,
+            'H_star': 0.1,
+            'v_s': 0.001,
+            'm_sp': 0.5,
+            'n_sp': 1.0,
+            'sp_crit_sed': 0.0,
+            'sp_crit_br': 0.0,
+            'discharge_field': 'surface_water__discharge',
+            'solver': 'basic'
+        }
+        
+        # Merge user params
+        final_params = {**default_params, **params}
+        
+        # Handle heterogeneous lithology if specified
+        if lithology_type == 'Heterogeneous' and geology_file:
+            try:
+                # Load geology TIFF and create K_br array
+                with rasterio.open(geology_file) as src:
+                    geology_data = src.read(1)
 
                      # Replace NoData (15) with NaN
                     geology_data = np.where(geology_data == 15, np.nan, geology_data)
@@ -181,130 +422,6 @@ class FlowAccumulatorComponent:
             raise
 
 
-class SpaceLargeScaleEroderComponent:
-    def __init__(self, grid, **params):
-        self.grid = grid
-        
-        # Extract lithology parameters
-        lithology_type = params.pop('lithology_type', 'Uniform')
-        geology_file = params.pop('geology_file', None)
-        
-        # Default parameters for SpaceLargeScaleEroder
-        default_params = {
-            'K_sed': 0.00001,
-            'K_br': 0.0000001,
-            'F_f': 0.0,
-            'phi': 0.3,
-            'H_star': 0.1,
-            'v_s': 0.001,
-            'm_sp': 0.5,
-            'n_sp': 1.0,
-            'sp_crit_sed': 0.0,
-            'sp_crit_br': 0.0,
-            'discharge_field': 'surface_water__discharge',
-            'thickness_lim': 100.0
-        }
-        
-        
-        # Merge user params
-        final_params = {**default_params, **params}
-        
-        # Handle heterogeneous lithology if specified
-        if lithology_type == 'Heterogeneous' and geology_file:
-            try:
-                # Load geology TIFF and create K_br array
-                with rasterio.open(geology_file) as src:
-                    geology_data = src.read(1)
-
-                     # Replace NoData (15) with NaN
-                    geology_data = np.where(geology_data == 15, np.nan, geology_data)
-
-                    print("Unique geology codes in raster (after masking):", np.unique(geology_data[~np.isnan(geology_data)]))
-
-                    
-                    # Ensure geology data matches grid shape
-                    if geology_data.shape != grid.shape:
-                        raise ValueError("Geology file dimensions don't match DEM")
-                    
-                    # Map geology codes to erodibility values
-                    erodibility_map = {
-                        1: 0.003,  # Example values
-                        2: 0.00001,
-                        3: 0.0045,
-                        4: 0.003,
-                        5: 0.0045
-                    }
-                    
-                    # Create K_br array based on geology codes
-                    # Provide default erodibility if geology code not found
-                    default_erodibility = 1e-5  # you can adjust this baseline value
-                    k_br_array = np.vectorize(lambda x: erodibility_map.get(x, default_erodibility))(geology_data)
-
-                    # Assign to final_params
-                    final_params['K_br'] = k_br_array.flatten().astype(float)
-
-                    # Set sediment erodibility to be 100x K_br
-                    final_params['K_sed'] = final_params['K_br'] * 100
-
-                     # ======== NUMERICAL CHECK ========
-                    k_br = final_params['K_br']
-                    unique_values = np.unique(k_br)
-                    print("Numerical check: K_br values assigned to nodes")
-                    print("Number of unique K_br values:", len(unique_values))
-                    print("Min K_br:", np.nanmin(k_br))
-                    print("Max K_br:", np.nanmax(k_br))
-                    print("Mean K_br:", np.nanmean(k_br))
-                    print("Std Dev K_br:", np.nanstd(k_br))
-                    print("Unique K_br values:", unique_values)
-                    # ===================================
-
-                    
-            except Exception as e:
-                print(f"Error loading geology file: {e}")
-                print("Falling back to uniform lithology")
-        
-        # ===== ADD REQUIRED FIELDS FOR SPACE ===== #
-        self._add_required_fields()
-        
-        # Initialize SpaceLargeScaleEroder component
-        self.space_large = SpaceLargeScaleEroder(grid, **final_params)
-        print(f"SpaceLargeScaleEroderComponent initialized with parameters: {final_params}")
-
-    def _add_required_fields(self):
-        """Add required fields for SpaceLargeScaleEroder component if missing"""
-        # Add soil depth field (initialized to 1.0m)
-        if 'soil__depth' not in self.grid.at_node:
-            self.grid.add_ones('soil__depth', at='node', dtype=float)
-            print("Added 'soil__depth' field initialized to 1.0m")
-        
-        # Add bedrock elevation field
-        if 'bedrock__elevation' not in self.grid.at_node:
-            # Calculate bedrock elevation: surface - soil depth
-            surface = self.grid.at_node['topographic__elevation']
-            soil_depth = self.grid.at_node['soil__depth']
-            bedrock_elev = surface - soil_depth
-            self.grid.add_field('bedrock__elevation', bedrock_elev, at='node')
-            print("Added 'bedrock__elevation' field")
-
-    def run(self, dt):
-        try:
-            # Ensure soil depth is always non-negative
-            np.clip(self.grid.at_node['soil__depth'], 0, None, 
-                   out=self.grid.at_node['soil__depth'])
-            
-            self.space_large.run_one_step(dt)
-            print("SpaceLargeScaleEroderComponent ran successfully")
-        except Exception as e:
-            print(f"Error in SpaceLargeScaleEroderComponent: {e}")
-            # Add error visualization
-            plt.figure(figsize=(10, 6))
-            soil_depth = self.grid.at_node['soil__depth'].reshape(self.grid.shape)
-            plt.imshow(soil_depth, cmap='viridis')
-            plt.colorbar(label='Soil Depth (m)')
-            plt.title("Soil Depth at Error Point in SpaceLargeScaleEroderComponent")
-            plt.savefig("space_large_error_soil_depth.png")
-            plt.close()
-            raise
 
 
 class DepthDependentDiffuserComponent:

@@ -1,0 +1,29 @@
+[
+  {
+    "kbr_value": 1e-07,
+    "sim_number": 8006,
+    "output_dir": "C:\\Users\\spi82\\Landscape Simulation Projects\\QT\\landEvolve\\resources\\outputs\\simulation_8006",
+    "stats": {
+      "total_time": "1765162165.7907321",
+      "peak_ram": "616.0 MB"
+    }
+  },
+  {
+    "kbr_value": 1e-06,
+    "sim_number": 8007,
+    "output_dir": "C:\\Users\\spi82\\Landscape Simulation Projects\\QT\\landEvolve\\resources\\outputs\\simulation_8007",
+    "stats": {
+      "total_time": "1765162338.7442176",
+      "peak_ram": "839.3 MB"
+    }
+  },
+  {
+    "kbr_value": 1e-05,
+    "sim_number": 8008,
+    "output_dir": "C:\\Users\\spi82\\Landscape Simulation Projects\\QT\\landEvolve\\resources\\outputs\\simulation_8008",
+    "stats": {
+      "total_time": "1765162492.529923",
+      "peak_ram": "1089.5 MB"
+    }
+  }
+]
