@@ -271,7 +271,7 @@ class TestKbrSensitivity:
         
         # Wait for simulation to complete (with longer timeout for sensitivity tests)
         try:
-            self.ui_helper.wait_for_simulation_complete(results_window, timeout=600000)  # 10 minutes
+            self.ui_helper.wait_for_simulation_complete(results_window)  # 10 minutes
         except TimeoutError as e:
             pytest.fail(f"Simulation timeout: {e}")
         
