@@ -158,7 +158,7 @@ class SimulationResultsWindow(QMainWindow):
         self.ui.imagesGroup.setVisible(True)
         self.ui.view3DButton.setVisible(True)
         
-        self.load_image(self.ui.inputImageView, self.image_paths.get('input_tif'), "Input DEM not available")
+        self.load_image(self.ui.inputImageView, self.image_paths.get('initial_plot'), "Input DEM not available")
         self.load_image(self.ui.outputImageView, self.image_paths.get('final_plot'), "Output topography not available")
         self.load_image(self.ui.changeImageView, self.image_paths.get('change_plot'), "Change plot not available")
         

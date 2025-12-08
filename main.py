@@ -1,4 +1,9 @@
 import sys
+import os
+import matplotlib
+matplotlib.use('Agg')
+# Suppress QtWebEngine DirectComposition warnings by hiding error logs
+os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = "--log-level=3"
 from PyQt6.QtWidgets import QApplication
 from app.ui.views.home_window import HomeWindow
 from app.ui.themes import ThemeManager

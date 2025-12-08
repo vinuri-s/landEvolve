@@ -1,5 +1,6 @@
 from PyQt6.QtWidgets import QDialog
-from PyQt6.QtCore import pyqtSignal, QVBoxLayout
+from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtWidgets import QVBoxLayout
 from app.ui.controllers.component_controller import ComponentController
 from app.ui.views.dynamic_form import DynamicFormWidget
 from app.ui.views.ui_generated.componentDlg import Ui_AddComponents

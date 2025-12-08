@@ -121,11 +121,13 @@ class SimulationRunner:
             transport_png = None
 
         save_geotiff(str(self.output_dir / "final_elevation.tif"), final_elev, input_tif)
+        save_geotiff(str(self.output_dir / "topographic_change.tif"), diff, input_tif)
 
         self.log(100, "Done")
         
         return {
             "output_dir": str(self.output_dir),
+            "input_tif": input_tif,
             "initial_plot": str(initial_png),
             "final_plot": str(final_png),
             "change_plot": str(change_png),
