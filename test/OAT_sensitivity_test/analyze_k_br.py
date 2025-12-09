@@ -4,7 +4,6 @@ import numpy as np
 import csv
 import os
 import time
-
 from app.engine.components import SpaceLargeScaleEroderComponent, DepthDependentDiffuserComponent, FlowAccumulatorComponent
 
 from test.OAT_sensitivity_test.utils import load_dem, save_output_raster, save_output_png, get_next_test_dir_with_prefix, save_summary_plot
@@ -134,17 +133,59 @@ def run_sensitivity_analysis(min_k, max_k, steps, duration, output_file_name, de
         print(f"Results saved to {final_output_csv}")
         
         # Optional: Plotting Summary
+        # Optional: Plotting Summary
         k_vals = [r['k_br'] for r in results]
-        erosion_vals = [r['mean_erosion_m'] for r in results]
+        mean_erosion_vals = [r['mean_erosion_m'] for r in results]
+        max_erosion_vals = [r['max_erosion_m'] for r in results]
+        sed_flux_vals = [r['total_sediment_flux_m3_yr'] for r in results]
         
+        # 1. Mean Erosion
         save_summary_plot(
             final_output_csv, 
             k_vals, 
-            erosion_vals, 
+            mean_erosion_vals, 
             'K_br', 
             'Mean Erosion (m)', 
-            'Sensitivity of Erosion to Bedrock Erodibility (K_br)',
-            log_x=True
+            'Sensitivity of Mean Erosion to Bedrock Erodibility (K_br)',
+            log_x=True,
+            output_file=final_output_csv.replace('.csv', '_mean_erosion.png')
+        )
+
+        # 2. Max Erosion
+        save_summary_plot(
+            final_output_csv, 
+            k_vals, 
+            max_erosion_vals, 
+            'K_br', 
+            'Max Erosion (m)', 
+            'Sensitivity of Max Erosion to Bedrock Erodibility (K_br)',
+            log_x=True,
+            output_file=final_output_csv.replace('.csv', '_max_erosion.png')
+        )
+
+        # 3. Total Sediment Flux
+        save_summary_plot(
+            final_output_csv, 
+            k_vals, 
+            sed_flux_vals, 
+            'K_br', 
+            'Total Sediment Flux (m3/yr)', 
+            'Sensitivity of Sediment Flux to Bedrock Erodibility (K_br)',
+            log_x=True,
+            output_file=final_output_csv.replace('.csv', '_sediment_flux.png')
+        )
+
+        # 4. Wall Time (Computational Cost)
+        wall_time_vals = [r['wall_time_sec'] for r in results]
+        save_summary_plot(
+            final_output_csv, 
+            k_vals, 
+            wall_time_vals, 
+            'K_br', 
+            'Wall Time (s)', 
+            'Computational Cost vs K_br',
+            log_x=True,
+            output_file=final_output_csv.replace('.csv', '_wall_time.png')
         )
 
 if __name__ == "__main__":

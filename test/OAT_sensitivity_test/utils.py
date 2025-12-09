@@ -79,10 +79,10 @@ def save_output_png(path, data, shape, title, cmap='terrain'):
     plt.savefig(path)
     plt.close()
 
-def save_summary_plot(csv_path, x_values, y_values, x_label, y_label, title, log_x=False):
+def save_summary_plot(csv_path, x_values, y_values, x_label, y_label, title, log_x=False, output_file=None):
     """
     Generates and saves a summary plot (e.g. Erosion vs K).
-    Saves to the same directory as the CSV, replacing extension with .png.
+    If output_file is not provided, saves to the same directory as the CSV, replacing extension with .png.
     """
     try:
         plt.figure(figsize=(10, 6))
@@ -95,7 +95,12 @@ def save_summary_plot(csv_path, x_values, y_values, x_label, y_label, title, log
         plt.ylabel(y_label)
         plt.title(title)
         plt.grid(True, which="both", ls="--") # Better grid for log plots
-        plot_file = csv_path.replace('.csv', '.png')
+        
+        if output_file:
+            plot_file = output_file
+        else:
+            plot_file = csv_path.replace('.csv', '.png')
+            
         plt.savefig(plot_file)
         print(f"Summary plot saved to {plot_file}")
         plt.close()
