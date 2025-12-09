@@ -3,14 +3,17 @@ import logging
 import numpy as np
 import rasterio
 from landlab.components import FlowAccumulator, Space, SpaceLargeScaleEroder, DepthDependentDiffuser
+import inspect
+
 
 # Configure logger
 logger = logging.getLogger(__name__)
 
 class SimulationComponent(abc.ABC):
     """
-    Abstract base class for all simulation components (DIP/OCP).
-    Enforces a consistent interface for the simulation runner.
+    The blueprint for all simulation components. 
+    Every geological process (like erosion or water flow) must follow this template 
+    so the system knows how to run it.
     """
     def __init__(self, grid):
         self.grid = grid
@@ -28,8 +31,8 @@ class SimulationComponent(abc.ABC):
 
 class LithologyHandler:
     """
-    Handles loading and processing of heterogeneous geology data (SRP).
-    Separates IO and data processing from component logic.
+    A helper class for managing different rock types (Lithology).
+    It reads geology map files and tells the simulation how hard the rock is at each pixel.
     """
     @staticmethod
     def apply_heterogeneous_lithology(grid, geology_file, params, erodibility_map, default_val=1e-7):
@@ -117,18 +120,27 @@ class BaseSpaceComponent(SimulationComponent):
             )
 
 class SpaceComponent(BaseSpaceComponent):
+    """
+    Simulates large-scale landscape evolution using the SPACE model.
+    Handles both sediment transport and bedrock erosion.
+    """
     def __init__(self, grid, **params):
         super().__init__(grid)
         
-        # Process lithology (fetches from DB now)
+        # Load lithology settings (rock hardness)
         self._process_lithology(params)
         
-        final_params = params
+        # We only pass parameters that this specific component actually uses.
+        # This prevents errors if extra settings are passed by mistake.
+        valid_args = inspect.signature(Space.__init__).parameters
+        final_params = {k: v for k, v in params.items() if k in valid_args}
         
         self._ensure_common_fields()
+        # Initialize the Landlab Space component
         self.space = Space(grid, **final_params)
 
     def run(self, dt: float):
+        # Update soil depth limits and run one time step
         self._clip_soil_depth()
         self.space.run_one_step(dt)
 
@@ -139,7 +151,9 @@ class SpaceLargeScaleEroderComponent(BaseSpaceComponent):
         # Process lithology (fetches from DB now)
         self._process_lithology(params)
         
-        final_params = params
+        # Dynamic filtering
+        valid_args = inspect.signature(SpaceLargeScaleEroder.__init__).parameters
+        final_params = {k: v for k, v in params.items() if k in valid_args}
         
         self._ensure_common_fields()
         self.space_large = SpaceLargeScaleEroder(grid, **final_params)
@@ -158,7 +172,15 @@ class FlowAccumulatorComponent(SimulationComponent):
                 runoff_rate * np.ones(grid.number_of_nodes)
             )
 
-        self.flow_accumulator = FlowAccumulator(grid, flow_director=flow_director)
+        # Merge explicit args with kwargs for filtering
+        all_params = kwargs.copy()
+        all_params['flow_director'] = flow_director
+        
+        # Dynamic filtering
+        valid_args = inspect.signature(FlowAccumulator.__init__).parameters
+        final_params = {k: v for k, v in all_params.items() if k in valid_args}
+
+        self.flow_accumulator = FlowAccumulator(grid, **final_params)
 
     def run(self, dt: float = None):
         # Flow accumulator often doesn't need dt, but we accept it to satisfy interface
@@ -167,8 +189,10 @@ class FlowAccumulatorComponent(SimulationComponent):
 class DepthDependentDiffuserComponent(SimulationComponent):
     def __init__(self, grid, **params):
         super().__init__(grid)
-        
-        final_params = params
+
+        # Dynamic filtering: Only pass parameters that DepthDependentDiffuser accepts
+        valid_args = inspect.signature(DepthDependentDiffuser.__init__).parameters
+        final_params = {k: v for k, v in params.items() if k in valid_args}
         
         self._ensure_fields()
         self.diffuser = DepthDependentDiffuser(grid, **final_params)

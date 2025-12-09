@@ -4,8 +4,13 @@ from PyQt6.QtCore import Qt
 from app.ui.controllers.simulation_controller import SimulationController
 from app.ui.views.simulation_window import SimulationWindow
 from app.ui.views.ui_generated.home import Ui_Home
+from app.core.config import Config
 
 class HomeWindow(QMainWindow):
+    """
+    The main landing screen of the application.
+    Displays the introductory image and a 'Start' button.
+    """
     def __init__(self):
         super().__init__()
         self.ui = Ui_Home()
@@ -16,11 +21,11 @@ class HomeWindow(QMainWindow):
         self.ui.startSimulationBtn.clicked.connect(self.start_simulation)
     
     def load_image(self):
-        # We need to access resources. 
-        # Since we moved the code, we should check where "resources" is relative to CWD or use absolute paths.
-        # Ideally use Config constants, but for now relative to CWD (root) matches how it was run.
+        """Load and display the about image from resources directory."""
         try:
-            pixmap = QtGui.QPixmap("resources/about.jpg")
+            # Use Config constant for proper resource path resolution
+            image_path = str(Config.RESOURCES_DIR / "about.jpg")
+            pixmap = QtGui.QPixmap(image_path)
             if not pixmap.isNull():
                 self.ui.imageLabel.setPixmap(pixmap.scaled(
                     400, 300, 

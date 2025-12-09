@@ -2,6 +2,9 @@ from app.services.base_service import BaseService
 from app.data.repositories.location_repository import LocationRepository, GeoTiffRepository
 
 class LocationService(BaseService):
+    """
+    Manages geographical data. Used by the UI to populate the "Select Location" screens.
+    """
     def __init__(self, session=None):
         super().__init__(session)
         self.location_repo = LocationRepository(self.session)

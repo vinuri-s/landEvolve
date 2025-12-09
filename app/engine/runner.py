@@ -12,9 +12,14 @@ from app.engine.io import save_geotiff, plot_topography, plot_difference, plot_s
 from app.core.config import Config
 
 class SimulationRunner:
+    """
+    The main engine driver. It sets up the grid, loads components, 
+    and runs the simulation loop step-by-step.
+    """
     def __init__(self, sim_params, progress_callback=None):
         self.params = sim_params
         self.progress_callback = progress_callback
+        # Create a unique folder for this simulation run
         self.simulation_name = f"simulation_{sim_params.get('simulation_number', 0)}"
         self.output_dir = Config.OUTPUTS_DIR / self.simulation_name
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -85,17 +90,21 @@ class SimulationRunner:
                     grid.add_field(field, s - d, at='node')
                 else: grid.add_zeros(field, at='node')
 
-        # 4. Loop
+        # 4. Main Simulation Loop
+        # We divide the total simulation time into smaller time steps (dt).
         num_steps = int(total_time / dt)
         current_time = 0.0
         
         try:
             for step in range(num_steps):
                 current_time += dt
+                
+                # Update progress bar (running from 20% to 80%)
                 progress = 20 + int((step / num_steps) * 60)
                 if step % max(1, num_steps // 20) == 0:
                     self.log(progress, f"Step {step+1}/{num_steps} ({current_time:.1f} yrs)")
 
+                # Execute each active geological process for this time step
                 for comp in components:
                     comp.run(dt)
 

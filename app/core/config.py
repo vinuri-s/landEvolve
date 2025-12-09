@@ -10,14 +10,20 @@ class Config:
     INPUTS_DIR = RESOURCES_DIR / "inputs"
     OUTPUTS_DIR = RESOURCES_DIR / "outputs"
     
-    # Database
-    # Pointing to the existing db file location or a new one in the root
+    # Database Configuration
+    # We use SQLite for a lightweight, file-based database.
+    # The DB file is stored in the 'db' folder at the project root.
     DB_FILE = BASE_DIR / "db" / "app_data.db"
-    # Ensure path is string and handles backslashes for Windows if needed, though SQLAlchemy usually handles raw strings okay.
-    # Better to force forward slashes for consistency in URLs.
+    
+    # Format the database URL for SQLAlchemy (used for database connection)
+    # We ensure forward slashes are used for cross-platform compatibility (Windows/Mac/Linux)
     DATABASE_URL = f"sqlite:///{str(DB_FILE).replace(os.sep, '/')}"
 
     @classmethod
     def init_directories(cls):
+        """
+        Creates necessary output and input directories if they don't exist.
+        This ensures the application has a place to save simulation results.
+        """
         cls.OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
         cls.INPUTS_DIR.mkdir(parents=True, exist_ok=True)

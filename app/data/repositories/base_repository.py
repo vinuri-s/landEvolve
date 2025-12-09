@@ -1,4 +1,8 @@
 class BaseRepository:
+    """
+    A generic repository class implementing common database operations (DAO pattern).
+    Other specific repositories inherit from this to get basic CRUD functionality.
+    """
     def __init__(self, session):
         self.session = session
         

@@ -10,7 +10,11 @@ class ComponentRepository(BaseRepository):
 
     def get_all_defaults(self):
         """
-        Returns { 'ComponentName': { 'param_key': 'value', ... }, ... }
+        Retrieves the default parameter values for all components.
+        Used by the UI to populate fields when a new component is added.
+        
+        Returns:
+            dict: { 'ComponentName': { 'param_key': 'value', ... }, ... }
         """
         components = self.get_all()
         defaults = {}

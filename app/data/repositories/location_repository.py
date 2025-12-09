@@ -9,6 +9,9 @@ class LocationRepository(BaseRepository):
         return self.session.query(Location).filter(Location.id == location_id).first()
 
 class GeoTiffRepository(BaseRepository):
+    """
+    Handles operations for GeoTiff files associated with locations.
+    """
     def get_all(self):
         return self.session.query(GeoTiff).all()
 

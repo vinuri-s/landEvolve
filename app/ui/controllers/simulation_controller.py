@@ -3,6 +3,10 @@ from app.services.simulation_service import SimulationService
 from app.ui.workers import SimulationWorker
 
 class SimulationController:
+    """
+    Orchestrates the Simulation Window.
+    Connects the View (UI) to the Services (Business Logic) so the UI doesn't need to know about databases.
+    """
     def __init__(self):
         self.location_service = LocationService()
         self.sim_service = SimulationService()

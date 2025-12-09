@@ -28,7 +28,8 @@ def main():
     theme_manager = ThemeManager()
     theme_manager.set_theme(ThemeManager.DARK)
 
-    # Create and show main window
+    # Create and show the main application window
+    # This is the starting point of the User Interface
     main_window = HomeWindow()
     main_window.show()
 

@@ -2,6 +2,9 @@ from app.data.models import Lithology
 from app.data.repositories.base_repository import BaseRepository
 
 class LithologyRepository(BaseRepository):
+    """
+    Handles database operations for Lithology (rock type) data.
+    """
     def get_all(self):
         return self.session.query(Lithology).all()
 

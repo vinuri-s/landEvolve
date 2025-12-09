@@ -13,6 +13,13 @@ from app.ui.views.simulation_results import SimulationResultsWindow
 logger = logging.getLogger(__name__)
 
 class SimulationWindow(QMainWindow):
+    """
+    The main configuration screen where users set up the simulation.
+    Features:
+    - Location selection (with map preview)
+    - Component selection (Erosion, Diffusion, etc.)
+    - Simulation parameters (Time steps, period)
+    """
     DEFAULT_PERIOD = 100
     DEFAULT_TIME_STEP = 10
     

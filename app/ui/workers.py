@@ -2,6 +2,11 @@ from PyQt6.QtCore import QThread, pyqtSignal
 
 
 class SimulationWorker(QThread):
+    """
+    Runs the simulation in a background thread.
+    This is CRITICAL to keep the UI responsive. If we ran the simulation 
+    on the main thread, the window would freeze until it finished.
+    """
     progress_updated = pyqtSignal(int, str)
     finished = pyqtSignal(dict)
     error_occurred = pyqtSignal(str)

@@ -9,6 +9,11 @@ import logging
 logger = logging.getLogger(__name__)
 
 class SimulationService:
+    """
+    Acts as the controller for running simulations.
+    It prepares the data (fetching configuration from DB, resolving parameters)
+    and then triggers the simulation engine.
+    """
     def get_next_simulation_number(self):
         output_dir = Config.OUTPUTS_DIR
         if not output_dir.exists():
@@ -25,6 +30,12 @@ class SimulationService:
         return max(numbers) + 1 if numbers else 1
 
     def run_simulation(self, sim_params, callback=None):
+        """
+        Prepares and runs the simulation.
+        1. Fetches necessary data from Database (like rock hardness map).
+        2. Merges user parameters with system defaults.
+        3. Calls the engine runner.
+        """
         # Fetch erodibility map and DEFAULTS from DB
         erodibility_map = {}
         defaults_map = {}

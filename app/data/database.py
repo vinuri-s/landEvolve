@@ -5,8 +5,13 @@ from app.core.config import Config
 Base = declarative_base()
 
 class Database:
+    """
+    Manages the SQLite database connection using SQLAlchemy.
+    Provides session factories for interacting with data.
+    """
     def __init__(self):
-        # check_same_thread=False is needed for SQLite if used across threads (like in the worker)
+        # check_same_thread=False is needed for SQLite because the GUI runs in a separate thread 
+        # from the background worker that might access the DB.
         self.engine = create_engine(
             Config.DATABASE_URL, 
             connect_args={"check_same_thread": False} 
