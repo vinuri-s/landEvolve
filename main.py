@@ -1,5 +1,6 @@
 import sys
 import os
+import logging
 import matplotlib
 matplotlib.use('Agg')
 # Suppress QtWebEngine DirectComposition warnings by hiding error logs
@@ -12,6 +13,10 @@ from app.data.database import db_manager
 
 def main():
     """Start the application, initialize theme, and show the main window."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
     Config.init_directories()
     
     # Initialize database

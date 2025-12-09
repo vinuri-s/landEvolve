@@ -17,7 +17,7 @@ class SimulationController:
         return self.location_service.get_resolutions(location_id)
 
     def create_simulation_worker(self, sim_params):
-        return SimulationWorker(sim_params)
+        return SimulationWorker(sim_params, self.sim_service)
     
     def get_next_simulation_number(self):
         return self.sim_service.get_next_simulation_number()

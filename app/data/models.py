@@ -41,5 +41,14 @@ class ComponentParam(Base):
     label = Column('key', String, nullable=False)
     type = Column(String, nullable=False, default='QLineEdit')
     validation = Column(String, nullable=True)
+    default_value = Column(String, nullable=True)
     
     component = relationship("Component", back_populates="params")
+
+class Lithology(Base):
+    __tablename__ = 'lithology'
+    
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    description = Column(Text)
+    erodibility = Column(REAL, nullable=False)

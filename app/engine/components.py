@@ -50,7 +50,17 @@ class LithologyHandler:
                 # Vectorized mapping of geology codes to erodibility values
                 # faster and cleaner than manual loops
                 def map_values(x):
-                    return erodibility_map.get(x, default_val)
+                    if np.isnan(x):
+                        return default_val
+                    # Try direct lookup first
+                    val = erodibility_map.get(x, None)
+                    if val is None:
+                        try:
+                            # Try integer cast if x is float but key is int
+                            val = erodibility_map.get(int(x), default_val)
+                        except (ValueError, TypeError):
+                            val = default_val
+                    return val
                 
                 k_br_array = np.vectorize(map_values)(geology_data)
                 
@@ -64,6 +74,7 @@ class LithologyHandler:
         except Exception as e:
             logger.error(f"Error loading geology file: {e}")
             logger.warning("Falling back to uniform lithology.")
+
 
 class BaseSpaceComponent(SimulationComponent):
     """
@@ -85,11 +96,21 @@ class BaseSpaceComponent(SimulationComponent):
         """Ensure soil depth logic is consistent."""
         np.clip(self.grid.at_node['soil__depth'], 0, None, out=self.grid.at_node['soil__depth'])
 
-    def _process_lithology(self, params, erodibility_map):
-        """Extracts and processes lithology parameters."""
+    def _process_lithology(self, params):
+        """
+        Extracts and processes lithology parameters.
+        Fetches erodibility map from database.
+        Arguments:
+            params: dictionary of parameters
+        """
         lithology_type = params.pop('lithology_type', 'Uniform')
         geology_file = params.pop('geology_file', None)
         
+        # Use erodibility map injected from service layer
+        erodibility_map = params.pop('erodibility_map', {})
+        # if not erodibility_map:
+        #    logger.warning("No erodibility map provided. Simulation may fail or use defaults.")
+
         if lithology_type == 'Heterogeneous' and geology_file:
             LithologyHandler.apply_heterogeneous_lithology(
                 self.grid, geology_file, params, erodibility_map
@@ -99,21 +120,10 @@ class SpaceComponent(BaseSpaceComponent):
     def __init__(self, grid, **params):
         super().__init__(grid)
         
-        # Default configuration
-        default_params = {
-            'K_sed': 1e-5, 'K_br': 1e-7, 'F_f': 0.0, 'phi': 0.3, 'H_star': 0.1,
-            'v_s': 0.001, 'm_sp': 0.5, 'n_sp': 1.0, 'sp_crit_sed': 0.0, 'sp_crit_br': 0.0,
-            'discharge_field': 'surface_water__discharge', 'solver': 'basic'
-        }
+        # Process lithology (fetches from DB now)
+        self._process_lithology(params)
         
-        # Specific map for standard Space component
-        erodibility_map = {1: 1e-7, 2: 2e-5, 3: 3e-7, 4: 1e-4, 5: 6e-4}
-        
-        # Process lithology before merging defaults to allow overrides
-        self._process_lithology(params, erodibility_map)
-        
-        # Merge defaults
-        final_params = {**default_params, **params}
+        final_params = params
         
         self._ensure_common_fields()
         self.space = Space(grid, **final_params)
@@ -126,18 +136,10 @@ class SpaceLargeScaleEroderComponent(BaseSpaceComponent):
     def __init__(self, grid, **params):
         super().__init__(grid)
         
-        default_params = {
-            'K_sed': 1e-5, 'K_br': 1e-7, 'F_f': 0.0, 'phi': 0.3, 'H_star': 0.1,
-            'v_s': 0.001, 'm_sp': 0.5, 'n_sp': 1.0, 'sp_crit_sed': 0.0, 'sp_crit_br': 0.0,
-            'discharge_field': 'surface_water__discharge', 'thickness_lim': 100.0
-        }
+        # Process lithology (fetches from DB now)
+        self._process_lithology(params)
         
-        # Specific map for Large Scale Eroder (different values)
-        erodibility_map = {1: 0.003, 2: 1e-5, 3: 0.0045, 4: 0.003, 5: 0.0045}
-        
-        self._process_lithology(params, erodibility_map)
-        
-        final_params = {**default_params, **params}
+        final_params = params
         
         self._ensure_common_fields()
         self.space_large = SpaceLargeScaleEroder(grid, **final_params)
@@ -166,8 +168,7 @@ class DepthDependentDiffuserComponent(SimulationComponent):
     def __init__(self, grid, **params):
         super().__init__(grid)
         
-        default_params = {"linear_diffusivity": 0.01, "soil_transport_decay_depth": 0.5}
-        final_params = {**default_params, **params}
+        final_params = params
         
         self._ensure_fields()
         self.diffuser = DepthDependentDiffuser(grid, **final_params)

@@ -61,6 +61,9 @@ class SimulationRunner:
             # Assuming params is passed from controller correctly.
             
             p = comp_config.get('params', {})
+            # Inject erodibility_map if available in top-level params
+            if 'erodibility_map' in self.params:
+                p['erodibility_map'] = self.params['erodibility_map']
             if name == 'FlowAccumulatorComponent':
                 components.append(FlowAccumulatorComponent(grid, **p))
             elif name == 'SpaceComponent':
