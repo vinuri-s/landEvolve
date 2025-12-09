@@ -4,8 +4,7 @@ import numpy as np
 import csv
 import os
 import time
-from landlab import RasterModelGrid
-# from landlab.components import FlowAccumulator (Using wrapper now)
+
 from app.engine.components import SpaceLargeScaleEroderComponent, DepthDependentDiffuserComponent, FlowAccumulatorComponent
 
 from test.OAT_sensitivity_test.utils import load_dem, save_output_raster, save_output_png, get_next_test_dir_with_prefix, save_summary_plot
