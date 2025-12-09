@@ -1,0 +1,68 @@
+from sqlalchemy import Column, Integer, String, ForeignKey, Text, REAL
+from sqlalchemy.orm import relationship
+from app.data.database import Base
+
+class Location(Base):
+    """
+    Represents a geographical location (e.g., 'Whiriapa', 'Kaitorete').
+    A location can have multiple associated DEMs (GeoTiffs).
+    """
+    __tablename__ = 'location'
+    
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    latitude = Column(REAL)  # Decimal degrees
+    longitude = Column(REAL) # Decimal degrees
+    description = Column(Text)
+    
+    # Relationship to GeoTiff files available for this location
+    geotiffs = relationship("GeoTiff", back_populates="location")
+
+class GeoTiff(Base):
+    __tablename__ = 'geotiff'
+    
+    id = Column(Integer, primary_key=True)
+    location_id = Column(Integer, ForeignKey('location.id'), nullable=False)
+    tiff_file_path = Column(String, nullable=False)
+    resolution = Column(String)
+    
+    location = relationship("Location", back_populates="geotiffs")
+
+class Component(Base):
+    """
+    Represents a Landlab simulation component available in the system.
+    Examples: 'FlowAccumulator', 'FastscapeEroder'.
+    """
+    __tablename__ = 'component'
+    
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False) # python class name
+    description = Column(Text)
+    
+    # Parameters required by this component (configured in UI)
+    params = relationship("ComponentParam", back_populates="component")
+
+class ComponentParam(Base):
+    __tablename__ = 'component_param'
+    
+    id = Column(Integer, primary_key=True)
+    component_id = Column(Integer, ForeignKey('component.id'), nullable=False)
+    # Map 'label' attribute to 'key' column to match legacy schema if exists
+    label = Column('key', String, nullable=False)
+    type = Column(String, nullable=False, default='QLineEdit')
+    validation = Column(String, nullable=True)
+    default_value = Column(String, nullable=True)
+    
+    component = relationship("Component", back_populates="params")
+
+class Lithology(Base):
+    """
+    Stores physical properties of different rock types.
+    Used for Heterogeneous lithology simulations where erodibility varies.
+    """
+    __tablename__ = 'lithology'
+    
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    description = Column(Text)
+    erodibility = Column(REAL, nullable=False) # K value for erosion equations

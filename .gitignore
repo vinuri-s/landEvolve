@@ -25,3 +25,6 @@ resources/outputs/
 
 *.tif
 resources/inputs/**/*.tif
+
+# Sensitivity Analysis Outputs
+test/OAT_sensitivity_test/outputs/
