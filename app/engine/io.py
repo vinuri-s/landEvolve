@@ -49,4 +49,22 @@ def plot_soil_transport(data, shape, output_path):
     plt.colorbar(label='Sediment Flux (m³/m²/s)')
     plt.title("Soil Transport Map (Sediment Flux)")
     plt.savefig(output_path)
+    plt.savefig(output_path)
     plt.close()
+
+def save_overlay_image(data, shape, output_path, cmap='terrain', vmin=None, vmax=None):
+    """Save the data as an image without axes/margins for use as an overlay."""
+    plt.figure(figsize=(10, 10)) # Square or match aspect ratio? For overlay, aspect ratio matters.
+    # But imshow handles aspect ratio. We want no whitespace.
+    
+    # Use standard matplotlib saving but remove axes
+    fig = plt.figure(frameon=False)
+    fig.set_size_inches(10, 10 * (shape[0]/shape[1])) # approximate aspect ratio
+    
+    ax = plt.Axes(fig, [0., 0., 1., 1.])
+    ax.set_axis_off()
+    fig.add_axes(ax)
+    
+    ax.imshow(data.reshape(shape), cmap=cmap, aspect='auto', vmin=vmin, vmax=vmax)
+    fig.savefig(output_path, dpi=100, bbox_inches='tight', pad_inches=0, transparent=True)
+    plt.close(fig)

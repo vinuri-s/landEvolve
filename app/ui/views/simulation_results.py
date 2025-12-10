@@ -286,12 +286,72 @@ class SimulationResultsWindow(QMainWindow):
              self.show_results()
 
     def view_in_3d(self):
-        QMessageBox.information(
-            self, 
-            "3D View", 
-            "This will open the results in ArcGIS Platform for 3D exploration.\n\n"
-            "Feature coming soon!"
-        )
+        """
+        Generates a 3D surface plot using Plotly and displays it in a new window.
+        """
+        try:
+            from app.ui.views.cesium_window import CesiumWindow
+            # 1. Identify the source GeoTIFF
+            # We prefer the raw data for 3D plotting
+            # The 'final_plot' usually points to a PNG, we need the TIF if possible,
+            # or we reconstruct it. 
+            # Ideally, the simulation runner should return the path to the TIF.
+            # Assuming 'final_state' in results points to TIF or we can infer it.
+            
+            # Fallback: if we don't have the TIF path explicitly in image_paths, 
+            # we might need to rely on the controller or known output structure.
+            # For now, let's look for the TIF in the same directory as the final plot.
+            
+            target_image = self.image_paths.get('final_plot')
+            if not target_image:
+                 QMessageBox.warning(self, "Error", "No result found to visualize.")
+                 return
+
+            # Construct path to likely GeoTIFF
+            # e.g. .../outputs/sim_X/final_plot.png -> .../outputs/sim_X/topography.tif
+            output_dir = os.path.dirname(target_image)
+            # Default name from runner.py usually 'final_elevation.tif' or 'topography.tif'
+            # Let's try to find a valid TIF
+            potential_tiffs = [f for f in os.listdir(output_dir) if f.endswith('.tif')]
+            if not potential_tiffs:
+                 QMessageBox.warning(self, "Error", "No elevation data (GeoTIFF) found for 3D visualization.")
+                 return
+                 
+            # Pick the most relevant one, typically 'final_elevation.tif' if it exists
+            tiff_name = 'final_elevation.tif' if 'final_elevation.tif' in potential_tiffs else potential_tiffs[0]
+            tiff_path = os.path.join(output_dir, tiff_name)
+            
+            # 2. Get Input Tiff
+            input_tiff = self.sim_params.get('input_tiff_path')
+            # If relative, make absolute relative to workspace root (assuming cwd is root or reliable)
+            if not os.path.isabs(input_tiff):
+                input_tiff = os.path.abspath(input_tiff)
+
+            # 3. Generate the Multi-Layer HTML Plot
+            from app.engine.visualization import generate_3d_comparison_html
+            
+            html_output = os.path.join(output_dir, "view_3d_comparison.html")
+            
+            # Show loading cursor
+            self.setCursor(Qt.CursorShape.WaitCursor)
+            
+            # Pass both input and output paths
+            success = generate_3d_comparison_html(input_tiff, tiff_path, html_output)
+            
+            self.unsetCursor()
+            
+            if not success:
+                QMessageBox.critical(self, "Error", "Failed to generate 3D plot.\nCheck console for details.")
+                return
+
+            # 3. Open the Viewer
+            # We reuse the CesiumWindow class but it is now a generic HTML viewer
+            self.cesium_window = CesiumWindow(html_output, self)
+            self.cesium_window.show()
+            
+        except Exception as e:
+            self.unsetCursor()
+            QMessageBox.critical(self, "Error", f"An error occurred launching 3D view: {e}")
 
     def closeEvent(self, event):
         if hasattr(self, 'stats_timer') and self.stats_timer.isActive():
