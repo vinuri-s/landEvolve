@@ -36,7 +36,18 @@ def plot_topography(data, shape, title, output_path, cmap='terrain', vmin=None, 
 
 def plot_difference(data, shape, title, output_path):
     plt.figure(figsize=(12, 8))
-    plt.imshow(data.reshape(shape), cmap='coolwarm', vmin=-1, vmax=1)
+    
+    # Symmetric auto-scaling
+    # Handle NaN values safely
+    valid_data = data[~np.isnan(data)]
+    if valid_data.size > 0:
+        max_abs = np.max(np.abs(valid_data))
+        # Ensure at least some range to avoid errors
+        if max_abs == 0: max_abs = 0.1 
+    else:
+        max_abs = 1.0
+
+    plt.imshow(data.reshape(shape), cmap='coolwarm', vmin=-max_abs, vmax=max_abs)
     plt.colorbar(label='Elevation Change (m)')
     plt.title(title)
     plt.savefig(output_path)
@@ -49,4 +60,22 @@ def plot_soil_transport(data, shape, output_path):
     plt.colorbar(label='Sediment Flux (m³/m²/s)')
     plt.title("Soil Transport Map (Sediment Flux)")
     plt.savefig(output_path)
+    plt.savefig(output_path)
     plt.close()
+
+def save_overlay_image(data, shape, output_path, cmap='terrain', vmin=None, vmax=None):
+    """Save the data as an image without axes/margins for use as an overlay."""
+    plt.figure(figsize=(10, 10)) # Square or match aspect ratio? For overlay, aspect ratio matters.
+    # But imshow handles aspect ratio. We want no whitespace.
+    
+    # Use standard matplotlib saving but remove axes
+    fig = plt.figure(frameon=False)
+    fig.set_size_inches(10, 10 * (shape[0]/shape[1])) # approximate aspect ratio
+    
+    ax = plt.Axes(fig, [0., 0., 1., 1.])
+    ax.set_axis_off()
+    fig.add_axes(ax)
+    
+    ax.imshow(data.reshape(shape), cmap=cmap, aspect='auto', vmin=vmin, vmax=vmax)
+    fig.savefig(output_path, dpi=100, bbox_inches='tight', pad_inches=0, transparent=True)
+    plt.close(fig)

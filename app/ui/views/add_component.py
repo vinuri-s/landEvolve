@@ -8,16 +8,23 @@ from app.ui.views.ui_generated.componentDlg import Ui_AddComponents
 class AddComponentDlg(QDialog):
     component_added = pyqtSignal(object, dict)
     
-    def __init__(self):
+    def __init__(self, initial_component=None, initial_params=None):
         super().__init__()
         self.ui = Ui_AddComponents()
         self.ui.setupUi(self)
         self.controller = ComponentController()
         
+        self.initial_component = initial_component
+        self.initial_params = initial_params
+        
         self.dynamic_form = None 
         
         self.load_initial_data()
         self.setup_connections()
+        
+        if initial_component:
+            self.setWindowTitle("Edit Component")
+            self.ui.addBtn.setText("Update")
     
     def setup_connections(self):
         self.ui.selectComponentComboBox.currentIndexChanged.connect(self.on_component_changed)
@@ -40,19 +47,33 @@ class AddComponentDlg(QDialog):
         for comp in components:
             self.ui.selectComponentComboBox.addItem(comp.name, comp)
             
-        if components:
+        if self.initial_component:
+             # Find index
+             index = self.ui.selectComponentComboBox.findText(self.initial_component.name)
+             if index >= 0:
+                 self.ui.selectComponentComboBox.setCurrentIndex(index)
+                 # Disable change if editing? Often easier to allow change or restrict. 
+                 # For now, let's restrict changing component type during edit to avoid confusion.
+                 self.ui.selectComponentComboBox.setEnabled(False)
+        elif components:
             self.ui.selectComponentComboBox.setCurrentIndex(0)
-            self.on_component_changed()
+            
+        self.on_component_changed()
 
     def on_component_changed(self):
         selected_component = self.ui.selectComponentComboBox.currentData()
         if selected_component:
             self.ui.descriptionLabel.setText(selected_component.description or "No description available.")
-            self.load_component_data(selected_component)
+            # If this is the initial component, pass params
+            params_to_load = None
+            if self.initial_component and selected_component.id == self.initial_component.id:
+                 params_to_load = self.initial_params
+                 
+            self.load_component_data(selected_component, params_to_load)
         else:
             self.ui.descriptionLabel.setText("No component selected.")
 
-    def load_component_data(self, selected_component):
+    def load_component_data(self, selected_component, params=None):
         self.selected_component = selected_component
         
         layout = self.ui.dynamic_frame.layout()
@@ -63,13 +84,15 @@ class AddComponentDlg(QDialog):
                     child.widget().deleteLater()
                 
         if self.selected_component:
-            # Note: The controller now expects SQLalchemy models but the logic is same
             if hasattr(self.selected_component, "params") and self.selected_component.params:
                 config = self.controller.get_dynamic_form_config(self.selected_component.params)
-                self.render_dynamic_form(config)
+                self.render_dynamic_form(config, params)
         
-    def render_dynamic_form(self, config):
+    def render_dynamic_form(self, config, params=None):
         self.dynamic_form = DynamicFormWidget(config, parent=self)
+        if params:
+             self.dynamic_form.set_form_data(params)
+             
         layout = self.ui.dynamic_frame.layout()
         if layout is None:
             layout = QVBoxLayout(self.ui.dynamic_frame)

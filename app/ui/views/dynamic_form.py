@@ -120,3 +120,23 @@ class DynamicFormWidget(QWidget):
             elif isinstance(widget, QDoubleSpinBox):
                 data[label] = widget.value()
         return data
+
+    def set_form_data(self, data):
+        """Populates the form fields with data dictionary."""
+        if not data:
+            return
+            
+        for label, value in data.items():
+            if label in self.fields:
+                widget = self.fields[label]
+                if isinstance(widget, QLineEdit):
+                    widget.setText(str(value))
+                elif isinstance(widget, QComboBox):
+                    index = widget.findText(str(value))
+                    if index >= 0:
+                        widget.setCurrentIndex(index)
+                elif isinstance(widget, QDoubleSpinBox):
+                    try:
+                        widget.setValue(float(value))
+                    except ValueError:
+                        pass

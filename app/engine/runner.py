@@ -8,7 +8,7 @@ from app.engine.components import (
     SpaceLargeScaleEroderComponent, 
     DepthDependentDiffuserComponent
 )
-from app.engine.io import save_geotiff, plot_topography, plot_difference, plot_soil_transport
+from app.engine.io import save_geotiff, plot_topography, plot_difference, plot_soil_transport, save_overlay_image
 from app.core.config import Config
 
 class SimulationRunner:
@@ -126,6 +126,10 @@ class SimulationRunner:
         plot_topography(initial_z, grid.shape, "Initial Topography", str(initial_png))
         plot_topography(final_elev, grid.shape, "Final Topography", str(final_png))
         plot_difference(diff, grid.shape, "Topographic Change", str(change_png))
+
+        # Save clean overlay
+        overlay_png = self.output_dir / "final_overlay.png"
+        save_overlay_image(final_elev, grid.shape, str(overlay_png))
         
         if 'sediment__flux' in grid.at_node:
              plot_soil_transport(grid.at_node['sediment__flux'], grid.shape, str(transport_png))
@@ -142,8 +146,10 @@ class SimulationRunner:
             "input_tif": input_tif,
             "initial_plot": str(initial_png),
             "final_plot": str(final_png),
+            "overlay_plot": str(overlay_png),
             "change_plot": str(change_png),
-            "soil_transport_plot": str(transport_png) if transport_png else None
+            "soil_transport_plot": str(transport_png) if transport_png else None,
+            "grid_size": str(grid.shape)
         }
 
 def run_simulation(sim_params, progress_callback=None):

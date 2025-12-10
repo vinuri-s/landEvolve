@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import QMainWindow, QTableWidgetItem, QMessageBox, QPushButton, QHeaderView
+from PyQt6.QtWidgets import QMainWindow, QTableWidgetItem, QMessageBox, QPushButton, QHeaderView, QWidget, QHBoxLayout
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtCore import QUrl, Qt, QCoreApplication
 from PyQt6.QtWebEngineCore import QWebEngineSettings
@@ -102,23 +102,23 @@ class SimulationWindow(QMainWindow):
         self.add_component_ui.show()
         
     def on_component_added(self, component, form_data):
+        # Check logic: if editing, we might be updating existing one, but here we append.
+        # So we need to handle "Update" differently if calling this from edit mode? 
+        # Wait, if I reuse AddComponentDlg, it emits component_added.
+        # I should probably just handle the update inside the edit_component_at_index callback
+        # instead of relying on the signal connection if I use exec().
+        
+        # Original logic for new adds:
         if any(c['component'].id == component.id for c in self.added_components):
-            QMessageBox.warning(self, "Duplicate", f"{component.name} already added")
-            return
+             QMessageBox.warning(self, "Duplicate", f"{component.name} already added")
+             return
 
         self.added_components.append({
             'component': component,
             'params': form_data
         })
 
-        row = self.ui.compTableWidget.rowCount()
-        self.ui.compTableWidget.insertRow(row)
-        self.ui.compTableWidget.setItem(row, 0, QTableWidgetItem(component.name))
-        self.ui.compTableWidget.setItem(row, 1, QTableWidgetItem(component.description or "No description"))
-
-        remove_btn = QPushButton("Remove")
-        remove_btn.clicked.connect(lambda _, r=row: self.remove_component_row(r))
-        self.ui.compTableWidget.setCellWidget(row, 2, remove_btn)
+        self.refresh_component_table()
 
     def remove_component_row(self, row):
         # We need to find which component this row corresponds to. 
@@ -138,15 +138,61 @@ class SimulationWindow(QMainWindow):
             self.ui.compTableWidget.setItem(i, 0, QTableWidgetItem(component.name))
             self.ui.compTableWidget.setItem(i, 1, QTableWidgetItem(component.description or "No description"))
             
+            # Action Buttons
+            action_widget = QWidget()
+            layout = QHBoxLayout(action_widget)
+            layout.setContentsMargins(0, 0, 0, 0)
+            
+            edit_btn = QPushButton("Edit")
+            edit_btn.clicked.connect(lambda _, idx=i: self.edit_component_at_index(idx))
+            layout.addWidget(edit_btn)
+            
             remove_btn = QPushButton("Remove")
-            # Capture current i
             remove_btn.clicked.connect(lambda _, idx=i: self.remove_component_at_index(idx))
-            self.ui.compTableWidget.setCellWidget(i, 2, remove_btn)
+            layout.addWidget(remove_btn)
+            
+            self.ui.compTableWidget.setCellWidget(i, 2, action_widget)
             
     def remove_component_at_index(self, index):
         if 0 <= index < len(self.added_components):
             self.added_components.pop(index)
             self.refresh_component_table()
+
+    def edit_component_at_index(self, index):
+        if not (0 <= index < len(self.added_components)):
+            return
+            
+        comp_data = self.added_components[index]
+        component = comp_data['component']
+        params = comp_data['params']
+        
+        dlg = AddComponentDlg(initial_component=component, initial_params=params)
+        
+        # Disconnect standard signal to avoid duplicate add
+        # Instead, we just check result
+        # But the dialog emits signal in accept().
+        # If I disconnect the signal from self.on_component_added, I can handle it here.
+        
+        # Re-connect logic properly:
+        # Actually, AddComponentDlg emits logic in its accept() method. 
+        # If I want to avoid modifying AddComponentDlg further, I can just connect to a local slot.
+        
+        # Let's verify AddComponentDlg implementation I just wrote.
+        # It emits component_added(self.selected_component, form_data)
+        
+        def update_data(new_comp, new_params):
+             self.added_components[index] = {
+                 'component': new_comp,
+                 'params': new_params
+             }
+             self.refresh_component_table()
+             
+        # Connect the dialog's signal to our local update function
+        dlg.component_added.connect(update_data)
+        
+        # Show the dialog
+        dlg.exec()
+
 
     def load_location_data(self, selected_location):
         self.selected_location = selected_location
