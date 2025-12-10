@@ -123,13 +123,13 @@ class SimulationRunner:
         change_png = self.output_dir / "topo_change.png"
         transport_png = self.output_dir / "soil_transport.png"
         
-        plot_topography(initial_z, grid.shape, "Initial Topography", str(initial_png))
-        plot_topography(final_elev, grid.shape, "Final Topography", str(final_png))
+        plot_topography(initial_z, grid.shape, "Initial Topography", str(initial_png), cmap='terrain')
+        plot_topography(final_elev, grid.shape, "Final Topography", str(final_png), cmap='viridis')
         plot_difference(diff, grid.shape, "Topographic Change", str(change_png))
 
         # Save clean overlay
         overlay_png = self.output_dir / "final_overlay.png"
-        save_overlay_image(final_elev, grid.shape, str(overlay_png))
+        save_overlay_image(final_elev, grid.shape, str(overlay_png), cmap='viridis')
         
         if 'sediment__flux' in grid.at_node:
              plot_soil_transport(grid.at_node['sediment__flux'], grid.shape, str(transport_png))

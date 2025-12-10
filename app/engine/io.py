@@ -47,7 +47,7 @@ def plot_difference(data, shape, title, output_path):
     else:
         max_abs = 1.0
 
-    plt.imshow(data.reshape(shape), cmap='coolwarm', vmin=-max_abs, vmax=max_abs)
+    plt.imshow(data.reshape(shape), cmap='RdBu', vmin=-max_abs, vmax=max_abs)
     plt.colorbar(label='Elevation Change (m)')
     plt.title(title)
     plt.savefig(output_path)

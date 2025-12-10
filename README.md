@@ -12,14 +12,57 @@ The project follows a strict layered architecture to ensure separation of concer
 *   **`app/data`**: Manages data persistence using SQLAlchemy. Handles database models and repositories.
 *   **`app/core`**: Contains core configurations, constants, and shared utilities.
 
-## 🛠️ Technologies
+## 🛠️ Technologies & Stack
 
+### Core
 *   **Language**: Python 3.9+
-*   **GUI Framework**: PyQt6 (with QtWebEngine)
-*   **Simulation**: Landlab, NumPy
-*   **Visualization**: Matplotlib
-*   **Database**: SQLAlchemy (SQLite)
-*   **Geospatial**: Rasterio
+*   **GUI Framework**: PyQt6 (Desktop interface)
+*   **Web Integration**: PyQt6-WebEngine (Embedding web content)
+
+### Simulation & Science
+*   **Landlab**: The core landscape evolution modeling library.
+*   **NumPy**: High-performance numerical computing.
+*   **Rasterio**: Geospatial data (GeoTIFF) handling and transformations.
+
+### Visualization
+*   **Matplotlib**: Static 2D plotting (Topography, Change Maps).
+*   **Plotly**: Interactive 3D surface visualization.
+*   **Cesium**: 3D globe visualization (integrated via HTML/JS).
+
+### Data & System
+*   **SQLAlchemy**: ORM for database management (SQLite).
+*   **Psutil**: System monitoring (RAM usage tracking).
+
+## 🧩 Key Modules & Functions
+
+### 1. Application Engine (`app/engine`)
+The heart of the application, responsible for the actual scientific computation.
+*   **`SimulationRunner`**: The main driver that orchestrates the simulation loop, time-stepping, and component execution.
+*   **`RasterModel`**: Manages the simulation grid, loading DEMs (Digital Elevation Models), and initializing data fields (elevation, soil depth).
+*   **`Components`**: Wrappers for Landlab processes:
+    *   `FlowAccumulatorComponent`: Calculates water flow directions and accumulation.
+    *   `SpaceComponent`: Stream Power with Alluvium Conservation and Entrainment (SPACE) large-scale eroder.
+    *   `DepthDependentDiffuserComponent`: Hillslope evolution using soil creep.
+*   **`IO` & `Visualization`**: Handles reading/writing GeoTIFFs and generating 2D/3D result plots.
+
+### 2. User Interface (`app/ui`)
+A modern, responsive PyQt6 interface.
+*   **`HomeWindow`**: The landing dashboard.
+*   **`SimulationWindow`**: The main setup screen for configuring simulation parameters, selecting components, and choosing locations.
+*   **`SimulationResultsWindow`**: Displays simulation progress and final results.
+    *   **2D Visualization**: Carousel view of Initial, Final, and Difference maps.
+    *   **3D Visualization**: Interactive 3D terrain viewer.
+*   **`SimulationWorker`**: A background thread worker (`QThread`) that ensures the UI remains responsive while the heavy simulation runs.
+
+### 3. Services (`app/services`)
+Business logic layer acting as a bridge between UI and Data/Engine.
+*   **`SimulationService`**: Prepares simulation data, merges user parameters with database defaults, and triggers the engine.
+*   **`LocationService`**: Retrieves available simulation locations and resolution options.
+
+### 4. Data Layer (`app/data`)
+Manages data persistence.
+*   **`DatabaseManager`**: Handles SQLite connection and session management.
+*   **Repositories**: Data access patterns for `Locations`, `Components`, and `SimulationHistory`.
 
 ## 🚀 Getting Started
 
