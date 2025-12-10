@@ -1,6 +1,7 @@
 from PyQt6.QtWidgets import (
     QMainWindow, QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
-    QTextEdit, QGridLayout, QGroupBox, QScrollArea, QSizePolicy, QMessageBox
+    QTextEdit, QGridLayout, QGroupBox, QScrollArea, QSizePolicy, QMessageBox,
+    QWidget, QTabWidget, QProgressBar
 )
 from PyQt6.QtGui import QPixmap, QFont
 from PyQt6.QtCore import QTimer, Qt, QElapsedTimer
@@ -41,10 +42,6 @@ class SimulationStatsDialog(QDialog):
         perf_layout.addWidget(QLabel(self.stats_data['final_ram']), 4, 1)
         perf_layout.addWidget(QLabel("<b>Average RAM:</b>"), 5, 0)
         perf_layout.addWidget(QLabel(self.stats_data['average_ram']), 5, 1)
-        perf_layout.addWidget(QLabel("<b>Simulation Steps:</b>"), 6, 0)
-        perf_layout.addWidget(QLabel(str(self.stats_data['simulation_steps'])), 6, 1)
-        perf_layout.addWidget(QLabel("<b>Grid Size:</b>"), 7, 0)
-        perf_layout.addWidget(QLabel(self.stats_data['grid_size']), 7, 1)
         
         perf_group.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         
@@ -71,292 +68,408 @@ class SimulationStatsDialog(QDialog):
         layout.addWidget(close_btn)
 
 class SimulationResultsWindow(QMainWindow):
-    def __init__(self, sim_params, simulation_controller):
-        super().__init__()
-        self.ui = Ui_SimulationResults()
-        self.ui.setupUi(self)
+    """
+    Displays simulation results in a unified window with 2D (Carousel) and 3D (Interactive) views.
+    Runs the simulation first, then displays results.
+    """
+    def __init__(self, sim_params, controller, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Simulation Progress")
+        self.resize(1000, 800)
         
         self.sim_params = sim_params
-        self.simulation_controller = simulation_controller
-        self.image_paths = {}
-        self.simulation_worker = None
+        self.simulation_controller = controller
+        self.output_data = None
+        self.image_paths = {} # To support legacy accessor if any
         
+        # State
+        self.carousel_images = []
+        self.current_image_index = 0
+        
+        # Stats tracking
         self.start_time = None
-        self.elapsed_timer = QElapsedTimer()
-        self.ram_readings = []
+        self.end_time = None
         self.peak_ram = 0
+        self.final_ram = 0
         self.simulation_steps = 0
+        self.elapsed_timer = QElapsedTimer()
+        self.final_time = 0
         
+        self.ram_readings = []
+        self.log_messages = []
+        
+        # Live Stats Timer
         self.stats_timer = QTimer()
         self.stats_timer.timeout.connect(self.update_live_stats)
         
-        self.ui.view3DButton.clicked.connect(self.view_in_3d)
-        self.ui.statsIconButton.clicked.connect(self.show_stats_dialog)
+        # Setup Initial UI (Progress)
+        self.init_progress_ui()
         
-        sim_number = sim_params.get('simulation_number', 1)
-        self.setWindowTitle(f"Simulation Results - #{sim_number}")
-        
+        # Start Simulation
+        self.simulation_worker = None
         self.start_real_simulation()
-    
-    def start_real_simulation(self):
-        self.ui.statusLabel.setText("Initializing simulation...")
-        self.ui.progressBar.setValue(0)
+
+    def init_progress_ui(self):
+        """Shows progress bar while running."""
+        self.central = QWidget()
+        self.setCentralWidget(self.central)
+        layout = QVBoxLayout(self.central)
+        layout.addStretch()
         
+        self.lbl_status = QLabel("Initializing Simulation...")
+        self.lbl_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_status.setStyleSheet("font-size: 16px; font-weight: bold;")
+        layout.addWidget(self.lbl_status)
+        
+        # Live Stats Labels
+        stats_layout = QHBoxLayout()
+        self.lbl_time = QLabel("Time: 0:00:00")
+        self.lbl_time.setStyleSheet("font-size: 14px; color: #555;")
+        stats_layout.addStretch()
+        stats_layout.addWidget(self.lbl_time)
+        stats_layout.addSpacing(20)
+        self.lbl_ram = QLabel("RAM: 0.0 MB")
+        self.lbl_ram.setStyleSheet("font-size: 14px; color: #555;")
+        stats_layout.addWidget(self.lbl_ram)
+        stats_layout.addStretch()
+        layout.addLayout(stats_layout)
+        
+        from PyQt6.QtWidgets import QProgressBar
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        layout.addWidget(self.progress_bar)
+        
+        layout.addStretch()
+
+    def start_real_simulation(self):
+        self.lbl_status.setText("Starting simulation engine...")
+        
+        # Initialize stats
         self.start_time = datetime.datetime.now()
         self.elapsed_timer.start()
-        self.ram_readings = []
-        self.peak_ram = 0
         self.simulation_steps = 0
+        self.peak_ram = 0
+        self.ram_readings = []
+        self.log_messages = []
         
+        # Start Timer
         self.stats_timer.start(1000)
         
         self.simulation_worker = self.simulation_controller.create_simulation_worker(self.sim_params)
         self.simulation_worker.progress_updated.connect(self.update_progress)
         self.simulation_worker.finished.connect(self.on_simulation_finished)
         self.simulation_worker.error_occurred.connect(self.on_simulation_error)
-        
         self.simulation_worker.start()
-    
-    def update_progress(self, percentage, status_message):
-        self.ui.progressBar.setValue(percentage)
-        self.ui.statusLabel.setText(status_message)
         
-        if "Step" in status_message:
-            self.simulation_steps += 1
-    
     def update_live_stats(self):
+        """Called by QTimer to update UI labels and sample RAM."""
         elapsed_ms = self.elapsed_timer.elapsed()
         elapsed_str = str(datetime.timedelta(milliseconds=elapsed_ms)).split('.')[0]
-        self.ui.timeLabel.setText(f"Time: {elapsed_str}")
+        self.lbl_time.setText(f"Time: {elapsed_str}")
         
-        process = psutil.Process()
-        ram_mb = process.memory_info().rss / 1024 / 1024
-        self.ram_readings.append(ram_mb)
-        self.peak_ram = max(self.peak_ram, ram_mb)
-        
-        self.ui.ramLabel.setText(f"RAM: {ram_mb:.1f} MB")
-    
-    def on_simulation_finished(self, result):
-        self.stats_timer.stop()
-        
-        self.final_time = self.elapsed_timer.elapsed()
-        self.final_ram = self.ram_readings[-1] if self.ram_readings else 0
-        
-        self.image_paths = result
-        self.show_results()
-        
-        self.ui.statsIconButton.setVisible(True)
-    
-    def on_simulation_error(self, error_message):
-        self.stats_timer.stop()
-        self.ui.statusLabel.setText(f"Simulation error: {error_message}")
-        self.ui.progressBar.setValue(0)
-        QMessageBox.critical(self, "Simulation Error", f"The simulation encountered an error:\n\n{error_message}")
-
-    def show_results(self):
-        self.ui.statusGroup.setVisible(False)
-        self.ui.imagesGroup.setVisible(True)
-        self.ui.view3DButton.setVisible(True)
-        
-        self.load_image(self.ui.inputImageView, self.image_paths.get('initial_plot'), "Input DEM not available")
-        self.load_image(self.ui.outputImageView, self.image_paths.get('final_plot'), "Output topography not available")
-        self.load_image(self.ui.changeImageView, self.image_paths.get('change_plot'), "Change plot not available")
-        
-        if self.image_paths.get('soil_transport_plot'):
-            self.load_image(self.ui.soilImageView, self.image_paths['soil_transport_plot'], "Soil transport data not available")
-        else:
-            self.ui.soilImageView.setText("Soil transport data not available")
-
-    def load_image(self, label, path, error_message):
-        if path and os.path.exists(path):
-            pixmap = QPixmap(path)
-            if not pixmap.isNull():
-                label_width = max(label.width(), 400)
-                label_height = max(label.height(), 300)
-                
-                scaled_pixmap = pixmap.scaled(
-                    label_width - 20,
-                    label_height - 20,
-                    Qt.AspectRatioMode.KeepAspectRatio,
-                    Qt.TransformationMode.SmoothTransformation
-                )
-                label.setPixmap(scaled_pixmap)
-                return
-        
-        label.setText(error_message)
-        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        label.setStyleSheet("QLabel { color: #666; font-size: 14px; font-style: italic; }")
-
-    def show_stats_dialog(self):
-        total_time_ms = self.final_time
-        total_time_str = str(datetime.timedelta(milliseconds=total_time_ms)).split('.')[0]
-        average_ram = sum(self.ram_readings) / len(self.ram_readings) if self.ram_readings else 0
-        
-        stats_data = {
-            'total_time': total_time_str,
-            'start_time': self.start_time.strftime("%Y-%m-%d %H:%M:%S"),
-            'end_time': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            'peak_ram': f"{self.peak_ram:.1f} MB",
-            'final_ram': f"{self.final_ram:.1f} MB",
-            'average_ram': f"{average_ram:.1f} MB",
-            'simulation_steps': self.simulation_steps,
-            'grid_size': self.get_grid_size_info(),
-            'detailed_info': self.get_detailed_info()
-        }
-        
-        dialog = SimulationStatsDialog(stats_data, self)
-        dialog.exec()
-
-    def get_grid_size_info(self):
         try:
-            dem_path = self.sim_params.get('input_tiff_path', '')
-            if dem_path and os.path.exists(dem_path):
-                import rasterio
-                with rasterio.open(dem_path) as src:
-                    return f"{src.width} x {src.height} pixels"
+            process = psutil.Process()
+            ram_mb = process.memory_info().rss / 1024 / 1024
+            self.lbl_ram.setText(f"RAM: {ram_mb:.1f} MB")
+            
+            self.ram_readings.append(ram_mb)
+            self.peak_ram = max(self.peak_ram, ram_mb)
         except:
             pass
-        return "Unknown"
 
-    def get_detailed_info(self):
+    def update_progress(self, percent, message):
+        self.progress_bar.setValue(percent)
+        self.lbl_status.setText(message)
+        
+        # Track steps
+        if "Step" in message:
+            self.simulation_steps += 1
+            
+        # Log message
+        timestamp = datetime.datetime.now().strftime("%H:%M:%S")
+        self.log_messages.append(f"[{timestamp}] {message}")
+
+    def on_simulation_finished(self, result):
+        self.stats_timer.stop()
+        self.final_time = self.elapsed_timer.elapsed()
+        
         try:
-            details = []
-            details.append("=== SIMULATION DETAILS ===")
-            details.append(f"Simulation Number: {self.sim_params.get('simulation_number', 'N/A')}")
+            process = psutil.Process()
+            self.final_ram = process.memory_info().rss / 1024 / 1024
+        except:
+            pass
             
-            if hasattr(self, 'final_time'):
+        self.output_data = result
+        self.image_paths = result
+        self.setWindowTitle("Simulation Results")
+        
+        # Save full log file
+        self.save_log_file()
+        
+        # Prepare Data
+        self._prepare_data()
+        
+        # Switch to Results UI
+        self.init_results_ui()
+        
+        # Generate 3D content in background/foreground
+        self.generate_3d_content()
+
+    def get_formatted_details(self):
+        """Returns a string with formatted simulation parameters."""
+        details = []
+        details.append("=== Simulation Parameters ===")
+        details.append(f"Input Data: {os.path.basename(self.sim_params.get('input_tiff_path', 'Unknown'))}")
+        details.append(f"Grid Size: {self.output_data.get('grid_size', 'Unknown')}")
+        details.append(f"Duration: {self.sim_params.get('simulation_period')} years")
+        details.append(f"Time Step: {self.sim_params.get('time_step')} years")
+        details.append(f"Simulation ID: {self.sim_params.get('simulation_number')}")
+        
+        details.append("\n=== Components Used ===")
+        components = self.sim_params.get('selected_components', [])
+        if not components:
+            details.append("None")
+        else:
+            for i, comp in enumerate(components):
+                c_obj = comp.get('component')
+                c_name = c_obj.name if c_obj else "Unknown Component"
+                details.append(f"{i+1}. {c_name}")
+
+        return "\n".join(details)
+
+    def save_log_file(self):
+        """Saves parameters, stats, and logs to a text file in the output directory."""
+        output_dir = self.output_data.get('output_dir')
+        if not output_dir or not os.path.exists(output_dir):
+            return
+
+        log_path = os.path.join(output_dir, "simulation_details.txt")
+        
+        try:
+            with open(log_path, "w") as f:
+                # 1. Parameters
+                f.write(self.get_formatted_details())
+                f.write("\n\n")
+                
+                # 2. Performance Stats
+                f.write("=== Performance Statistics ===\n")
                 total_time_str = str(datetime.timedelta(milliseconds=self.final_time)).split('.')[0]
-                details.append(f"Total Duration: {total_time_str}")
-            
-            details.append(f"Simulation Steps: {self.simulation_steps}")
-            details.append(f"Peak RAM Usage: {self.peak_ram:.1f} MB")
-            
-            if self.ram_readings:
-                avg_ram = sum(self.ram_readings) / len(self.ram_readings)
-                details.append(f"Average RAM Usage: {avg_ram:.1f} MB")
-            
-            details.append(f"Final RAM Usage: {self.final_ram:.1f} MB")
-            details.append(f"Start Time: {self.start_time.strftime('%Y-%m-%d %H:%M:%S')}")
-            details.append(f"End Time: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-            details.append("")
-            details.append("=== SIMULATION PARAMETERS ===")
-            
-            for key, value in self.sim_params.items():
-                if key not in ['selected_components']:
-                    try:
-                        details.append(f"{key}: {value}")
-                    except:
-                        pass
-            
-            if 'selected_components' in self.sim_params:
-                details.append("")
-                details.append("=== COMPONENTS ===")
-                for comp in self.sim_params['selected_components']:
-                    try:
-                        comp_name = self._get_component_name(comp)
-                        details.append(f"- {comp_name}")
-                    except:
-                        details.append("- Component (error reading)")
-            
-            return "\n".join(details)
+                f.write(f"Total Time: {total_time_str}\n")
+                f.write(f"Start Time: {self.start_time}\n")
+                f.write(f"End Time: {datetime.datetime.now()}\n")
+                f.write(f"Peak RAM: {self.peak_ram:.1f} MB\n")
+                f.write(f"Final RAM: {self.final_ram:.1f} MB\n")
+                if self.ram_readings:
+                    avg = sum(self.ram_readings) / len(self.ram_readings)
+                    f.write(f"Average RAM: {avg:.1f} MB\n")
+                f.write("\n")
+                
+                # 3. Raw Logs
+                f.write("=== Execution Log ===\n")
+                if hasattr(self, 'log_messages'):
+                    f.write("\n".join(self.log_messages))
+                else:
+                    f.write("No logs available.")
+                    
+            print(f"Log file saved to: {log_path}")
             
         except Exception as e:
-            return f"Error generating detailed info: {str(e)}"
+            print(f"Failed to save log file: {e}")
 
-    def _get_component_name(self, comp):
-        try:
-            if isinstance(comp, dict):
-                component_obj = comp.get('component')
-                if component_obj:
-                    return getattr(component_obj, 'name', 
-                                getattr(component_obj, '__class__').__name__)
-                return comp.get('name', 'Unknown Component')
-            elif hasattr(comp, 'name'):
-                return comp.name
-            elif hasattr(comp, '__class__'):
-                return comp.__class__.__name__
-        except Exception:
-            pass
-        return "Unknown Component"
+    def on_simulation_error(self, error):
+        self.stats_timer.stop()
+        self.lbl_status.setText(f"Error: {error}")
+        self.progress_bar.setStyleSheet("QProgressBar::chunk { background-color: red; }")
+        QMessageBox.critical(self, "Simulation Failed", str(error))
+
+    def _prepare_data(self):
+        """Prepare the list of 2D images."""
+        if not self.output_data:
+            return
+        
+        self.carousel_images = []
+        if self.output_data.get('initial_plot'):
+            self.carousel_images.append((self.output_data['initial_plot'], "Initial Elevation"))
+        if self.output_data.get('final_plot'):
+            self.carousel_images.append((self.output_data['final_plot'], "Final Elevation"))
+        if self.output_data.get('change_plot'):
+             self.carousel_images.append((self.output_data['change_plot'], "Difference Map"))
+             
+    def init_results_ui(self):
+        """Builds the Tabbed UI."""
+        # Create new central widget
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        main_layout = QVBoxLayout(central_widget)
+
+        # Tabs
+        self.tabs = QTabWidget()
+        main_layout.addWidget(self.tabs)
+        
+        # --- Tab 1: 2D Visualization (Carousel) ---
+        self.tab_2d = QWidget()
+        self.setup_2d_tab()
+        self.tabs.addTab(self.tab_2d, "2D Visualization")
+        
+        # --- Tab 2: 3D Visualization (Interactive) ---
+        from app.ui.views.cesium_window import ThreeDView
+        self.view_3d = ThreeDView()
+        self.tabs.addTab(self.view_3d, "3D Visualization")
+
+        # Bottom Button Area
+        button_layout = QHBoxLayout()
+        
+        self.btn_stats = QPushButton("Show Stats")
+        self.btn_stats.clicked.connect(self.show_stats_dialog)
+        button_layout.addWidget(self.btn_stats)
+        
+        button_layout.addStretch()
+        
+        self.btn_close = QPushButton("Close")
+        self.btn_close.clicked.connect(self.close)
+        button_layout.addWidget(self.btn_close)
+        
+        main_layout.addLayout(button_layout)
+        
+        # Set default view
+        self.show_final()
+
+    def setup_2d_tab(self):
+        layout = QVBoxLayout(self.tab_2d)
+        
+        # Title Label
+        self.lbl_image_title = QLabel("Loading...")
+        self.lbl_image_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_image_title.setStyleSheet("font-size: 16px; font-weight: bold; margin-bottom: 10px;")
+        layout.addWidget(self.lbl_image_title)
+        
+        # Image Area
+        self.lbl_image = QLabel()
+        self.lbl_image.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_image.setMinimumSize(400, 300)
+        self.lbl_image.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        layout.addWidget(self.lbl_image)
+        
+        # Toggle Controls (Like 3D View)
+        controls = QHBoxLayout()
+        controls.addStretch()
+        
+        self.btn_input = QPushButton("Input Elevation")
+        self.btn_input.setCheckable(True)
+        self.btn_input.clicked.connect(self.show_input)
+        controls.addWidget(self.btn_input)
+        
+        self.btn_final = QPushButton("Final Elevation")
+        self.btn_final.setCheckable(True)
+        self.btn_final.clicked.connect(self.show_final)
+        controls.addWidget(self.btn_final)
+
+        self.btn_diff = QPushButton("Difference Map")
+        self.btn_diff.setCheckable(True)
+        self.btn_diff.clicked.connect(self.show_diff)
+        controls.addWidget(self.btn_diff)
+        
+        self.button_group = [self.btn_input, self.btn_final, self.btn_diff]
+        
+        controls.addStretch()
+        layout.addLayout(controls)
+
+    def _update_2d_display(self, key, title, active_btn):
+        # Update buttons state
+        for btn in self.button_group:
+            btn.setChecked(btn == active_btn)
+            
+        self.lbl_image_title.setText(title)
+        
+        # Find path
+        path = self.image_paths.get(key)
+        if path and os.path.exists(path):
+            pixmap = QPixmap(path)
+            # Scale
+            if hasattr(self, 'lbl_image') and self.lbl_image.size().isValid():
+                 scaled = pixmap.scaled(self.lbl_image.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+                 self.lbl_image.setPixmap(scaled)
+            else:
+                 self.lbl_image.setPixmap(pixmap) # Fallback
+        else:
+            self.lbl_image.setText(f"Image not found: {title}")
+            
+        self.current_2d_key = key
+        self.current_2d_title = title
+        self.current_active_btn = active_btn
+
+    def show_input(self):
+        self._update_2d_display('initial_plot', "Input Elevation", self.btn_input)
+
+    def show_final(self):
+        self._update_2d_display('final_plot', "Final Elevation", self.btn_final)
+
+    def show_diff(self):
+        self._update_2d_display('change_plot', "Difference Map", self.btn_diff)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        if hasattr(self, 'image_paths') and self.image_paths:
-             # Just triggering re-load to handle scaling
-             self.show_results()
+        # Refresh current image scaling
+        if hasattr(self, 'current_2d_key') and hasattr(self, 'lbl_image'):
+            self._update_2d_display(self.current_2d_key, self.current_2d_title, self.current_active_btn)
 
-    def view_in_3d(self):
-        """
-        Generates a 3D surface plot using Plotly and displays it in a new window.
-        """
-        try:
-            from app.ui.views.cesium_window import CesiumWindow
-            # 1. Identify the source GeoTIFF
-            # We prefer the raw data for 3D plotting
-            # The 'final_plot' usually points to a PNG, we need the TIF if possible,
-            # or we reconstruct it. 
-            # Ideally, the simulation runner should return the path to the TIF.
-            # Assuming 'final_state' in results points to TIF or we can infer it.
+    def show_stats_dialog(self):
+        """Calculates stats and shows the dialog."""
+        total_time_str = "N/A"
+        if hasattr(self, 'final_time'):
+            total_time_str = str(datetime.timedelta(milliseconds=self.final_time)).split('.')[0]
             
-            # Fallback: if we don't have the TIF path explicitly in image_paths, 
-            # we might need to rely on the controller or known output structure.
-            # For now, let's look for the TIF in the same directory as the final plot.
-            
-            target_image = self.image_paths.get('final_plot')
-            if not target_image:
-                 QMessageBox.warning(self, "Error", "No result found to visualize.")
-                 return
+        # Average RAM
+        avg_ram_str = "N/A"
+        if hasattr(self, 'ram_readings') and self.ram_readings:
+            avg_ram = sum(self.ram_readings) / len(self.ram_readings)
+            avg_ram_str = f"{avg_ram:.1f} MB"
 
-            # Construct path to likely GeoTIFF
-            # e.g. .../outputs/sim_X/final_plot.png -> .../outputs/sim_X/topography.tif
-            output_dir = os.path.dirname(target_image)
-            # Default name from runner.py usually 'final_elevation.tif' or 'topography.tif'
-            # Let's try to find a valid TIF
-            potential_tiffs = [f for f in os.listdir(output_dir) if f.endswith('.tif')]
-            if not potential_tiffs:
-                 QMessageBox.warning(self, "Error", "No elevation data (GeoTIFF) found for 3D visualization.")
-                 return
-                 
-            # Pick the most relevant one, typically 'final_elevation.tif' if it exists
-            tiff_name = 'final_elevation.tif' if 'final_elevation.tif' in potential_tiffs else potential_tiffs[0]
-            tiff_path = os.path.join(output_dir, tiff_name)
+        # Logs - Replaced by formatted detailed info
+        formatted_details = self.get_formatted_details()
             
-            # 2. Get Input Tiff
-            input_tiff = self.sim_params.get('input_tiff_path')
-            # If relative, make absolute relative to workspace root (assuming cwd is root or reliable)
-            if not os.path.isabs(input_tiff):
-                input_tiff = os.path.abspath(input_tiff)
+        # Basic data package for dialog
+        stats = {
+            'total_time': total_time_str,
+            'start_time': self.start_time.strftime("%Y-%m-%d %H:%M:%S") if isinstance(self.start_time, datetime.datetime) else str(self.start_time),
+            'end_time': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            'peak_ram': f"{self.peak_ram:.1f} MB",
+            'final_ram': f"{self.final_ram:.1f} MB",
+            'average_ram': avg_ram_str,
+            'detailed_info': formatted_details
+        }
+        
+        from app.ui.views.simulation_results import SimulationStatsDialog
+        dlg = SimulationStatsDialog(stats, self)
+        dlg.exec()
 
-            # 3. Generate the Multi-Layer HTML Plot
-            from app.engine.visualization import generate_3d_comparison_html
-            
-            html_output = os.path.join(output_dir, "view_3d_comparison.html")
-            
-            # Show loading cursor
-            self.setCursor(Qt.CursorShape.WaitCursor)
-            
-            # Pass both input and output paths
-            success = generate_3d_comparison_html(input_tiff, tiff_path, html_output)
-            
-            self.unsetCursor()
-            
-            if not success:
-                QMessageBox.critical(self, "Error", "Failed to generate 3D plot.\nCheck console for details.")
-                return
+    def generate_3d_content(self):
+        """Generates the 3D HTML and loads it into the view."""
+        output_dir = self.output_data.get('output_dir')
+        if not output_dir or not os.path.exists(output_dir):
+            return
 
-            # 3. Open the Viewer
-            # We reuse the CesiumWindow class but it is now a generic HTML viewer
-            self.cesium_window = CesiumWindow(html_output, self)
-            self.cesium_window.show()
+        # Locate Tiffs
+        potential_tiffs = [f for f in os.listdir(output_dir) if f.endswith('.tif') and 'elevation' in f]
+        # Fallback to any TIF if specific name lookup fails
+        tiff_name = 'final_elevation.tif' 
+        if tiff_name not in potential_tiffs and potential_tiffs:
+            tiff_name = potential_tiffs[0]
             
-        except Exception as e:
-            self.unsetCursor()
-            QMessageBox.critical(self, "Error", f"An error occurred launching 3D view: {e}")
-
-    def closeEvent(self, event):
-        if hasattr(self, 'stats_timer') and self.stats_timer.isActive():
-            self.stats_timer.stop()
-        if self.simulation_worker and self.simulation_worker.isRunning():
-            self.simulation_worker.terminate()
-            self.simulation_worker.wait()
-        super().closeEvent(event)
+        final_tiff_path = os.path.join(output_dir, tiff_name)
+        
+        input_tiff = self.sim_params.get('input_tiff_path')
+        if not os.path.isabs(input_tiff):
+            input_tiff = os.path.abspath(input_tiff)
+            
+        html_output = os.path.join(output_dir, "view_3d_comparison.html")
+        
+        from app.engine.visualization import generate_3d_comparison_html
+        
+        success = generate_3d_comparison_html(input_tiff, final_tiff_path, html_output)
+        
+        if success:
+            self.view_3d.load_plot(html_output)
+        else:
+            print("Failed to generate 3D plot")

@@ -146,9 +146,10 @@ class SimulationRunner:
             "input_tif": input_tif,
             "initial_plot": str(initial_png),
             "final_plot": str(final_png),
-            "overlay_plot": str(overlay_png), # Add to result
+            "overlay_plot": str(overlay_png),
             "change_plot": str(change_png),
-            "soil_transport_plot": str(transport_png) if transport_png else None
+            "soil_transport_plot": str(transport_png) if transport_png else None,
+            "grid_size": str(grid.shape)
         }
 
 def run_simulation(sim_params, progress_callback=None):

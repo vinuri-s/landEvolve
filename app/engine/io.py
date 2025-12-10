@@ -36,7 +36,18 @@ def plot_topography(data, shape, title, output_path, cmap='terrain', vmin=None, 
 
 def plot_difference(data, shape, title, output_path):
     plt.figure(figsize=(12, 8))
-    plt.imshow(data.reshape(shape), cmap='coolwarm', vmin=-1, vmax=1)
+    
+    # Symmetric auto-scaling
+    # Handle NaN values safely
+    valid_data = data[~np.isnan(data)]
+    if valid_data.size > 0:
+        max_abs = np.max(np.abs(valid_data))
+        # Ensure at least some range to avoid errors
+        if max_abs == 0: max_abs = 0.1 
+    else:
+        max_abs = 1.0
+
+    plt.imshow(data.reshape(shape), cmap='coolwarm', vmin=-max_abs, vmax=max_abs)
     plt.colorbar(label='Elevation Change (m)')
     plt.title(title)
     plt.savefig(output_path)
