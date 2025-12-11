@@ -1,11 +1,9 @@
-
 import argparse
 import numpy as np
 import csv
 import os
 import time
 from app.engine.components import SpaceLargeScaleEroderComponent, DepthDependentDiffuserComponent, FlowAccumulatorComponent
-
 from test.OAT_sensitivity_test.utils import load_dem, save_output_raster, save_output_png, get_next_test_dir_with_prefix, save_summary_plot
 
 def run_sensitivity_analysis(min_k, max_k, steps, duration, output_file_name, dem_path):
