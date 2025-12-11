@@ -235,6 +235,13 @@ class SimulationResultsWindow(QMainWindow):
                 c_obj = comp.get('component')
                 c_name = c_obj.name if c_obj else "Unknown Component"
                 details.append(f"{i+1}. {c_name}")
+                
+                params = comp.get('params', {})
+                if params:
+                    for k, v in params.items():
+                        if k == 'erodibility_map':
+                            continue
+                        details.append(f"   - {k}: {v}")
 
         return "\n".join(details)
 

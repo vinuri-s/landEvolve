@@ -72,7 +72,11 @@ class LithologyHandler:
                 # Assumes K_sed is scaled relative to K_br (Business Logic)
                 params['K_sed'] = params['K_br'] * 100
                 
-                logger.info("Successfully applied heterogeneous lithology.")
+                unique_geo = np.unique(geology_data)
+                unique_k = np.unique(params['K_br'])
+                logger.info(f"Successfully applied heterogeneous lithology.")
+                logger.info(f"Unique Geology Codes in File: {unique_geo}")
+                logger.info(f"Unique K_br values assigned: {unique_k}")
 
         except Exception as e:
             logger.error(f"Error loading geology file: {e}")
