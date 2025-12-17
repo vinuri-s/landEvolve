@@ -2,7 +2,7 @@ import abc
 import logging
 import numpy as np
 import rasterio
-from landlab.components import FlowAccumulator, Space, SpaceLargeScaleEroder, DepthDependentDiffuser
+from landlab.components import FlowAccumulator, Space, SpaceLargeScaleEroder, DepthDependentDiffuser, DepressionFinderAndRouter
 import inspect
 
 
@@ -213,3 +213,23 @@ class DepthDependentDiffuserComponent(SimulationComponent):
 
     def run(self, dt: float):
         self.diffuser.run_one_step(dt)
+
+class DepressionFinderAndRouterComponent(SimulationComponent):
+    """
+    Identifies depressions (pits) in the topography and routes flow across them.
+    This is essential for ensuring connected flow paths in the presence of pits.
+    """
+    def __init__(self, grid, **params):
+        super().__init__(grid)
+        
+        # Dynamic filtering
+        valid_args = inspect.signature(DepressionFinderAndRouter.__init__).parameters
+        final_params = {k: v for k, v in params.items() if k in valid_args}
+        
+        self.dfr = DepressionFinderAndRouter(grid, **final_params)
+
+    def run(self, dt: float = None):
+        # DepressionFinderAndRouter finds pits and routes flow. 
+        # It doesn't take a time step, but we match the signature.
+        self.dfr.map_depressions()
+

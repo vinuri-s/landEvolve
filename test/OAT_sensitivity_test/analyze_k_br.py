@@ -3,7 +3,7 @@ import numpy as np
 import csv
 import os
 import time
-from app.engine.components import SpaceLargeScaleEroderComponent, DepthDependentDiffuserComponent, FlowAccumulatorComponent
+from app.engine.components import SpaceLargeScaleEroderComponent, DepthDependentDiffuserComponent, FlowAccumulatorComponent, DepressionFinderAndRouterComponent
 from test.OAT_sensitivity_test.utils import load_dem, save_output_raster, save_output_png, get_next_test_dir_with_prefix, save_summary_plot
 
 def run_sensitivity_analysis(min_k, max_k, steps, duration, output_file_name, dem_path):
@@ -44,6 +44,7 @@ def run_sensitivity_analysis(min_k, max_k, steps, duration, output_file_name, de
         # 2. Initialize Components
         # Use existing wrapper which handles runoff etc.
         fa = FlowAccumulatorComponent(mg, flow_director='D8')
+        dfr = DepressionFinderAndRouterComponent(mg)
         
         space_params = {
             'K_br': k_br,
@@ -69,6 +70,7 @@ def run_sensitivity_analysis(min_k, max_k, steps, duration, output_file_name, de
         start_time = time.time()
         while current_time < duration:
             fa.run(dt) # Wrapper uses run(dt) which calls run_one_step()
+            dfr.run(dt)
             space.run(dt)
             diffuser.run(dt)
             current_time += dt

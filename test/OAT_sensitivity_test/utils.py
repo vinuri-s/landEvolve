@@ -42,7 +42,8 @@ def load_dem(dem_path):
         mg.at_node['topographic__elevation'] = elevation_data.flatten().astype(float)
         
         # Set closed boundaries at edges
-        mg.set_closed_boundaries_at_grid_edges(True, True, True, True)
+        # Set open boundaries at edges to allow flow/sediment to leave
+        mg.set_closed_boundaries_at_grid_edges(False, False, False, False)
 
         return mg, profile
 
