@@ -75,6 +75,10 @@ def run_sensitivity_analysis(min_k, max_k, steps, duration, output_file_name, de
             diffuser.run(dt)
             current_time += dt
             
+            # Progress logging
+            if int(current_time) % max(1, int(duration / 10)) == 0:
+                 print(f"    ... {current_time/duration*100:.1f}% ({current_time:.1f}/{duration:.1f} yrs)", end='\r')
+            
         elapsed = time.time() - start_time
         
         # 4. Collect Metrics & Save Outputs
@@ -191,7 +195,7 @@ def run_sensitivity_analysis(min_k, max_k, steps, duration, output_file_name, de
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="OAT Sensitivity Analysis for K_br in SpaceLargeScaleEroderComponent")
     parser.add_argument("--min_k", type=float, default=1e-7, help="Minimum K_br value")
-    parser.add_argument("--max_k", type=float, default=1e-2, help="Maximum K_br value")
+    parser.add_argument("--max_k", type=float, default=1e-3, help="Maximum K_br value")
     parser.add_argument("--steps", type=int, default=5, help="Number of steps/samples")
     parser.add_argument("--duration", type=float, default=100.0, help="Simulation duration in years")
     parser.add_argument("--output", type=str, default="sensitivity_results.csv", help="Output CSV file name. Defaults to 'sensitivity_results.csv'.")
