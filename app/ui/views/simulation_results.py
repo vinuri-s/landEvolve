@@ -9,6 +9,7 @@ import os
 import psutil
 import datetime
 from app.ui.views.ui_generated.simulation_results import Ui_SimulationResults
+from app.ui.window_manager import WindowManager
 
 class SimulationStatsDialog(QDialog):
     def __init__(self, stats_data, parent=None):
@@ -75,8 +76,9 @@ class SimulationResultsWindow(QMainWindow):
     def __init__(self, sim_params, controller, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Simulation Progress")
-        self.resize(1000, 800)
+        # self.resize(1000, 800) # Replaced by WindowManager
         
+        WindowManager.load_window_state(self)
         self.sim_params = sim_params
         self.simulation_controller = controller
         self.output_data = None
@@ -339,8 +341,8 @@ class SimulationResultsWindow(QMainWindow):
         
         main_layout.addLayout(button_layout)
         
-        # Set default view
-        self.show_final()
+        # Set default view using QTimer to ensure layout is ready
+        QTimer.singleShot(0, self.show_final)
 
     def setup_2d_tab(self):
         layout = QVBoxLayout(self.tab_2d)
@@ -392,19 +394,30 @@ class SimulationResultsWindow(QMainWindow):
         # Find path
         path = self.image_paths.get(key)
         if path and os.path.exists(path):
-            pixmap = QPixmap(path)
-            # Scale
-            if hasattr(self, 'lbl_image') and self.lbl_image.size().isValid():
-                 scaled = pixmap.scaled(self.lbl_image.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-                 self.lbl_image.setPixmap(scaled)
-            else:
-                 self.lbl_image.setPixmap(pixmap) # Fallback
+            self.current_pixmap = QPixmap(path)
+            self._refresh_image_scaling()
         else:
             self.lbl_image.setText(f"Image not found: {title}")
+            self.current_pixmap = None
             
         self.current_2d_key = key
         self.current_2d_title = title
         self.current_active_btn = active_btn
+        
+    def _refresh_image_scaling(self):
+        """Scales the current pixmap to fit the label size."""
+        if hasattr(self, 'current_pixmap') and self.current_pixmap and hasattr(self, 'lbl_image'):
+            # Ensure label has a valid size, if not (e.g. 0,0), use minimum size or skip
+            target_size = self.lbl_image.size()
+            if not target_size.isValid() or target_size.width() <= 10 or target_size.height() <= 10:
+                 return # Too small to render usefully wait for resize
+                 
+            scaled = self.current_pixmap.scaled(
+                target_size, 
+                Qt.AspectRatioMode.KeepAspectRatio, 
+                Qt.TransformationMode.SmoothTransformation
+            )
+            self.lbl_image.setPixmap(scaled)
 
     def show_input(self):
         self._update_2d_display('initial_plot', "Input Elevation", self.btn_input)
@@ -418,8 +431,7 @@ class SimulationResultsWindow(QMainWindow):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         # Refresh current image scaling
-        if hasattr(self, 'current_2d_key') and hasattr(self, 'lbl_image'):
-            self._update_2d_display(self.current_2d_key, self.current_2d_title, self.current_active_btn)
+        self._refresh_image_scaling()
 
     def show_stats_dialog(self):
         """Calculates stats and shows the dialog."""
@@ -480,3 +492,7 @@ class SimulationResultsWindow(QMainWindow):
             self.view_3d.load_plot(html_output)
         else:
             print("Failed to generate 3D plot")
+
+    def closeEvent(self, event):
+        WindowManager.save_window_state(self)
+        super().closeEvent(event)

@@ -12,6 +12,8 @@ from app.ui.views.simulation_results import SimulationResultsWindow
 
 logger = logging.getLogger(__name__)
 
+from app.ui.window_manager import WindowManager
+
 class SimulationWindow(QMainWindow):
     """
     The main configuration screen where users set up the simulation.
@@ -33,7 +35,7 @@ class SimulationWindow(QMainWindow):
         self.selected_location = None
         self.added_components = []
         
-        self.resize(1200, 800)
+        # self.resize(1200, 800) # Removed fixed resize favors persistent state
         
         self.ui.compTableWidget.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.ui.compTableWidget.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
@@ -42,6 +44,12 @@ class SimulationWindow(QMainWindow):
         self.configure_web_engine()
         self.load_initial_data()
         self.setup_connections()
+        
+        WindowManager.load_window_state(self)
+
+    def closeEvent(self, event):
+        WindowManager.save_window_state(self)
+        super().closeEvent(event)
 
     def configure_web_engine(self):
         settings = self.ui.webView.settings()

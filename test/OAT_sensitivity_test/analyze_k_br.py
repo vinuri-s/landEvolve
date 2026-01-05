@@ -47,7 +47,7 @@ def run_sensitivity_analysis(min_k, max_k, steps, duration, output_file_name, de
         
         space_params = {
             'K_br': k_br,
-            'K_sed': k_br * 100.0,
+            'K_sed': 0.003,
             'F_f': 0.5,
             'phi': 0.1,
             'H_star': 1.0, 

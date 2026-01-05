@@ -6,6 +6,8 @@ from app.ui.views.simulation_window import SimulationWindow
 from app.ui.views.ui_generated.home import Ui_Home
 from app.core.config import Config
 
+from app.ui.window_manager import WindowManager
+
 class HomeWindow(QMainWindow):
     """
     The main landing screen of the application.
@@ -19,6 +21,14 @@ class HomeWindow(QMainWindow):
         self.load_image()
         
         self.ui.startSimulationBtn.clicked.connect(self.start_simulation)
+        
+        # Load persistent window state
+        WindowManager.load_window_state(self)
+
+    def closeEvent(self, event):
+        """Save window state on close"""
+        WindowManager.save_window_state(self)
+        super().closeEvent(event)
     
     def load_image(self):
         """Load and display the about image from resources directory."""
@@ -40,6 +50,10 @@ class HomeWindow(QMainWindow):
             self.ui.imageLabel.setAlignment(Qt.AlignmentFlag.AlignCenter)
     
     def start_simulation(self):
+        # We don't save here because simple closeEvent might handle it, 
+        # but since we are closing explicitly:
+        WindowManager.save_window_state(self)
+        
         self.simulation_ui = SimulationWindow()
         self.simulation_ui.show()
         self.close()

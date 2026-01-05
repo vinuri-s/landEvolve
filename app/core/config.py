@@ -1,9 +1,17 @@
 import os
+import sys
 from pathlib import Path
 
 class Config:
     # Base directory of the project (landEvolve-main)
-    BASE_DIR = Path(__file__).resolve().parent.parent.parent
+    if getattr(sys, 'frozen', False):
+         # If the application is run as a bundle, the PyInstaller bootloader
+         # extends the sys module by a flag frozen=True and sets the app 
+         # path into variable _MEIPASS'.
+         # However, for external resources (DB, Outputs) we want the executable dir.
+         BASE_DIR = Path(sys.executable).parent
+    else:
+         BASE_DIR = Path(__file__).resolve().parent.parent.parent
     
     # Resources
     RESOURCES_DIR = BASE_DIR / "resources"
