@@ -139,7 +139,10 @@ def run_sensitivity_analysis(min_k_sed, max_k_sed, steps, k_br, duration, output
         # Optional: Plotting Summary
         k_vals = [r['k_sed'] for r in results]
         erosion_vals = [r['mean_erosion_m'] for r in results]
+        max_erosion_vals = [r['max_erosion_m'] for r in results]
+        sed_flux_vals = [r['total_sediment_flux_m3_yr'] for r in results]
         
+        # 1. Mean Erosion
         save_summary_plot(
             final_output_csv, 
             k_vals, 
@@ -147,14 +150,52 @@ def run_sensitivity_analysis(min_k_sed, max_k_sed, steps, k_br, duration, output
             'K_sed', 
             'Mean Erosion (m)', 
             'Sensitivity of Erosion to Sediment Erodibility (K_sed)',
-            log_x=True
+            log_x=True,
+            output_file=final_output_csv.replace('.csv', '_mean_erosion.png')
+        )
+
+        # 2. Max Erosion
+        save_summary_plot(
+            final_output_csv, 
+            k_vals, 
+            max_erosion_vals, 
+            'K_sed', 
+            'Max Erosion (m)', 
+            'Sensitivity of Max Erosion to Sediment Erodibility (K_sed)',
+            log_x=True,
+            output_file=final_output_csv.replace('.csv', '_max_erosion.png')
+        )
+
+        # 3. Total Sediment Flux
+        save_summary_plot(
+            final_output_csv, 
+            k_vals, 
+            sed_flux_vals, 
+            'K_sed', 
+            'Total Sediment Flux (m3/yr)', 
+            'Sensitivity of Sediment Flux to Sediment Erodibility (K_sed)',
+            log_x=True,
+            output_file=final_output_csv.replace('.csv', '_sediment_flux.png')
+        )
+
+        # 4. Wall Time (Computational Cost)
+        wall_time_vals = [r['wall_time_sec'] for r in results]
+        save_summary_plot(
+            final_output_csv, 
+            k_vals, 
+            wall_time_vals, 
+            'K_sed', 
+            'Wall Time (s)', 
+            'Computational Cost vs K_sed',
+            log_x=True,
+            output_file=final_output_csv.replace('.csv', '_wall_time.png')
         )
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="OAT Sensitivity Analysis for K_sed in SpaceLargeScaleEroderComponent")
-    parser.add_argument("--min_k_sed", type=float, default=1e-4, help="Minimum K_sed value")
-    parser.add_argument("--max_k_sed", type=float, default=1e-2, help="Maximum K_sed value")
-    parser.add_argument("--k_br", type=float, default=1e-5, help="Constant K_br value")
+    parser.add_argument("--min_k_sed", type=float, default=1e-7, help="Minimum K_sed value")
+    parser.add_argument("--max_k_sed", type=float, default=1e-3, help="Maximum K_sed value")
+    parser.add_argument("--k_br", type=float, default=1e-7, help="Constant K_br value")
     parser.add_argument("--steps", type=int, default=5, help="Number of steps/samples")
     parser.add_argument("--duration", type=float, default=100.0, help="Simulation duration in years")
     parser.add_argument("--output", type=str, default="sensitivity_results_ksed.csv", help="Output CSV file name. Defaults to 'sensitivity_results_ksed.csv'.")
