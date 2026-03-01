@@ -8,15 +8,14 @@ os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = "--log-level=3"
 from PyQt6.QtWidgets import QApplication
 from app.ui.views.home_window import HomeWindow
 from app.ui.themes import ThemeManager
-from app.core.config import Config
+from app.config import Config
 from app.data.database import db_manager
+
+from app.logging import LogManager
 
 def main():
     """Start the application, initialize theme, and show the main window."""
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
+    LogManager.setup()
     Config.init_directories()
     
     # Initialize database

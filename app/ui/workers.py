@@ -11,15 +11,15 @@ class SimulationWorker(QThread):
     finished = pyqtSignal(dict)
     error_occurred = pyqtSignal(str)
     
-    def __init__(self, sim_params, sim_service):
+    def __init__(self, sim_params, controller):
         super().__init__()
         self.sim_params = sim_params
-        self.sim_service = sim_service
+        self.controller = controller
     
     def run(self):
         try:
             # Pass the callback method directly
-            results = self.sim_service.run_simulation(self.sim_params, self.callback)
+            results = self.controller.run_simulation(self.sim_params, self.callback)
             self.finished.emit(results)
         except Exception as e:
             import traceback

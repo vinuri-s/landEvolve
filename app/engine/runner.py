@@ -9,7 +9,7 @@ from app.engine.components import (
     DepthDependentDiffuserComponent
 )
 from app.engine.io import save_geotiff, plot_topography, plot_difference, plot_soil_transport, save_overlay_image
-from app.core.config import Config
+from app.config import Config
 
 class SimulationRunner:
     """

@@ -43,7 +43,12 @@ def build_app():
         "--hidden-import=landlab.grid.raster_divergence",
         "--hidden-import=landlab.grid.raster_gradients",
         "--hidden-import=landlab.grid.raster_mappers",
+        "--hidden-import=landlab.grid.raster_mappers",
         "--hidden-import=landlab.grid.raster_aspect",
+        "--hidden-import=app.logging",
+        "--hidden-import=app.config",
+        "--hidden-import=app.ui.validators.simulation_validator",
+        "--hidden-import=app.engine.runner",
     ]
     
     # Data to include (Source : Destination in Bundle)
@@ -52,7 +57,7 @@ def build_app():
     add_data = [
         f"--add-data=app/resources{sep}app/resources", 
         f"--add-data=resources{sep}resources",
-        f"--add-data=db{sep}db", # Include empty DB structure if needed
+        f"--add-data=app/data/db{sep}app/data/db", # Bundle the SQLite architecture internally
     ]
 
     args = [

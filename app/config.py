@@ -11,7 +11,7 @@ class Config:
          # However, for external resources (DB, Outputs) we want the executable dir.
          BASE_DIR = Path(sys.executable).parent
     else:
-         BASE_DIR = Path(__file__).resolve().parent.parent.parent
+         BASE_DIR = Path(__file__).resolve().parent.parent
     
     # Resources
     RESOURCES_DIR = BASE_DIR / "resources"
@@ -20,8 +20,8 @@ class Config:
     
     # Database Configuration
     # We use SQLite for a lightweight, file-based database.
-    # The DB file is stored in the 'db' folder at the project root.
-    DB_FILE = BASE_DIR / "db" / "app_data.db"
+    # The DB file is stored in the 'app/data/db' folder.
+    DB_FILE = BASE_DIR / "app" / "data" / "db" / "app_data.db"
     
     # Format the database URL for SQLAlchemy (used for database connection)
     # We ensure forward slashes are used for cross-platform compatibility (Windows/Mac/Linux)

@@ -1,12 +1,12 @@
 from PyQt6.QtWidgets import QMainWindow
-from PyQt6 import QtGui, QtCore
+from PyQt6 import QtGui
 from PyQt6.QtCore import Qt
-from app.ui.controllers.simulation_controller import SimulationController
+from app.controllers.simulation_controller import SimulationController
 from app.ui.views.simulation_window import SimulationWindow
 from app.ui.views.ui_generated.home import Ui_Home
-from app.core.config import Config
-
+from app.config import Config
 from app.ui.window_manager import WindowManager
+from app.ui.constants import HomeWindowConsts
 
 class HomeWindow(QMainWindow):
     """
@@ -34,19 +34,19 @@ class HomeWindow(QMainWindow):
         """Load and display the about image from resources directory."""
         try:
             # Use Config constant for proper resource path resolution
-            image_path = str(Config.RESOURCES_DIR / "about.jpg")
+            image_path = str(Config.RESOURCES_DIR / HomeWindowConsts.IMG_ABOUT_FILENAME)
             pixmap = QtGui.QPixmap(image_path)
             if not pixmap.isNull():
                 self.ui.imageLabel.setPixmap(pixmap.scaled(
-                    400, 300, 
+                    HomeWindowConsts.IMG_SCALED_WIDTH, HomeWindowConsts.IMG_SCALED_HEIGHT, 
                     Qt.AspectRatioMode.KeepAspectRatio,
                     Qt.TransformationMode.SmoothTransformation
                 ))
             else:
-                self.ui.imageLabel.setText("LandEvolve Visualization")
+                self.ui.imageLabel.setText(HomeWindowConsts.LBL_TITLE_FALLBACK)
                 self.ui.imageLabel.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        except:
-            self.ui.imageLabel.setText("Image not available")
+        except Exception:
+            self.ui.imageLabel.setText(HomeWindowConsts.LBL_IMG_UNAVAILABLE)
             self.ui.imageLabel.setAlignment(Qt.AlignmentFlag.AlignCenter)
     
     def start_simulation(self):

@@ -21,8 +21,12 @@ class SimulationController:
     def get_resolutions(self, location_id):
         return self.location_service.get_resolutions(location_id)
 
+    def run_simulation(self, sim_params, callback):
+        return self.sim_service.run_simulation(sim_params, callback)
+
     def create_simulation_worker(self, sim_params):
-        return SimulationWorker(sim_params, self.sim_service)
+        from app.ui.workers import SimulationWorker
+        return SimulationWorker(sim_params, self)
     
     def get_next_simulation_number(self):
         return self.sim_service.get_next_simulation_number()
@@ -74,3 +78,7 @@ class SimulationController:
         except Exception as e:
             print(f"Error reading bounds: {e}")
             return default_bounds
+
+    def generate_3d_model(self, input_tiff, final_tiff_path, html_output):
+        from app.engine import generate_3d_comparison_html
+        return generate_3d_comparison_html(input_tiff, final_tiff_path, html_output)

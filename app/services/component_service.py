@@ -1,5 +1,6 @@
 from app.services.base_service import BaseService
 from app.data.repositories.component_repository import ComponentRepository, ComponentParamRepository
+from app.logging import log_method
 
 class ComponentService(BaseService):
     """
@@ -11,6 +12,7 @@ class ComponentService(BaseService):
         self.comp_repo = ComponentRepository(self.session)
         self.param_repo = ComponentParamRepository(self.session)
         
+    @log_method
     def get_all_components(self):
         return self.comp_repo.get_all()
         

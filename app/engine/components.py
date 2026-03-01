@@ -5,9 +5,8 @@ import rasterio
 from landlab.components import FlowAccumulator, Space, SpaceLargeScaleEroder, DepthDependentDiffuser
 import inspect
 
-
-# Configure logger
-logger = logging.getLogger(__name__)
+from app.logging.manager import LogManager
+logger = LogManager.get_logger("engine")
 
 class SimulationComponent(abc.ABC):
     """

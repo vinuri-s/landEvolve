@@ -1,9 +1,10 @@
 from PyQt6.QtWidgets import QDialog
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import QVBoxLayout
-from app.ui.controllers.component_controller import ComponentController
-from app.ui.views.dynamic_form import DynamicFormWidget
+from app.controllers.component_controller import ComponentController
+from app.ui.widgets.dynamic_form import DynamicFormWidget
 from app.ui.views.ui_generated.componentDlg import Ui_AddComponents
+from app.ui.constants import AddComponentDlgConsts
 
 class AddComponentDlg(QDialog):
     component_added = pyqtSignal(object, dict)
@@ -23,8 +24,8 @@ class AddComponentDlg(QDialog):
         self.setup_connections()
         
         if initial_component:
-            self.setWindowTitle("Edit Component")
-            self.ui.addBtn.setText("Update")
+            self.setWindowTitle(AddComponentDlgConsts.WINDOW_TITLE_EDIT)
+            self.ui.addBtn.setText(AddComponentDlgConsts.BTN_UPDATE)
     
     def setup_connections(self):
         self.ui.selectComponentComboBox.currentIndexChanged.connect(self.on_component_changed)
@@ -63,7 +64,7 @@ class AddComponentDlg(QDialog):
     def on_component_changed(self):
         selected_component = self.ui.selectComponentComboBox.currentData()
         if selected_component:
-            self.ui.descriptionLabel.setText(selected_component.description or "No description available.")
+            self.ui.descriptionLabel.setText(selected_component.description or AddComponentDlgConsts.LBL_NO_DESCRIPTION)
             # If this is the initial component, pass params
             params_to_load = None
             if self.initial_component and selected_component.id == self.initial_component.id:
@@ -71,7 +72,7 @@ class AddComponentDlg(QDialog):
                  
             self.load_component_data(selected_component, params_to_load)
         else:
-            self.ui.descriptionLabel.setText("No component selected.")
+            self.ui.descriptionLabel.setText(AddComponentDlgConsts.LBL_NO_COMPONENT)
 
     def load_component_data(self, selected_component, params=None):
         self.selected_component = selected_component

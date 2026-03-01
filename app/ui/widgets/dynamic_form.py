@@ -3,6 +3,7 @@ from PyQt6.QtWidgets import (
     QScrollArea, QDoubleSpinBox, QFileDialog, QPushButton, QHBoxLayout
 )
 from PyQt6.QtCore import Qt
+from app.ui.constants import DynamicFormConsts
 
 class DynamicFormWidget(QWidget):
     def __init__(self, config, parent=None):
@@ -27,7 +28,7 @@ class DynamicFormWidget(QWidget):
             if field_type == 'QLineEdit':
                 widget = QLineEdit()
                 if validation == 'Optional':
-                    widget.setPlaceholderText("Optional")
+                    widget.setPlaceholderText(DynamicFormConsts.OPTIONAL_TEXT)
                 self.fields[label] = widget
                 self.form_layout.addRow(label, widget)
                 
@@ -69,11 +70,11 @@ class DynamicFormWidget(QWidget):
                 file_layout.setContentsMargins(0, 0, 0, 0)
                 
                 line_edit = QLineEdit()
-                browse_btn = QPushButton("Browse...")
+                browse_btn = QPushButton(DynamicFormConsts.BTN_BROWSE)
                 
                 def browse_file():
                     file_path, _ = QFileDialog.getOpenFileName(
-                        self, "Select Geology File", "", "TIFF Files (*.tif *.tiff)"
+                        self, DynamicFormConsts.FILE_DIALOG_TITLE, "", DynamicFormConsts.FILE_DIALOG_FILTER
                     )
                     if file_path:
                         line_edit.setText(file_path)
@@ -86,19 +87,23 @@ class DynamicFormWidget(QWidget):
                 self.fields[label] = line_edit
                 self.form_layout.addRow(label, file_widget)
         
-        conditional_fields = ['geology_file', 'K_sed', 'K_br']
+        conditional_fields = [
+            DynamicFormConsts.FIELD_GEOLOGY_FILE, 
+            DynamicFormConsts.FIELD_K_SED, 
+            DynamicFormConsts.FIELD_K_BR
+        ]
 
-        if 'lithology_type' in self.fields:
-            lithology_combo = self.fields['lithology_type']
+        if DynamicFormConsts.FIELD_LITHOLOGY_TYPE in self.fields:
+            lithology_combo = self.fields[DynamicFormConsts.FIELD_LITHOLOGY_TYPE]
             
             def update_fields_visibility():
-                is_heterogeneous = lithology_combo.currentText() == 'Heterogeneous'
+                is_heterogeneous = lithology_combo.currentText() == DynamicFormConsts.LITHOLOGY_HETEROGENEOUS
                 for field_name in conditional_fields:
                     if field_name in self.fields:
                         widget = self.fields[field_name]
                         label_item = self.form_layout.labelForField(widget)
                         
-                        if field_name in ['K_sed', 'K_br']:
+                        if field_name in [DynamicFormConsts.FIELD_K_SED, DynamicFormConsts.FIELD_K_BR]:
                             visible = not is_heterogeneous
                         else:
                             visible = is_heterogeneous
