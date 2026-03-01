@@ -100,3 +100,30 @@ pip install -r requirements.txt
 # 4. Run the application
 python main.py
 ```
+
+## 📦 Packaging (Executable Generation)
+
+You can package LandEvolve into a standalone executable that includes all dependencies (LandLab, Rasterio, PyQt6, etc.) using PyInstaller.
+
+### 1. Build the Executable
+Run the dedicated build script from the project root:
+```bash
+python build_executable.py
+```
+
+### 2. Run the Executable
+
+#### macOS
+The build generates an `.app` bundle and a directory in `dist/LandEvolve`.
+```bash
+./dist/LandEvolve/LandEvolve
+```
+
+#### Windows / Linux
+Run the executable from the generated `dist` folder:
+```powershell
+.\dist\LandEvolve\LandEvolve.exe
+```
+
+> [!NOTE]
+> On the first run, the application will initialize a `logs/` directory and a `app/data/db/` directory beside the executable for writable data.
