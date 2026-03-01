@@ -3,35 +3,40 @@ import sys
 from pathlib import Path
 
 class Config:
-    # Base directory of the project (landEvolve-main)
+    # Base directory considerations for PyInstaller
     if getattr(sys, 'frozen', False):
-         # If the application is run as a bundle, the PyInstaller bootloader
-         # extends the sys module by a flag frozen=True and sets the app 
-         # path into variable _MEIPASS'.
-         # However, for external resources (DB, Outputs) we want the executable dir.
+         # Bundled data root (_internal in onedir)
+         _BUNDLED_ROOT = Path(sys._MEIPASS)
+         # External base for logs, DB, and outputs
          BASE_DIR = Path(sys.executable).parent
     else:
-         BASE_DIR = Path(__file__).resolve().parent.parent
+         _BUNDLED_ROOT = Path(__file__).resolve().parent.parent
+         BASE_DIR = _BUNDLED_ROOT
     
-    # Resources
-    RESOURCES_DIR = BASE_DIR / "resources"
-    INPUTS_DIR = RESOURCES_DIR / "inputs"
-    OUTPUTS_DIR = RESOURCES_DIR / "outputs"
+    # Resources (Read-only bundled assets)
+    RESOURCES_DIR = _BUNDLED_ROOT / "resources"
+    INPUTS_DIR = _BUNDLED_ROOT / "resources" / "inputs"
+    
+    # User data (Writable runtime assets)
+    OUTPUTS_DIR = BASE_DIR / "resources" / "outputs"
+    LOGS_DIR = BASE_DIR / "logs"
     
     # Database Configuration
-    # We use SQLite for a lightweight, file-based database.
-    # The DB file is stored in the 'app/data/db' folder.
     DB_FILE = BASE_DIR / "app" / "data" / "db" / "app_data.db"
     
-    # Format the database URL for SQLAlchemy (used for database connection)
-    # We ensure forward slashes are used for cross-platform compatibility (Windows/Mac/Linux)
+    # Format the database URL for SQLAlchemy
     DATABASE_URL = f"sqlite:///{str(DB_FILE).replace(os.sep, '/')}"
 
     @classmethod
     def init_directories(cls):
-        """
-        Creates necessary output and input directories if they don't exist.
-        This ensures the application has a place to save simulation results.
-        """
+        """Creates necessary directories for writable data."""
+        cls.DB_FILE.parent.mkdir(parents=True, exist_ok=True)
         cls.OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
-        cls.INPUTS_DIR.mkdir(parents=True, exist_ok=True)
+        cls.LOGS_DIR.mkdir(parents=True, exist_ok=True)
+        
+        # Bootstrap DB if needed: If the bundled DB exists but the writable one doesn't, copy it.
+        if getattr(sys, 'frozen', False):
+            bundled_db = cls._BUNDLED_ROOT / "app" / "data" / "db" / "app_data.db"
+            if bundled_db.exists() and not cls.DB_FILE.exists():
+                import shutil
+                shutil.copy2(bundled_db, cls.DB_FILE)

@@ -43,6 +43,7 @@ def build_app():
         "--hidden-import=landlab.grid.raster_divergence",
         "--hidden-import=landlab.grid.raster_gradients",
         "--hidden-import=landlab.grid.raster_mappers",
+        "--hidden-import=landlab.grid.raster_set_status",
         "--hidden-import=landlab.grid.raster_mappers",
         "--hidden-import=landlab.grid.raster_aspect",
         "--hidden-import=app.logging",
@@ -69,6 +70,8 @@ def build_app():
         "--windowed", # No console window
         "--name", app_name,
         "--onedir", # Directory output (easier for debugging assets)
+        "--collect-all=rasterio",
+        "--collect-all=landlab",
     ] + hidden_imports + add_data + [main_script]
 
     # 4. Run PyInstaller
@@ -78,9 +81,15 @@ def build_app():
         print("\nBuild completed successfully!")
         print(f"Executable is located in: {os.path.join(dist_dir, app_name)}")
         
-        # 5. Post-build instructions
+        # 5. Post-build macOS specific fixes
         if sys.platform == 'darwin':
             print("NOTE: On macOS, this is an .app bundle.")
+            # Fix libblosc PyInstaller dylib linkage conflict
+            rasterio_blosc = os.path.join(dist_dir, app_name, "_internal", "rasterio", ".dylibs", "libblosc.1.21.6.dylib")
+            netcdf_blosc = os.path.join(dist_dir, app_name, "_internal", "netCDF4", ".dylibs", "libblosc.1.21.6.dylib")
+            if os.path.exists(rasterio_blosc) and os.path.exists(netcdf_blosc):
+                print("Applying macOS hotfix for ZSTD libblosc collision...")
+                shutil.copy2(rasterio_blosc, netcdf_blosc)
         elif sys.platform == 'win32':
             print("NOTE: On Windows, run the .exe inside the folder.")
             

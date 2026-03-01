@@ -1,3 +1,4 @@
+from app.config import Config
 from app.logging.interfaces import ILogger
 from app.logging.app_logger import AppLogger
 
@@ -28,6 +29,10 @@ class LogManager:
         if name not in cls._loggers:
             log_file = f"{name}.log"
             # Ensure safe capitalization/format for the logger internally
-            cls._loggers[name] = AppLogger(name=name.capitalize(), log_file=log_file)
+            cls._loggers[name] = AppLogger(
+                name=name.capitalize(), 
+                log_dir=str(Config.LOGS_DIR), 
+                log_file=log_file
+            )
             
         return cls._loggers[name]

@@ -31,3 +31,6 @@ test/OAT_sensitivity_test/outputs/
 
 dist/
 build/
+logs/backend.log
+logs/ui.log
+logs/engine.log
