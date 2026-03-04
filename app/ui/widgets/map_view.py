@@ -33,17 +33,17 @@ class MapViewWidget:
         """Clears the map by setting an empty HTML document."""
         self.web_view.setHtml("")
 
-    def load_leaflet_map(self, latitude: float, longitude: float):
-        """Renders the interactive Leaflet Map for the given coordinates."""
+    def load_map(self, latitude: float, longitude: float):
+        """Renders the interactive MapLibre Map for the given coordinates."""
         html_content = f"""
         <!DOCTYPE html>
         <html>
         <head>
-            <title>Leaflet Map</title>
+            <title>MapLibre Map</title>
             <meta charset="utf-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-            <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+            <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css"/>
+            <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
             <style>
                 #map {{ width: 100%; height: 100%; }}
                 body, html {{ margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }}
@@ -52,23 +52,101 @@ class MapViewWidget:
         <body>
             <div id="map"></div>
             <script>
+                var map;
+                var shapefileCount = 0;
+                
                 window.onload = function() {{
-                    if (typeof L === 'undefined') {{
-                        console.error('Leaflet failed to load!');
+                    if (typeof maplibregl === 'undefined') {{
+                        console.error('MapLibre failed to load!');
                         return;
                     }}
-                    const map = L.map('map').setView([{latitude}, {longitude}], 14);
-                    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{{z}}/{{y}}/{{x}}', {{
-                        attribution: 'Tiles &copy; Esri',
-                        maxZoom: 18
-                    }}).addTo(map);
-                    L.marker([{latitude}, {longitude}]).addTo(map);
+                    
+                    map = new maplibregl.Map({{
+                        container: 'map',
+                        style: {{
+                            'version': 8,
+                            'sources': {{
+                                'esri-imagery': {{
+                                    'type': 'raster',
+                                    'tiles': [
+                                        'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{{z}}/{{y}}/{{x}}'
+                                    ],
+                                    'tileSize': 256,
+                                    'attribution': 'Tiles &copy; Esri'
+                                }}
+                            }},
+                            'layers': [{{
+                                'id': 'satellite',
+                                'type': 'raster',
+                                'source': 'esri-imagery',
+                                'minzoom': 0,
+                                'maxzoom': 22
+                            }}]
+                        }},
+                        center: [{longitude}, {latitude}],
+                        zoom: 14,
+                        pitch: 0
+                    }});
+                    
+                    // Add zoom and rotation controls to the map.
+                    map.addControl(new maplibregl.NavigationControl({{
+                        visualizePitch: true // includes North arrow and 2D/3D tilt buttons
+                    }}));
+                    
+                    // Add a marker
+                    new maplibregl.Marker()
+                        .setLngLat([{longitude}, {latitude}])
+                        .addTo(map);
                 }};
+                
+                function addShapefile(geoJsonData) {{
+                    if (!map) return;
+                    
+                    var colors = ['#ff7800', '#3388ff', '#28a745', '#dc3545', '#6f42c1'];
+                    var color = colors[shapefileCount % colors.length];
+                    var sourceId = 'shapefile-source-' + shapefileCount;
+                    
+                    // Add MapLibre source
+                    map.addSource(sourceId, {{
+                        'type': 'geojson',
+                        'data': geoJsonData
+                    }});
+                    
+                    // Add MapLibre fill layer
+                    map.addLayer({{
+                        'id': 'shapefile-fill-' + shapefileCount,
+                        'type': 'fill',
+                        'source': sourceId,
+                        'paint': {{
+                            'fill-color': color,
+                            'fill-opacity': 0.1
+                        }}
+                    }});
+                    
+                    // Add MapLibre outline layer
+                    map.addLayer({{
+                        'id': 'shapefile-line-' + shapefileCount,
+                        'type': 'line',
+                        'source': sourceId,
+                        'paint': {{
+                            'line-color': color,
+                            'line-width': 4,
+                            'line-opacity': 0.8
+                        }}
+                    }});
+                    
+                    shapefileCount++;
+                }}
             </script>
         </body>
         </html>
         """
         self.web_view.setHtml(html_content)
+        
+    def add_geojson_overlay(self, geojson_str: str):
+        """Passes GeoJSON data string to the active map to draw it."""
+        script = f"addShapefile({geojson_str});"
+        self.web_view.page().runJavaScript(script)
 
     def show_placeholder(self, message: str):
         """Renders a simple placeholder message when no valid coordinates are provided."""

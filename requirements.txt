@@ -9,3 +9,5 @@ PyQt6-WebEngine
 plotly>=5.0.0
 
 
+geopandas==1.1.2
+fiona==1.10.1
