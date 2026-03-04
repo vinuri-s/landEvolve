@@ -58,7 +58,7 @@ def generate_3d_comparison_html(input_tiff, output_tiff, output_html_path):
 
         # Create Traces
         # 1. Final Elevation (Standard)
-        trace_final = go.Surface(z=z_final, colorscale='Viridis', name='Final Elevation', visible=True, colorbar=dict(title='Elevation (m)'))
+        trace_final = go.Surface(z=z_final, colorscale='Earth', name='Final Elevation', visible=True, colorbar=dict(title='Elevation (m)'))
         
         # 2. Input Elevation
         trace_input = go.Surface(z=z_input, colorscale='Earth', name='Input Elevation', visible=False, colorbar=dict(title='Elevation (m)'))
