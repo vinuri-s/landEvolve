@@ -44,16 +44,35 @@ class MapViewWidget:
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css"/>
             <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+            <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
             <style>
                 #map {{ width: 100%; height: 100%; }}
                 body, html {{ margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }}
+                #toggle-3d-btn {{
+                    position: absolute;
+                    top: 10px;
+                    left: 10px;
+                    z-index: 1000;
+                    background: white;
+                    border: 2px solid rgba(0,0,0,0.2);
+                    border-radius: 4px;
+                    padding: 8px 12px;
+                    font-family: Arial, sans-serif;
+                    font-weight: bold;
+                    color: #333;
+                    cursor: pointer;
+                    box-shadow: 0 1px 5px rgba(0,0,0,0.4);
+                }}
+                #toggle-3d-btn:hover {{ background: #f4f4f4; }}
             </style>
         </head>
         <body>
             <div id="map"></div>
+            <button id="toggle-3d-btn" onclick="toggle3D()"><i class="fas fa-cube"></i> 3D View</button>
             <script>
                 var map;
                 var shapefileCount = 0;
+                var is3D = false;
                 
                 window.onload = function() {{
                     if (typeof maplibregl === 'undefined') {{
@@ -85,12 +104,13 @@ class MapViewWidget:
                         }},
                         center: [{longitude}, {latitude}],
                         zoom: 14,
-                        pitch: 0
+                        pitch: 0,
+                        dragPitch: true // re-enable manual right-click pitch
                     }});
                     
                     // Add zoom and rotation controls to the map.
                     map.addControl(new maplibregl.NavigationControl({{
-                        visualizePitch: true // includes North arrow and 2D/3D tilt buttons
+                        visualizePitch: true // enable 3D compass behavior 
                     }}));
                     
                     // Add a marker
@@ -98,6 +118,20 @@ class MapViewWidget:
                         .setLngLat([{longitude}, {latitude}])
                         .addTo(map);
                 }};
+
+                function toggle3D() {{
+                    if (!map) return;
+                    is3D = !is3D;
+                    var btn = document.getElementById('toggle-3d-btn');
+                    
+                    if (is3D) {{
+                        map.easeTo({{pitch: 60, bearing: map.getBearing() || -30, duration: 1000}});
+                        btn.innerHTML = '<i class="fas fa-map"></i> 2D View';
+                    }} else {{
+                        map.easeTo({{pitch: 0, bearing: 0, duration: 1000}});
+                        btn.innerHTML = '<i class="fas fa-cube"></i> 3D View';
+                    }}
+                }}
                 
                 function addShapefile(geoJsonData) {{
                     if (!map) return;
