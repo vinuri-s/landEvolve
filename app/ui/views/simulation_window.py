@@ -148,8 +148,7 @@ class SimulationWindow(QMainWindow):
 
     def on_load_shapefile_clicked(self):
         from PyQt6.QtWidgets import QFileDialog
-        import geopandas as gpd
-        import json
+        from app.services.shapefile_service import ShapefileService
         
         file_names, _ = QFileDialog.getOpenFileNames(
             self,
@@ -159,34 +158,15 @@ class SimulationWindow(QMainWindow):
         )
         
         if file_names:
-            for file_name in file_names:
-                try:
-                    try:
-                        # Attempt default (pyogrio engine)
-                        gdf = gpd.read_file(file_name)
-                    except Exception:
-                        # Fallback to fiona, which is extremely robust for ESRI shapefiles
-                        gdf = gpd.read_file(file_name, engine='fiona')
-                    
-                    # Handle missing CRS (naive geometries)
-                    if gdf.crs is None:
-                        # Heuristic: Check bounding box to guess CRS
-                        minx, miny, maxx, maxy = gdf.total_bounds
-                        # If coordinates look like Longitude/Latitude
-                        if -180 <= minx <= 180 and -90 <= miny <= 90 and -180 <= maxx <= 180 and -90 <= maxy <= 90:
-                            gdf.set_crs(epsg=4326, inplace=True)
-                        else:
-                            # Assume NZTM2000 (EPSG:2193) as default for LandEvolve case studies
-                            gdf.set_crs(epsg=2193, inplace=True)
-                        
-                    # Convert to WGS84 (Leaflet default)
-                    if gdf.crs != "EPSG:4326":
-                        gdf = gdf.to_crs("EPSG:4326")
-                        
-                    geojson_str = gdf.to_json()
+            try:
+                # Delegate business logic (reading, CRS transformation, GeoJSON conversion) to the Service layer
+                geojson_results = ShapefileService.load_shapefiles_as_geojson(file_names)
+                
+                for file_name, geojson_str in geojson_results:
                     self.map_widget.add_geojson_overlay(geojson_str)
-                except Exception as e:
-                    QMessageBox.critical(self, "Error", f"Failed to load shapefile {file_name}:\n{str(e)}")
+                    
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to load shapefile(s):\n{str(e)}")
 
     def showEvent(self, event):
         super().showEvent(event)
