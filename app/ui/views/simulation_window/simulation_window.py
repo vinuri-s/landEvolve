@@ -4,7 +4,7 @@ from app.ui.views.dialogs.add_component import AddComponentDlg
 from app.ui.views.ui_generated.simulation import Ui_SimulationSetup
 from app.ui.views.simulation_results import SimulationResultsWindow
 from app.logging import log_action
-from app.ui.widgets.map_view import MapViewWidget
+from app.ui.views.simulation_window.map_view import MapViewWidget
 from app.ui.widgets.component_table import ComponentTableManager
 from app.ui.window_manager import WindowManager
 from app.ui.validators.simulation_validator import SimulationValidator
@@ -46,6 +46,12 @@ class SimulationWindow(QMainWindow):
         self.ui.addComponentBtn.clicked.connect(self.add_component)
         self.ui.locationComboBox.currentIndexChanged.connect(self.on_location_changed)
         self.ui.viewSimulationBtn.clicked.connect(self.on_view_simulation_clicked)
+        # Handle whether the UI generated code is a QPushButton or a FileWidget
+        if hasattr(self.ui.load_shp_btn, 'clicked'):
+            self.ui.load_shp_btn.clicked.connect(self.on_load_shapefile_clicked)
+        elif hasattr(self.ui.load_shp_btn, 'button'):
+            # It's a FileWidget, its internal QPushButton has the clicked signal
+            self.ui.load_shp_btn.button.clicked.connect(self.on_load_shapefile_clicked)
         
     def on_view_simulation_clicked(self):
         if not self.table_manager.get_components():
@@ -134,44 +140,18 @@ class SimulationWindow(QMainWindow):
 
         self.ui.descriptionTextEdit.setText(self.selected_location.description or "No description available.")
 
-    def add_shapefile_button(self):
-        """Dynamically add a 'Load Shapefile' button if it doesn't exist."""
-        from PyQt6.QtWidgets import QPushButton
-        if not hasattr(self, 'load_shp_btn'):
-            self.load_shp_btn = QPushButton("Load Shapefile Overlay")
-            self.load_shp_btn.clicked.connect(self.on_load_shapefile_clicked)
-            # Insert the button into the same layout containing the webView (the map)
-            # Assuming webView is inside a vertical layout. We add it just above or below.
-            parent_layout = self.ui.webView.parentWidget().layout()
-            if parent_layout:
-                 parent_layout.addWidget(self.load_shp_btn)
-
     def on_load_shapefile_clicked(self):
-        from PyQt6.QtWidgets import QFileDialog
-        from app.services.shapefile_service import ShapefileService
+        from app.ui.views.simulation_window.shapefile_loader import ShapefileLoader
         
-        file_names, _ = QFileDialog.getOpenFileNames(
-            self,
-            "Select Shapefile(s)",
-            "",
-            "Shapefiles (*.shp);;All Files (*)"
-        )
+        # Instantiate the specialized loader (adhering to SOLID principles)
+        loader = ShapefileLoader(parent=self)
         
-        if file_names:
-            try:
-                # Delegate business logic (reading, CRS transformation, GeoJSON conversion) to the Service layer
-                geojson_results = ShapefileService.load_shapefiles_as_geojson(file_names)
-                
-                for file_name, geojson_str in geojson_results:
-                    self.map_widget.add_geojson_overlay(geojson_str)
-                    
-            except Exception as e:
-                QMessageBox.critical(self, "Error", f"Failed to load shapefile(s):\n{str(e)}")
-
-    def showEvent(self, event):
-        super().showEvent(event)
-        self.add_shapefile_button()
-
+        # Connect its geojson emitted signal directly to the map widget
+        loader.geojson_loaded.connect(self.map_widget.add_geojson_overlay)
+        
+        # Trigger the dialog
+        loader.open_dialog()
+            
     def collect_simulation_params(self):
         """Builds the final payload dictionary to pass to the Simulation Engine."""
         return SimulationValidator.validate_and_collect(

@@ -1,7 +1,7 @@
 from PyQt6 import QtCore, QtGui, QtWidgets
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 
-class Ui_SimulationSetup(object):
+class Ui_SimulationSetup(object):  
     def setupUi(self, SimulationSetup):
         SimulationSetup.setObjectName("SimulationSetup")
         SimulationSetup.setWindowTitle("Simulation Setup")
@@ -96,6 +96,9 @@ class Ui_SimulationSetup(object):
         earth_layout = QtWidgets.QVBoxLayout(self.earthGroup)
         self.webView = QWebEngineView()
         earth_layout.addWidget(self.webView)
+        
+        self.load_shp_btn = QtWidgets.QPushButton("Load Shapefile Overlay")
+        earth_layout.addWidget(self.load_shp_btn)
         
         self.splitter.addWidget(right_container)
         self.splitter.setSizes([300, 500])
