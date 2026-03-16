@@ -102,19 +102,29 @@ class BaseSpaceComponent(SimulationComponent):
     Also contains optional vegetation-erodibility coupling logic.
     """
 
-    def _ensure_common_fields(self):
+    def _ensure_common_fields(self, soil_depth=1.0):
         # Soil depth
-        self._add_field_if_missing(
-            "soil__depth",
-            lambda: np.ones(self.grid.number_of_nodes, dtype=float),
-        )
+        if "soil__depth" not in self.grid.at_node:
+            self._add_field_if_missing(
+                "soil__depth",
+                lambda: np.full(self.grid.number_of_nodes, soil_depth, dtype=float),
+            )
+        else:
+            # Override existing field in-place if it was already created but we have a new depth
+            self.grid.at_node["soil__depth"][:] = soil_depth
 
         # Bedrock elevation: surface - soil
-        self._add_field_if_missing(
-            "bedrock__elevation",
-            lambda: self.grid.at_node["topographic__elevation"]
-            - self.grid.at_node["soil__depth"],
-        )
+        if "bedrock__elevation" not in self.grid.at_node:
+            self._add_field_if_missing(
+                "bedrock__elevation",
+                lambda: self.grid.at_node["topographic__elevation"]
+                - self.grid.at_node["soil__depth"],
+            )
+        else:
+            # Always sync bedrock elevation to surface minus soil depth
+            self.grid.at_node["bedrock__elevation"][:] = (
+                self.grid.at_node["topographic__elevation"] - self.grid.at_node["soil__depth"]
+            )
 
     def _clip_soil_depth(self):
         """Ensure soil depth logic is consistent."""
@@ -323,7 +333,8 @@ class SpaceComponent(BaseSpaceComponent):
         # Load lithology settings
         self._process_lithology(params)
 
-        self._ensure_common_fields()
+        soil_depth = float(params.pop("soil_depth", 1.0))
+        self._ensure_common_fields(soil_depth)
         self._setup_vegetation_erodibility(params)
 
         # Only pass parameters accepted by Landlab
@@ -352,7 +363,8 @@ class SpaceLargeScaleEroderComponent(BaseSpaceComponent):
         # Process lithology
         self._process_lithology(params)
 
-        self._ensure_common_fields()
+        soil_depth = float(params.pop("soil_depth", 1.0))
+        self._ensure_common_fields(soil_depth)
         self._setup_vegetation_erodibility(params)
 
         # Dynamic filtering
@@ -400,15 +412,20 @@ class DepthDependentDiffuserComponent(SimulationComponent):
         valid_args = inspect.signature(DepthDependentDiffuser.__init__).parameters
         final_params = {k: v for k, v in params.items() if k in valid_args}
 
-        self._ensure_fields()
+        soil_depth = float(params.pop("soil_depth", 1.0))
+        self._ensure_fields(soil_depth)
         self.diffuser = DepthDependentDiffuser(grid, **final_params)
 
-    def _ensure_fields(self):
-        self._add_field_if_missing(
-            "soil__depth",
-            lambda: np.ones(self.grid.number_of_nodes, dtype=float),
-            at="node",
-        )
+    def _ensure_fields(self, soil_depth=1.0):
+        if "soil__depth" not in self.grid.at_node:
+            self._add_field_if_missing(
+                "soil__depth",
+                lambda: np.full(self.grid.number_of_nodes, soil_depth, dtype=float),
+                at="node",
+            )
+        else:
+            self.grid.at_node["soil__depth"][:] = soil_depth
+            
         self._add_field_if_missing(
             "soil_production__rate",
             lambda: 0.0001 * np.ones(self.grid.number_of_nodes, dtype=float),

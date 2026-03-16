@@ -103,7 +103,8 @@ class SimulationRunner:
         flow_components = []
         hillslope_components = []
         erosion_components = []
-        other_components = []
+        other_components = [] # Storing params before build
+        final_other_components = []
 
         for comp_config in selected_components:
             comp = comp_config["component"]
@@ -113,30 +114,37 @@ class SimulationRunner:
             # Inject erodibility_map if available in top-level params
             if "erodibility_map" in self.params:
                 p["erodibility_map"] = self.params["erodibility_map"]
-
+                
+            # We want to delay initializing non-flow components until flow is done
+            if name == "FlowAccumulatorComponent":
+                instance = self._build_component(name, grid, p)
+                if instance is not None:
+                    flow_components.append((name, instance))
+            else:
+                other_components.append((name, p))
+                
+        # Now that flow is added (if it exists), build the rest
+        for name, p in other_components:
             instance = self._build_component(name, grid, p)
             if instance is None:
                 continue
-
-            # Order groups
+                
             if name == "VegetationComponent":
                 vegetation_components.append(instance)
-            elif name == "FlowAccumulatorComponent":
-                flow_components.append(instance)
             elif name == "DepthDependentDiffuserComponent":
                 hillslope_components.append(instance)
             elif name in ("SpaceComponent", "SpaceLargeScaleEroderComponent"):
                 erosion_components.append(instance)
             else:
-                other_components.append(instance)
+                final_other_components.append(instance)
 
         # Final ordered list
         components = (
             vegetation_components
-            + flow_components
+            + [i for n, i in flow_components]
             + hillslope_components
             + erosion_components
-            + other_components
+            + final_other_components
         )
 
         # 3. Pre-sim checks
