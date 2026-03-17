@@ -1,6 +1,5 @@
 import abc
 import inspect
-import logging
 import numpy as np
 import rasterio
 
@@ -19,8 +18,7 @@ logger = LogManager.get_logger("engine")
 class SimulationComponent(abc.ABC):
     """
     The blueprint for all simulation components.
-    Every geological process (like erosion or water flow) must follow this template
-    so the system knows how to run it.
+    Every geological process (like erosion or water flow) must follow this template.
     """
 
     def __init__(self, grid):
@@ -32,7 +30,7 @@ class SimulationComponent(abc.ABC):
         pass
 
     def _add_field_if_missing(self, name: str, value_generator, at: str = "node"):
-        """Helper to safely add fields to the grid (DRY)."""
+        """Safely add a field to the grid only if it does not already exist."""
         if name not in self.grid[at]:
             value = value_generator() if callable(value_generator) else value_generator
             self.grid.add_field(name, value, at=at)
@@ -40,8 +38,8 @@ class SimulationComponent(abc.ABC):
 
 class LithologyHandler:
     """
-    A helper class for managing different rock types (Lithology).
-    It reads geology map files and tells the simulation how hard the rock is at each pixel.
+    Helper for heterogeneous lithology.
+    Reads geology raster and maps lithology classes to erodibility.
     """
 
     @staticmethod
@@ -55,7 +53,6 @@ class LithologyHandler:
             with rasterio.open(geology_file) as src:
                 geology_data = src.read(1)
 
-                # Handle NoData/Legacy values
                 nodata = src.nodata if src.nodata is not None else 15
                 geology_data = np.where(geology_data == nodata, np.nan, geology_data)
 
@@ -64,7 +61,6 @@ class LithologyHandler:
                         f"Geology dimensions {geology_data.shape} do not match grid {grid.shape}"
                     )
 
-                # Vectorized mapping of geology codes to erodibility values
                 def map_values(x):
                     if np.isnan(x):
                         return default_val
@@ -79,17 +75,12 @@ class LithologyHandler:
 
                 k_br_array = np.vectorize(map_values)(geology_data)
 
-                # Update params dictionary in-place
                 params["K_br"] = k_br_array.flatten().astype(float)
+                params["K_sed"] = params["K_br"] * 100.0
 
-                # Assumes K_sed is scaled relative to K_br
-                params["K_sed"] = params["K_br"] * 100
-
-                unique_geo = np.unique(geology_data)
-                unique_k = np.unique(params["K_br"])
                 logger.info("Successfully applied heterogeneous lithology.")
-                logger.info(f"Unique Geology Codes in File: {unique_geo}")
-                logger.info(f"Unique K_br values assigned: {unique_k}")
+                logger.info(f"Unique geology codes: {np.unique(geology_data)}")
+                logger.info(f"Unique K_br values assigned: {np.unique(params['K_br'])}")
 
         except Exception as e:
             logger.error(f"Error loading geology file: {e}")
@@ -98,22 +89,19 @@ class LithologyHandler:
 
 class BaseSpaceComponent(SimulationComponent):
     """
-    Base class for Space-family components to share common setup.
-    Also contains optional vegetation-erodibility coupling logic.
+    Base class for SPACE-family components.
+    Handles soil/bedrock setup, lithology processing, and optional vegetation coupling.
     """
 
     def _ensure_common_fields(self, soil_depth=1.0):
-        # Soil depth
         if "soil__depth" not in self.grid.at_node:
             self._add_field_if_missing(
                 "soil__depth",
                 lambda: np.full(self.grid.number_of_nodes, soil_depth, dtype=float),
             )
         else:
-            # Override existing field in-place if it was already created but we have a new depth
             self.grid.at_node["soil__depth"][:] = soil_depth
 
-        # Bedrock elevation: surface - soil
         if "bedrock__elevation" not in self.grid.at_node:
             self._add_field_if_missing(
                 "bedrock__elevation",
@@ -121,29 +109,22 @@ class BaseSpaceComponent(SimulationComponent):
                 - self.grid.at_node["soil__depth"],
             )
         else:
-            # Always sync bedrock elevation to surface minus soil depth
             self.grid.at_node["bedrock__elevation"][:] = (
-                self.grid.at_node["topographic__elevation"] - self.grid.at_node["soil__depth"]
+                self.grid.at_node["topographic__elevation"]
+                - self.grid.at_node["soil__depth"]
             )
 
     def _clip_soil_depth(self):
-        """Ensure soil depth logic is consistent."""
         np.clip(
             self.grid.at_node["soil__depth"],
-            0,
+            0.0,
             None,
             out=self.grid.at_node["soil__depth"],
         )
 
     def _process_lithology(self, params):
-        """
-        Extracts and processes lithology parameters.
-        Fetches erodibility map from database.
-        """
         lithology_type = params.pop("lithology_type", "Uniform")
         geology_file = params.pop("geology_file", None)
-
-        # Use erodibility map injected from service layer
         erodibility_map = params.pop("erodibility_map", {})
 
         if lithology_type == "Heterogeneous" and geology_file:
@@ -152,9 +133,6 @@ class BaseSpaceComponent(SimulationComponent):
             )
 
     def _to_node_array(self, value, default_value):
-        """
-        Convert scalar/array parameter to node-sized float array.
-        """
         if value is None:
             return np.full(self.grid.number_of_nodes, default_value, dtype=float)
 
@@ -172,20 +150,23 @@ class BaseSpaceComponent(SimulationComponent):
         """
         Prepare optional vegetation coupling.
 
-        If vegetation component is NOT selected, no vegetation field will exist,
-        and erosion will run normally using original K values.
+        Vegetation settings are owned by VegetationComponent and stored on the grid.
+        SPACE only reads them if they exist.
         """
-        self.vegetation_mode = params.pop("vegetation_mode", "None")
-        self.vegetation_erodibility_factor = float(
-            params.pop("vegetation_erodibility_factor", 0.5)
-        )
-
         self.base_K_br = self._to_node_array(params.get("K_br", 1e-6), 1e-6)
         self.base_K_sed = self._to_node_array(params.get("K_sed", 1e-4), 1e-4)
 
-        has_vegetation_field = "vegetation__cover_fraction" in self.grid.at_node
+        has_veg_field = "vegetation__cover_fraction" in self.grid.at_node
+        vegetation_mode = getattr(self.grid, "_vegetation_mode", "None")
+        vegetation_factor = getattr(self.grid, "_vegetation_erodibility_factor", 0.0)
+
+        self.vegetation_mode = vegetation_mode
+        self.vegetation_erodibility_factor = float(
+            np.clip(vegetation_factor, 0.0, 1.0)
+        )
+
         self.use_vegetation = (
-            has_vegetation_field and self.vegetation_mode in ("Static", "Dynamic")
+            has_veg_field and self.vegetation_mode in ("Static", "Dynamic")
         )
 
         if self.use_vegetation:
@@ -201,13 +182,10 @@ class BaseSpaceComponent(SimulationComponent):
             params["K_sed"] = self.base_K_sed
             logger.info(
                 f"Vegetation coupling disabled for {self.__class__.__name__}. "
-                f"Using base erodibility."
+                "Using base erodibility."
             )
 
     def _calculate_effective_erodibility(self):
-        """
-        Compute vegetation-modified erodibility arrays.
-        """
         veg = self.grid.at_node["vegetation__cover_fraction"]
         veg = np.clip(np.asarray(veg, dtype=float), 0.0, 1.0)
 
@@ -219,18 +197,11 @@ class BaseSpaceComponent(SimulationComponent):
         return eff_k_br, eff_k_sed
 
     def _apply_vegetation_to_erodibility(self, component_instance):
-        """
-        Update erodibility inside the Landlab component before each run.
-
-        If vegetation is not active, nothing happens.
-        """
         if not self.use_vegetation:
             return
 
         eff_k_br, eff_k_sed = self._calculate_effective_erodibility()
 
-        # Landlab internals usually store these as private attributes.
-        # We update them carefully only if they exist.
         if hasattr(component_instance, "_K_br"):
             component_instance._K_br = eff_k_br
         if hasattr(component_instance, "_K_sed"):
@@ -239,15 +210,11 @@ class BaseSpaceComponent(SimulationComponent):
 
 class VegetationComponent(SimulationComponent):
     """
-    Simple custom vegetation model for landscape evolution.
+    Simple vegetation model.
 
-    Vegetation is represented as cover fraction (0 to 1).
-    This is intentionally lightweight and meant to influence erodibility,
-    not to simulate full ecohydrology or biomass dynamics.
-
-    Modes:
-    - Static  : vegetation stays fixed at initial cover
-    - Dynamic : vegetation evolves with a simple growth/decay rule
+    Owns both:
+    - vegetation state (cover fraction)
+    - vegetation-to-erodibility coupling strength
     """
 
     def __init__(
@@ -258,6 +225,7 @@ class VegetationComponent(SimulationComponent):
         max_vegetation_cover=0.95,
         vegetation_growth_rate=0.01,
         vegetation_decay_rate=0.005,
+        vegetation_erodibility_factor=0.5,
         **kwargs,
     ):
         super().__init__(grid)
@@ -267,6 +235,9 @@ class VegetationComponent(SimulationComponent):
         self.max_cover = float(max_vegetation_cover)
         self.growth_rate = float(vegetation_growth_rate)
         self.decay_rate = float(vegetation_decay_rate)
+        self.erodibility_factor = float(
+            np.clip(vegetation_erodibility_factor, 0.0, 1.0)
+        )
 
         if self.mode not in ("Static", "Dynamic"):
             logger.warning(
@@ -284,7 +255,6 @@ class VegetationComponent(SimulationComponent):
             at="node",
         )
 
-        # Keep values safe
         np.clip(
             self.grid.at_node["vegetation__cover_fraction"],
             0.0,
@@ -292,24 +262,29 @@ class VegetationComponent(SimulationComponent):
             out=self.grid.at_node["vegetation__cover_fraction"],
         )
 
+        # Shared global vegetation metadata for other components
+        self.grid._vegetation_mode = self.mode
+        self.grid._vegetation_erodibility_factor = self.erodibility_factor
+
         logger.info(
             f"VegetationComponent initialized "
             f"(mode={self.mode}, initial_cover={self.initial_cover}, "
             f"max_cover={self.max_cover}, growth_rate={self.growth_rate}, "
-            f"decay_rate={self.decay_rate})."
+            f"decay_rate={self.decay_rate}, "
+            f"erodibility_factor={self.erodibility_factor})."
         )
 
     def run(self, dt: float):
         veg = self.grid.at_node["vegetation__cover_fraction"]
 
+        # Keep shared metadata available even during runtime
+        self.grid._vegetation_mode = self.mode
+        self.grid._vegetation_erodibility_factor = self.erodibility_factor
+
         if self.mode == "Static":
-            # Fixed vegetation cover
             np.clip(veg, 0.0, 1.0, out=veg)
             return
 
-        # Simple recovery-decay rule
-        # growth pushes cover toward max_cover
-        # decay removes some existing vegetation each step
         growth = self.growth_rate * (self.max_cover - veg)
         decay = self.decay_rate * veg
 
@@ -319,25 +294,18 @@ class VegetationComponent(SimulationComponent):
 
 class SpaceComponent(BaseSpaceComponent):
     """
-    Simulates large-scale landscape evolution using the SPACE model.
-    Handles both sediment transport and bedrock erosion.
-
-    If vegetation__cover_fraction exists AND vegetation_mode is Static/Dynamic,
-    vegetation reduces erodibility.
-    If vegetation component is not selected, SPACE runs normally.
+    SPACE wrapper with optional vegetation coupling.
     """
 
     def __init__(self, grid, **params):
         super().__init__(grid)
 
-        # Load lithology settings
         self._process_lithology(params)
 
         soil_depth = float(params.pop("soil_depth", 1.0))
         self._ensure_common_fields(soil_depth)
         self._setup_vegetation_erodibility(params)
 
-        # Only pass parameters accepted by Landlab
         valid_args = inspect.signature(Space.__init__).parameters
         final_params = {k: v for k, v in params.items() if k in valid_args}
 
@@ -351,23 +319,18 @@ class SpaceComponent(BaseSpaceComponent):
 
 class SpaceLargeScaleEroderComponent(BaseSpaceComponent):
     """
-    Wrapper for Landlab SpaceLargeScaleEroder.
-
-    Supports optional vegetation-erodibility coupling.
-    If no vegetation component is selected, this behaves exactly like before.
+    SpaceLargeScaleEroder wrapper with optional vegetation coupling.
     """
 
     def __init__(self, grid, **params):
         super().__init__(grid)
 
-        # Process lithology
         self._process_lithology(params)
 
         soil_depth = float(params.pop("soil_depth", 1.0))
         self._ensure_common_fields(soil_depth)
         self._setup_vegetation_erodibility(params)
 
-        # Dynamic filtering
         valid_args = inspect.signature(SpaceLargeScaleEroder.__init__).parameters
         final_params = {k: v for k, v in params.items() if k in valid_args}
 
@@ -380,7 +343,13 @@ class SpaceLargeScaleEroderComponent(BaseSpaceComponent):
 
 
 class FlowAccumulatorComponent(SimulationComponent):
-    def __init__(self, grid, flow_director="D8", runoff_rate=1.0, **kwargs):
+    def __init__(
+        self,
+        grid,
+        flow_director="FlowDirectorSteepest",
+        runoff_rate=1.0,
+        **kwargs,
+    ):
         super().__init__(grid)
 
         if runoff_rate is not None:
@@ -390,18 +359,15 @@ class FlowAccumulatorComponent(SimulationComponent):
                 at="node",
             )
 
-        # Merge explicit args with kwargs for filtering
         all_params = kwargs.copy()
         all_params["flow_director"] = flow_director
 
-        # Dynamic filtering
         valid_args = inspect.signature(FlowAccumulator.__init__).parameters
         final_params = {k: v for k, v in all_params.items() if k in valid_args}
 
         self.flow_accumulator = FlowAccumulator(grid, **final_params)
 
     def run(self, dt: float = None):
-        # Flow accumulator often doesn't need dt, but we accept it to satisfy interface
         self.flow_accumulator.run_one_step()
 
 
@@ -409,11 +375,12 @@ class DepthDependentDiffuserComponent(SimulationComponent):
     def __init__(self, grid, **params):
         super().__init__(grid)
 
+        soil_depth = float(params.pop("soil_depth", 1.0))
+        self._ensure_fields(soil_depth)
+
         valid_args = inspect.signature(DepthDependentDiffuser.__init__).parameters
         final_params = {k: v for k, v in params.items() if k in valid_args}
 
-        soil_depth = float(params.pop("soil_depth", 1.0))
-        self._ensure_fields(soil_depth)
         self.diffuser = DepthDependentDiffuser(grid, **final_params)
 
     def _ensure_fields(self, soil_depth=1.0):
@@ -425,7 +392,7 @@ class DepthDependentDiffuserComponent(SimulationComponent):
             )
         else:
             self.grid.at_node["soil__depth"][:] = soil_depth
-            
+
         self._add_field_if_missing(
             "soil_production__rate",
             lambda: 0.0001 * np.ones(self.grid.number_of_nodes, dtype=float),
