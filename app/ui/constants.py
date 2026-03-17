@@ -45,6 +45,8 @@ class SimulationParamKeys:
     TIME_STEP = "time_step"
     SIMULATION_NUMBER = "simulation_number"
     SELECTED_COMPONENTS = "selected_components"
+    TRACK_FEATURE = "track_feature"
+    FEATURE_SHAPEFILE = "feature_shapefile"
 
 
 class SimulationResultKeys:

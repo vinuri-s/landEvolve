@@ -50,6 +50,22 @@ class Ui_SimulationSetup(object):
         self.descriptionTextEdit.setMaximumHeight(120)
         location_form.addRow(self.descriptionLabel, self.descriptionTextEdit)
         
+        self.trackFeatureCheckBox = QtWidgets.QCheckBox("Track Interested Landscape Feature")
+        location_form.addRow(self.trackFeatureCheckBox)
+        
+        self.featureShapefileWidget = QtWidgets.QWidget()
+        feature_shp_layout = QtWidgets.QHBoxLayout(self.featureShapefileWidget)
+        feature_shp_layout.setContentsMargins(0, 0, 0, 0)
+        self.featureShapefileLineEdit = QtWidgets.QLineEdit()
+        self.featureShapefileLineEdit.setPlaceholderText("Upload shapefile (.shp)")
+        self.featureShapefileLineEdit.setReadOnly(True)
+        self.featureShapefileBtn = QtWidgets.QPushButton("Browse...")
+        feature_shp_layout.addWidget(self.featureShapefileLineEdit)
+        feature_shp_layout.addWidget(self.featureShapefileBtn)
+        
+        self.featureShapefileLabel = QtWidgets.QLabel("Feature Shapefile:")
+        location_form.addRow(self.featureShapefileLabel, self.featureShapefileWidget)
+        
         self.componentsGroup = QtWidgets.QGroupBox("Simulation Components")
         left_layout.addWidget(self.componentsGroup, 1)
         

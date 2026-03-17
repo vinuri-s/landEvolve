@@ -52,6 +52,9 @@ class SimulationWindow(QMainWindow):
         elif hasattr(self.ui.load_shp_btn, 'button'):
             # It's a FileWidget, its internal QPushButton has the clicked signal
             self.ui.load_shp_btn.button.clicked.connect(self.on_load_shapefile_clicked)
+            
+        self.ui.trackFeatureCheckBox.toggled.connect(self._toggle_feature_tracking)
+        self.ui.featureShapefileBtn.clicked.connect(self._on_browse_feature_shapefile)
         
     def on_view_simulation_clicked(self):
         if not self.table_manager.get_components():
@@ -72,6 +75,9 @@ class SimulationWindow(QMainWindow):
     def load_initial_data(self):
         self.ui.simulationPeriodLineEdit.setText(str(SimulationDefaults.PERIOD))
         self.ui.timeStepLineEdit.setText(str(SimulationDefaults.TIME_STEP))
+        
+        # Hide the feature shapefile uploader initially
+        self._toggle_feature_tracking(False)
 
         locations = self.controller.get_locations()
         for loc in locations:
@@ -152,6 +158,23 @@ class SimulationWindow(QMainWindow):
         # Trigger the dialog
         loader.open_dialog()
             
+    def _toggle_feature_tracking(self, checked):
+        self.ui.featureShapefileLabel.setVisible(checked)
+        self.ui.featureShapefileWidget.setVisible(checked)
+        if not checked:
+            self.ui.featureShapefileLineEdit.clear()
+
+    def _on_browse_feature_shapefile(self):
+        from PyQt6.QtWidgets import QFileDialog
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select Feature Shapefile",
+            "",
+            "Shapefiles (*.shp)"
+        )
+        if file_path:
+            self.ui.featureShapefileLineEdit.setText(file_path)
+            
     def collect_simulation_params(self):
         """Builds the final payload dictionary to pass to the Simulation Engine."""
         return SimulationValidator.validate_and_collect(
@@ -160,5 +183,7 @@ class SimulationWindow(QMainWindow):
             period_text=self.ui.simulationPeriodLineEdit.text(),
             time_step_text=self.ui.timeStepLineEdit.text(),
             simulation_number=self.controller.get_next_simulation_number(),
-            components_list=self.table_manager.get_components()
+            components_list=self.table_manager.get_components(),
+            track_feature=self.ui.trackFeatureCheckBox.isChecked(),
+            feature_shapefile=self.ui.featureShapefileLineEdit.text()
         )

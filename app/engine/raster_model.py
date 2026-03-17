@@ -20,8 +20,16 @@ class RasterModel:
                 self.transform = src.transform
                 self.crs = src.crs if src.crs else None
                 xy_spacing = src.res[0]
+                
+                # Georeferencing bounds (Left, Bottom) from transform
+                # x_of_lower_left = bounds.left, y_of_lower_left = bounds.bottom
+                xy_of_lower_left = (src.bounds.left, src.bounds.bottom)
 
-            self.grid = RasterModelGrid(elevation_data.shape, xy_spacing=xy_spacing)
+            self.grid = RasterModelGrid(
+                elevation_data.shape, 
+                xy_spacing=xy_spacing, 
+                xy_of_lower_left=xy_of_lower_left
+            )
             self.grid.at_node['topographic__elevation'] = elevation_data.flatten()
             
             if geology_file:

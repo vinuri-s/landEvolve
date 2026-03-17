@@ -14,7 +14,9 @@ class SimulationValidator:
                            period_text: str, 
                            time_step_text: str, 
                            simulation_number: int,
-                           components_list: list) -> dict:
+                           components_list: list,
+                           track_feature: bool = False,
+                           feature_shapefile: str = "") -> dict:
         
         sim_obj = {}
         
@@ -48,5 +50,15 @@ class SimulationValidator:
                 ComponentDataKeys.COMPONENT: component,
                 ComponentDataKeys.PARAMS: comp_data[ComponentDataKeys.PARAMS]
             })
+            
+        # 4. Feature Tracking
+        sim_obj[SimulationParamKeys.TRACK_FEATURE] = track_feature
+        if track_feature:
+            if not feature_shapefile:
+                QMessageBox.warning(parent_window, "Missing Data", "Please select a shapefile for the tracked feature.")
+                return None
+            sim_obj[SimulationParamKeys.FEATURE_SHAPEFILE] = feature_shapefile
+        else:
+            sim_obj[SimulationParamKeys.FEATURE_SHAPEFILE] = None
             
         return sim_obj

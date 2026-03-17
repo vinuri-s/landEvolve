@@ -18,6 +18,7 @@ from app.engine.io import (
     save_overlay_image,
 )
 from app.config import Config
+from app.engine.services.feature_mask_service import FeatureMaskService
 
 
 class SimulationRunner:
@@ -172,6 +173,31 @@ class SimulationRunner:
                 else:
                     grid.add_zeros(field, at="node")
 
+        # 3.5 Feature Tracking Setup
+        self.track_feature = self.params.get("track_feature", False)
+        self.feature_shapefile = self.params.get("feature_shapefile", None)
+        
+        feature_mask = None
+        initial_feature_elev = None
+        self.feature_impacted = False
+        self.feature_impact_timestep = -1
+        self.feature_impact_time = -1.0
+        
+        if self.track_feature and self.feature_shapefile:
+            self.log(20, "Setting up landscape feature tracking...")
+            try:
+                feature_mask, _ = FeatureMaskService.create_mask_from_shapefile(self.feature_shapefile, raster_model)
+                initial_feature_elev = grid.at_node["topographic__elevation"][feature_mask].copy()
+                affected_count = np.sum(feature_mask)
+                if affected_count == 0:
+                     self.log(20, "Warning: Shapefile did not intersect any nodes on the DEM.")
+                     self.track_feature = False
+                else:
+                     self.log(20, f"Tracking feature across {affected_count} grid nodes.")
+            except Exception as e:
+                self.log(20, f"Warning: Failed to setup feature tracking: {e}")
+                self.track_feature = False
+
         # 4. Main Simulation Loop
         num_steps = int(total_time / dt)
         current_time = 0.0
@@ -189,9 +215,38 @@ class SimulationRunner:
                 for comp in components:
                     comp.run(dt)
 
+                # Feature Tracking Check (only if not yet impacted)
+                if self.track_feature and not self.feature_impacted:
+                    current_feature_elev = grid.at_node["topographic__elevation"][feature_mask]
+                    dz = current_feature_elev - initial_feature_elev
+                    
+                    # IMPACT THRESHOLD logic: Any node > 0.5m erosion
+                    if np.any(dz < -0.5):
+                        self.feature_impacted = True
+                        self.feature_impact_timestep = step + 1
+                        self.feature_impact_time = current_time
+                        
+                        # Calculate rough percentage affected
+                        nodes_impacted = np.sum(dz < -0.5)
+                        total_nodes = len(initial_feature_elev)
+                        pct_affected = (nodes_impacted / total_nodes) * 100
+                        
+                        self.log(progress, f"*** FEATURE IMPACT DETECTED! at timestep {self.feature_impact_timestep} ({current_time:.1f} yrs). "
+                                           f"Initial impact affects {pct_affected:.1f}% of the feature nodes. ***")
+
         except Exception as e:
             self.log(0, f"Error: {e}")
             raise
+            
+        # 4.5 Feature Tracking Final Summary
+        if self.track_feature:
+            if not self.feature_impacted:
+                final_feature_elev = grid.at_node["topographic__elevation"][feature_mask]
+                final_dz = final_feature_elev - initial_feature_elev
+                max_erosion = -1.0 * np.min(final_dz) # Negative dz is erosion
+                max_erosion = max(0.0, max_erosion) # Don't show negative erosion if it's deposition
+                self.log(80, f"Feature Tracking Complete: Feature was NOT impacted by >0.5m threshold.")
+                self.log(80, f"Maximum erosion experienced by feature: {max_erosion:.4f}m")
 
         # 5. Output
         self.log(85, "Processing results...")
