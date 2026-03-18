@@ -18,7 +18,7 @@ from app.engine.io import (
     save_overlay_image,
 )
 from app.config import Config
-from app.engine.services.feature_mask_service import FeatureMaskService
+from app.services.feature_mask_service import FeatureMaskService
 
 
 class SimulationRunner:
