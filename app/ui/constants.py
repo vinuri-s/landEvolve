@@ -126,6 +126,9 @@ class Carousel2DWidgetConsts:
     BTN_INPUT = "Input Elevation"
     BTN_FINAL = "Final Elevation"
     BTN_DIFF = "Difference Map"
+    LBL_SCALE_RANGE = "Scale Range (±m):"
+    BTN_APPLY_SCALE = "Apply Scale"
+    BTN_RESET_SCALE = "Reset to Auto"
 
 
 class HomeWindowConsts:

@@ -1,5 +1,5 @@
 import os
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSizePolicy
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QDoubleSpinBox
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtCore import Qt
 from app.ui.constants import SimulationResultKeys, Carousel2DWidgetConsts
@@ -62,6 +62,55 @@ class Carousel2DWidget(QWidget):
         controls.addStretch()
         layout.addLayout(controls)
 
+        # Scale Controls (Hidden by default, shown for Difference Map)
+        self.scale_controls = QWidget()
+        scale_layout = QHBoxLayout(self.scale_controls)
+        scale_layout.setContentsMargins(0, 0, 0, 0)
+        
+        self.lbl_scale = QLabel(Carousel2DWidgetConsts.LBL_SCALE_RANGE)
+        scale_layout.addWidget(self.lbl_scale)
+        
+        self.spin_scale = QDoubleSpinBox()
+        self.spin_scale.setRange(0.01, 10000.0)
+        self.spin_scale.setDecimals(2)
+        self.spin_scale.setValue(1.0)
+        self.spin_scale.setSingleStep(0.1)
+        scale_layout.addWidget(self.spin_scale)
+        
+        self.btn_apply_scale = QPushButton(Carousel2DWidgetConsts.BTN_APPLY_SCALE)
+        self.btn_apply_scale.clicked.connect(self.apply_custom_scale)
+        scale_layout.addWidget(self.btn_apply_scale)
+        
+        self.btn_reset_scale = QPushButton(Carousel2DWidgetConsts.BTN_RESET_SCALE)
+        self.btn_reset_scale.clicked.connect(self.reset_scale)
+        scale_layout.addWidget(self.btn_reset_scale)
+        
+        self.scale_controls.hide()
+        layout.addWidget(self.scale_controls, alignment=Qt.AlignmentFlag.AlignCenter)
+
+    def apply_custom_scale(self):
+        val = self.spin_scale.value()
+        self._regenerate_diff_map(vmin=-val, vmax=val)
+        
+    def reset_scale(self):
+        self._regenerate_diff_map(vmin=None, vmax=None)
+        
+    def _regenerate_diff_map(self, vmin, vmax):
+        from app.engine.visualization import regenerate_2d_difference_map
+        output_dir = self.image_paths.get(SimulationResultKeys.OUTPUT_DIR)
+        if not output_dir:
+            return
+            
+        diff_tif = os.path.join(output_dir, "topographic_change.tif")
+        diff_png = self.image_paths.get(SimulationResultKeys.CHANGE_PLOT)
+        
+        if diff_tif and diff_png and os.path.exists(diff_tif):
+            success = regenerate_2d_difference_map(diff_tif, diff_png, vmin=vmin, vmax=vmax)
+            if success:
+                # Reload the image to show updated scale
+                self.current_pixmap = QPixmap(diff_png)
+                self._refresh_image_scaling()
+
     def _update_2d_display(self, result_key: str, title: str, active_btn: QPushButton): # Changed key to result_key
         """Helper to switch the currently displayed 2D map.""" # Updated docstring
         # Update buttons state
@@ -70,6 +119,11 @@ class Carousel2DWidget(QWidget):
             
         self.lbl_title.setText(title) # Changed to lbl_title
         
+        if result_key == SimulationResultKeys.CHANGE_PLOT:
+            self.scale_controls.show()
+        else:
+            self.scale_controls.hide()
+            
         # Find path
         image_path = self.image_paths.get(result_key) # Changed path to image_path, key to result_key
         if image_path and os.path.exists(image_path):

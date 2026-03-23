@@ -21,7 +21,7 @@ def read_and_downsample(path, max_dim=400):
             
     return data
 
-def generate_3d_comparison_html(input_tiff, output_tiff, output_html_path):
+def generate_3d_comparison_html(input_tiff, output_tiff, output_html_path, vmin=None, vmax=None, force_diff_mode=False):
     """
     Generates a 3D plot with 3 layers: Input, Final, and Difference.
     Includes buttons to toggle between them.
@@ -52,13 +52,21 @@ def generate_3d_comparison_html(input_tiff, output_tiff, output_html_path):
         z_diff = z_final - z_input
 
         # Calculate symmetric range for difference to ensure 0 is white in RdBu
-        max_diff = np.nanmax(np.abs(z_diff))
-        if np.isnan(max_diff) or max_diff == 0:
-            max_diff = 1.0 # fallback
+        if vmin is None or vmax is None:
+            max_diff = np.nanmax(np.abs(z_diff))
+            if np.isnan(max_diff) or max_diff == 0:
+                max_diff = 1.0 # fallback
+            cmin = -max_diff
+            cmax = max_diff
+        else:
+            cmin = vmin
+            cmax = vmax
+
+        is_diff_mode = (vmin is not None or vmax is not None) or force_diff_mode
 
         # Create Traces
         # 1. Final Elevation (Standard)
-        trace_final = go.Surface(z=z_final, colorscale='Earth', name='Final Elevation', visible=True, colorbar=dict(title='Elevation (m)'))
+        trace_final = go.Surface(z=z_final, colorscale='Earth', name='Final Elevation', visible=not is_diff_mode, colorbar=dict(title='Elevation (m)'))
         
         # 2. Input Elevation
         trace_input = go.Surface(z=z_input, colorscale='Earth', name='Input Elevation', visible=False, colorbar=dict(title='Elevation (m)'))
@@ -69,10 +77,10 @@ def generate_3d_comparison_html(input_tiff, output_tiff, output_html_path):
             z=z_final, 
             surfacecolor=z_diff,
             colorscale='RdBu', 
-            cmin=-max_diff, 
-            cmax=max_diff,
+            cmin=cmin, 
+            cmax=cmax,
             name='Erosion/Deposition', 
-            visible=False,
+            visible=is_diff_mode,
             colorbar=dict(title='Change (m)')
         )
 
@@ -115,6 +123,7 @@ def generate_3d_comparison_html(input_tiff, output_tiff, output_html_path):
                     ]),
                     pad={"r": 10, "t": 10},
                     showactive=True,
+                    active=2 if is_diff_mode else 0,
                     x=0.05,
                     xanchor="left",
                     y=1.1,
@@ -128,4 +137,28 @@ def generate_3d_comparison_html(input_tiff, output_tiff, output_html_path):
 
     except Exception as e:
         print(f"Error generating 3D comparison: {e}")
+        return False
+
+def regenerate_2d_difference_map(diff_tif_path, output_png_path, vmin=None, vmax=None):
+    """Regenerates the 2D difference map PNG with a specific color scale."""
+    from app.engine.io import plot_difference
+    
+    if not os.path.exists(diff_tif_path):
+        return False
+        
+    try:
+        with rasterio.open(diff_tif_path) as src:
+            data = src.read(1)
+            # data is typically 2D after read(1), but plot_difference expects to reshape.
+            shape = data.shape
+            if src.nodata is not None:
+                # rasterio might return a masked array or raw array.
+                # If it's a raw array with nodata values:
+                data = data.astype(float)
+                data[data == src.nodata] = np.nan
+        
+        plot_difference(data, shape, "Topographic Change", output_png_path, vmin=vmin, vmax=vmax)
+        return True
+    except Exception as e:
+        print(f"Error regenerating difference map: {e}")
         return False
