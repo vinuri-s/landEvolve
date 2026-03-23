@@ -32,6 +32,8 @@ class ShapefileLoader(FileWidget):
                     self.geojson_loaded.emit(geojson_str)
                     
             except Exception as e:
+                import logging
+                logging.getLogger(__name__).exception("Error loading shapefile: %s", str(e))
                 # Display error relative to parent
                 parent_widget = self.parentWidget() if hasattr(self, 'parentWidget') else self
                 QMessageBox.critical(parent_widget, "Error", f"Failed to load shapefile(s):\n{str(e)}")

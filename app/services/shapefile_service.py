@@ -47,6 +47,16 @@ class ShapefileService:
             if gdf.crs != "EPSG:4326":
                 gdf = gdf.to_crs("EPSG:4326")
                 
+            # Convert datetime columns to strings to prevent JSON serialization errors
+            for col in gdf.select_dtypes(include=['datetime', 'datetimetz', 'timedelta']).columns:
+                gdf[col] = gdf[col].astype(str)
+
+            # Decode any byte attributes to strings to prevent JSON serialization errors
+            for col in gdf.select_dtypes(include=['object']).columns:
+                if col != gdf.active_geometry_name:
+                    # Also convert Timestamp inside object columns to string just in case
+                    gdf[col] = gdf[col].apply(lambda x: x.decode('utf-8', 'replace') if isinstance(x, bytes) else (str(x) if 'Timestamp' in type(x).__name__ else x))
+
             geojson_str = gdf.to_json()
             geojson_results.append((file_name, geojson_str))
             
