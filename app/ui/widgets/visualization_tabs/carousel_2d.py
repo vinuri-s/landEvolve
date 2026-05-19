@@ -10,9 +10,10 @@ class Carousel2DWidget(QWidget):
     Handles loading images from disk, scaling them smoothly to fit the window,
     and managing the toggle state between Input/Final/Difference maps.
     """
-    def __init__(self, image_paths: dict, parent=None):
+    def __init__(self, image_paths: dict, controller=None, parent=None):
         super().__init__(parent)
         self.image_paths = image_paths
+        self.controller = controller
         
         self.current_pixmap = None
         self.current_2d_key = None
@@ -96,7 +97,9 @@ class Carousel2DWidget(QWidget):
         self._regenerate_diff_map(vmin=None, vmax=None)
         
     def _regenerate_diff_map(self, vmin, vmax):
-        from app.engine.visualization import regenerate_2d_difference_map
+        if not self.controller:
+            return
+            
         output_dir = self.image_paths.get(SimulationResultKeys.OUTPUT_DIR)
         if not output_dir:
             return
@@ -105,7 +108,7 @@ class Carousel2DWidget(QWidget):
         diff_png = self.image_paths.get(SimulationResultKeys.CHANGE_PLOT)
         
         if diff_tif and diff_png and os.path.exists(diff_tif):
-            success = regenerate_2d_difference_map(diff_tif, diff_png, vmin=vmin, vmax=vmax)
+            success = self.controller.regenerate_2d_difference_map(diff_tif, diff_png, vmin=vmin, vmax=vmax)
             if success:
                 # Reload the image to show updated scale
                 self.current_pixmap = QPixmap(diff_png)

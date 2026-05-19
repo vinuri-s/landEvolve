@@ -1,5 +1,5 @@
 from app.ui.widgets.file_widget import FileWidget
-from app.services.shapefile_service import ShapefileService
+from app.controllers.shapefile_controller import ShapefileController
 from PyQt6.QtWidgets import QMessageBox
 from PyQt6.QtCore import pyqtSignal
 
@@ -22,11 +22,13 @@ class ShapefileLoader(FileWidget):
         # Connect the base class signal to our internal processing logic
         self.files_selected.connect(self._process_files)
         
+        self.controller = ShapefileController()
+        
     def _process_files(self, file_names):
         if file_names:
             try:
-                # Delegate business logic (reading, CRS transformation, GeoJSON conversion) to the Service layer
-                geojson_results = ShapefileService.load_shapefiles_as_geojson(file_names)
+                # Delegate business logic (reading, CRS transformation, GeoJSON conversion) to the Controller layer
+                geojson_results = self.controller.load_shapefiles_as_geojson(file_names)
                 
                 for file_name, geojson_str in geojson_results:
                     self.geojson_loaded.emit(geojson_str)

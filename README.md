@@ -30,7 +30,6 @@ The project follows a strict layered architecture to ensure separation of concer
 ### Visualization
 *   **Matplotlib**: Static 2D plotting (Topography, Change Maps).
 *   **Plotly**: Interactive 3D surface visualization.
-*   **Cesium**: 3D globe visualization (integrated via HTML/JS).
 
 ### Data & System
 *   **SQLAlchemy**: ORM for database management (SQLite).
@@ -61,6 +60,8 @@ A modern, responsive PyQt6 interface.
 Business logic layer acting as a bridge between UI and Data/Engine.
 *   **`SimulationService`**: Prepares simulation data, merges user parameters with database defaults, and triggers the engine.
 *   **`LocationService`**: Retrieves available simulation locations and resolution options.
+*   **`ComponentService`**: Retrieves Landlab component definitions and user-configurable parameters.
+*   **`ShapefileService`**: Parses geographic shapefiles into GeoJSON format for the map UI.
 
 ### 4. Data Layer (`app/data`)
 Manages data persistence.

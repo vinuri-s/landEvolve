@@ -11,7 +11,7 @@ from app.core.logging.simulation_log import SimulationLogger
 from app.ui.views.dialogs.simulation_stats_dialog import SimulationStatsDialog
 from app.ui.widgets.progress_tracker import ProgressTrackerWidget
 from app.ui.widgets.visualization_tabs.carousel_2d import Carousel2DWidget
-from app.ui.widgets.visualization_tabs.cesium_window import ThreeDView
+from app.ui.widgets.visualization_tabs.three_d_window import ThreeDView
 
 class SimulationResultsWindow(QMainWindow):
     """
@@ -81,7 +81,7 @@ class SimulationResultsWindow(QMainWindow):
         main_layout.addWidget(self.tabs)
         
         # --- Tab 1: 2D Visualization (Carousel) ---
-        self.tab_2d = Carousel2DWidget(self.image_paths)
+        self.tab_2d = Carousel2DWidget(self.image_paths, self.simulation_controller)
         self.tabs.addTab(self.tab_2d, SimulationResultsWindowConsts.TAB_2D_VISUALIZATION)
         
         # --- Tab 2: 3D Visualization (Interactive) ---

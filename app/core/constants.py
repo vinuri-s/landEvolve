@@ -161,7 +161,7 @@ class DynamicFormConsts:
 
 class ThreeDViewConsts:
     """
-    Strings and configuration keys for ThreeDView (CesiumWindow).
+    Strings and configuration keys for ThreeDView.
     """
     LOG_FILE_NOT_FOUND = "3D plot file not found at: {}"
     LOG_GENERATION_FAILED = "Failed to generate 3D plot"
