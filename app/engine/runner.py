@@ -84,7 +84,7 @@ class SimulationRunner:
             name = self._name(c["component"])
             p = c.get("params", {}).copy()
 
-            if "erodibility_map" in self.params:
+            if "erodibility_map" in self.params and name in ("SpaceComponent", "SpaceLargeScaleEroderComponent"):
                 p["erodibility_map"] = self.params["erodibility_map"]
 
             inst = self._build(name, grid, p)

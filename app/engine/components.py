@@ -277,6 +277,12 @@ class DepthDependentDiffuserComponent(SimulationComponent):
 
         if "soil__depth" not in grid.at_node:
             grid.add_ones("soil__depth", at="node")
+            
+        if "soil_production__rate" not in grid.at_node:
+            grid.add_zeros("soil_production__rate", at="node")
+            
+        if "bedrock__elevation" not in grid.at_node:
+            grid.add_field("bedrock__elevation", grid.at_node["topographic__elevation"].copy() - grid.at_node["soil__depth"].copy(), at="node")
 
         self.diff = DepthDependentDiffuser(grid, **params)
 
