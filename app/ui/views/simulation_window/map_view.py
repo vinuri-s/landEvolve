@@ -132,43 +132,39 @@ class MapViewWidget:
                     }}
                 }}
                 
-                function addShapefile(geoJsonData) {{
+                function setGeoJsonLayer(layerId, geoJsonData, color, fillColor, fillOpacity) {{
                     if (!map) return;
-                    
-                    var colors = ['#ff7800', '#3388ff', '#28a745', '#dc3545', '#6f42c1'];
-                    var color = colors[shapefileCount % colors.length];
-                    var sourceId = 'shapefile-source-' + shapefileCount;
-                    
-                    // Add MapLibre source
-                    map.addSource(sourceId, {{
-                        'type': 'geojson',
-                        'data': geoJsonData
-                    }});
-                    
-                    // Add MapLibre fill layer
-                    map.addLayer({{
-                        'id': 'shapefile-fill-' + shapefileCount,
-                        'type': 'fill',
-                        'source': sourceId,
-                        'paint': {{
-                            'fill-color': color,
-                            'fill-opacity': 0.1
-                        }}
-                    }});
-                    
-                    // Add MapLibre outline layer
-                    map.addLayer({{
-                        'id': 'shapefile-line-' + shapefileCount,
-                        'type': 'line',
-                        'source': sourceId,
-                        'paint': {{
-                            'line-color': color,
-                            'line-width': 4,
-                            'line-opacity': 0.8
-                        }}
-                    }});
-                    
-                    shapefileCount++;
+                    if (map.getSource(layerId)) {{
+                        map.getSource(layerId).setData(geoJsonData);
+                    }} else {{
+                        map.addSource(layerId, {{ 'type': 'geojson', 'data': geoJsonData }});
+                        map.addLayer({{
+                            'id': layerId + '-fill',
+                            'type': 'fill',
+                            'source': layerId,
+                            'paint': {{ 
+                                'fill-color': fillColor || color, 
+                                'fill-opacity': fillOpacity !== undefined ? fillOpacity : 0.1 
+                            }}
+                        }});
+                        map.addLayer({{
+                            'id': layerId + '-line',
+                            'type': 'line',
+                            'source': layerId,
+                            'paint': {{ 
+                                'line-color': color, 
+                                'line-width': 4, 
+                                'line-opacity': 1.0 
+                            }}
+                        }});
+                    }}
+                }}
+
+                function removeGeoJsonLayer(layerId) {{
+                    if (!map) return;
+                    if (map.getLayer(layerId + '-line')) map.removeLayer(layerId + '-line');
+                    if (map.getLayer(layerId + '-fill')) map.removeLayer(layerId + '-fill');
+                    if (map.getSource(layerId)) map.removeSource(layerId);
                 }}
             </script>
         </body>
@@ -176,9 +172,16 @@ class MapViewWidget:
         """
         self.web_view.setHtml(html_content)
         
-    def add_geojson_overlay(self, geojson_str: str):
-        """Passes GeoJSON data string to the active map to draw it."""
-        script = f"addShapefile({geojson_str});"
+    def set_overlay(self, layer_id: str, geojson_str: str, line_color: str, fill_color: str = None, fill_opacity: float = 0.0):
+        """Adds or updates a GeoJSON overlay on the map."""
+        if fill_color is None:
+            fill_color = line_color
+        script = f"if (typeof setGeoJsonLayer !== 'undefined') setGeoJsonLayer('{layer_id}', {geojson_str}, '{line_color}', '{fill_color}', {fill_opacity});"
+        self.web_view.page().runJavaScript(script)
+
+    def remove_overlay(self, layer_id: str):
+        """Removes a specific GeoJSON overlay from the map."""
+        script = f"if (typeof removeGeoJsonLayer !== 'undefined') removeGeoJsonLayer('{layer_id}');"
         self.web_view.page().runJavaScript(script)
 
     def show_placeholder(self, message: str):

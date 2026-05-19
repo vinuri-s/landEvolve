@@ -80,6 +80,14 @@ class SimulationResultsWindow(QMainWindow):
 
         # Tabs
         self.tabs = QTabWidget()
+        # Force all tab headers to have exactly the same width
+        self.tabs.setStyleSheet("""
+            QTabBar::tab {
+                width: 200px;
+                height: 35px;
+                font-weight: bold;
+            }
+        """)
         main_layout.addWidget(self.tabs)
         
         # --- Tab 1: 2D Visualization (Carousel) ---

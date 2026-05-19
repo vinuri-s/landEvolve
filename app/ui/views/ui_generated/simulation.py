@@ -113,8 +113,8 @@ class Ui_SimulationSetup(object):
         self.webView = QWebEngineView()
         earth_layout.addWidget(self.webView)
         
-        self.load_shp_btn = QtWidgets.QPushButton("Load Shapefile Overlay")
-        earth_layout.addWidget(self.load_shp_btn)
+        self.showDemBoundaryToggle = QtWidgets.QCheckBox("Show DEM Boundary (Yellow)")
+        earth_layout.addWidget(self.showDemBoundaryToggle)
         
         self.splitter.addWidget(right_container)
         self.splitter.setSizes([300, 500])
