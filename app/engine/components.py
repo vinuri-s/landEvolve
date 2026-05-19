@@ -11,8 +11,7 @@ from landlab.components import (
     DepthDependentDiffuser,
 )
 
-from landlab.components.lithology.litholayers import LithoLayers
-from app.logging.manager import LogManager
+from app.core.logging.manager import LogManager
 
 logger = LogManager.get_logger("engine")
 

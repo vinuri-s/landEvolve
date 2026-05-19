@@ -1,9 +1,9 @@
 import os
-from PyQt6.QtWidgets import QMainWindow, QVBoxLayout, QHBoxLayout, QWidget, QMessageBox, QLabel, QDoubleSpinBox, QPushButton
+from PyQt6.QtWidgets import QVBoxLayout, QHBoxLayout, QWidget, QLabel, QDoubleSpinBox, QPushButton
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebEngineCore import QWebEngineSettings
-from PyQt6.QtCore import QUrl, Qt
-from app.ui.constants import Carousel2DWidgetConsts
+from PyQt6.QtCore import QUrl
+from app.core.constants import Carousel2DWidgetConsts
 
 class ThreeDView(QWidget):
     def __init__(self, parent=None):
@@ -97,7 +97,7 @@ class ThreeDView(QWidget):
         self.web_view.page().runJavaScript(js)
         
     def load_plot(self, html_path):
-        from app.ui.constants import ThreeDViewConsts
+        from app.core.constants import ThreeDViewConsts
         if not html_path or not os.path.exists(html_path):
             print(ThreeDViewConsts.LOG_FILE_NOT_FOUND.format(html_path))
             return
@@ -110,7 +110,7 @@ class ThreeDView(QWidget):
         self.last_output_data = output_data
         self.last_controller = controller
         
-        from app.ui.constants import SimulationParamKeys, SimulationResultKeys, ThreeDViewConsts
+        from app.core.constants import SimulationParamKeys, SimulationResultKeys, ThreeDViewConsts
         
         output_dir = output_data.get(SimulationResultKeys.OUTPUT_DIR)
         if not output_dir or not os.path.exists(output_dir):

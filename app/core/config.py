@@ -10,7 +10,7 @@ class Config:
          # External base for logs, DB, and outputs
          BASE_DIR = Path(sys.executable).parent
     else:
-         _BUNDLED_ROOT = Path(__file__).resolve().parent.parent
+         _BUNDLED_ROOT = Path(__file__).resolve().parent.parent.parent
          BASE_DIR = _BUNDLED_ROOT
     
     # Resources (Read-only bundled assets)

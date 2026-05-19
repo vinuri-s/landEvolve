@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import QVBoxLayout
 from app.controllers.component_controller import ComponentController
 from app.ui.widgets.dynamic_form import DynamicFormWidget
 from app.ui.views.ui_generated.componentDlg import Ui_AddComponents
-from app.ui.constants import AddComponentDlgConsts
+from app.core.constants import AddComponentDlgConsts
 
 class AddComponentDlg(QDialog):
     component_added = pyqtSignal(object, dict)

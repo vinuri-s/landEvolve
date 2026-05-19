@@ -3,7 +3,7 @@ import os
 from typing import Any, Dict
 from logging.handlers import RotatingFileHandler
 
-from app.logging.interfaces import ILogger
+from app.core.logging.interfaces import ILogger
 
 class AppLogger(ILogger):
     """

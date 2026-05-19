@@ -1,4 +1,4 @@
-from PyQt6 import QtCore, QtGui, QtWidgets
+from PyQt6 import QtCore, QtWidgets
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 
 class Ui_SimulationSetup(object):  

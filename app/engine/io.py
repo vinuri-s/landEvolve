@@ -2,7 +2,6 @@ import rasterio
 import matplotlib.pyplot as plt
 from matplotlib import colors
 import numpy as np
-import os
 
 def save_geotiff(filename, data, reference_tif):
     """Save a 2D numpy array as a GeoTIFF using spatial metadata from an input DEM."""

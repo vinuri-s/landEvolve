@@ -1,6 +1,6 @@
 import os
 import datetime
-from app.ui.constants import SimulationParamKeys, SimulationResultKeys, SimulationStatsKeys
+from app.core.constants import SimulationParamKeys, SimulationResultKeys, SimulationStatsKeys
 
 class SimulationLogger:
     """

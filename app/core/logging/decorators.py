@@ -1,9 +1,9 @@
 import functools
 import time
-from typing import Any, Callable
+from typing import Callable
 
 def _get_logger_for_module(module_name: str):
-    from app.logging.manager import LogManager
+    from app.core.logging.manager import LogManager
     if module_name and module_name.startswith("app.ui"):
         return LogManager.get_logger("ui")
     elif module_name and module_name.startswith("app.engine"):
@@ -20,7 +20,7 @@ def log_method(func: Callable) -> Callable:
     def wrapper(self, *args, **kwargs):
         # We import here to avoid circular dependencies if LogManager
         # is used in many files 
-        from app.logging.manager import LogManager
+        pass
         
         start_time = time.time()
         

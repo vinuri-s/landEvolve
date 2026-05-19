@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QHBoxLayout,
 )
-from app.ui.constants import DynamicFormConsts
+from app.core.constants import DynamicFormConsts
 
 
 class DynamicFormWidget(QWidget):

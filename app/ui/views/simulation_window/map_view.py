@@ -1,8 +1,7 @@
-import logging
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebEngineCore import QWebEngineSettings
 
-from app.logging.manager import LogManager
+from app.core.logging.manager import LogManager
 logger = LogManager.get_logger("ui")
 
 class MapViewWidget:

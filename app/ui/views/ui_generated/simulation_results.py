@@ -1,4 +1,4 @@
-from PyQt6 import QtCore, QtGui, QtWidgets
+from PyQt6 import QtCore, QtWidgets
 
 class Ui_SimulationResults(object):
     def setupUi(self, SimulationResults):

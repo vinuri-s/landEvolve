@@ -2,7 +2,7 @@ import os
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QDoubleSpinBox
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtCore import Qt
-from app.ui.constants import SimulationResultKeys, Carousel2DWidgetConsts
+from app.core.constants import SimulationResultKeys, Carousel2DWidgetConsts
 
 class Carousel2DWidget(QWidget):
     """
@@ -101,7 +101,7 @@ class Carousel2DWidget(QWidget):
         if not output_dir:
             return
             
-        diff_tif = os.path.join(output_dir, "topographic_change.tif")
+        diff_tif = os.path.join(output_dir, "diff.tif")
         diff_png = self.image_paths.get(SimulationResultKeys.CHANGE_PLOT)
         
         if diff_tif and diff_png and os.path.exists(diff_tif):

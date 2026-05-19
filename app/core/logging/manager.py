@@ -1,6 +1,6 @@
-from app.config import Config
-from app.logging.interfaces import ILogger
-from app.logging.app_logger import AppLogger
+from app.core.config import Config
+from app.core.logging.interfaces import ILogger
+from app.core.logging.app_logger import AppLogger
 
 class LogManager:
     """

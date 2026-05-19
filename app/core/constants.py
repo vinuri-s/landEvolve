@@ -166,7 +166,7 @@ class ThreeDViewConsts:
     LOG_FILE_NOT_FOUND = "3D plot file not found at: {}"
     LOG_GENERATION_FAILED = "Failed to generate 3D plot"
     FILE_HTML_COMPARISON = "view_3d_comparison.html"
-    FILE_FALLBACK_TIFF = "final_elevation.tif"
+    FILE_FALLBACK_TIFF = "final.tif"
     STR_ELEVATION_SUBSTRING = "elevation"
     EXT_TIFF = ".tif"
 

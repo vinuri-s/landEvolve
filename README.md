@@ -6,7 +6,8 @@ LandEvolve is a desktop application for simulating and visualizing landscape evo
 
 The project follows a strict layered architecture to ensure separation of concerns and maintainability:
 
-*   **`app/ui`**: Handles the user interface (Views & Controllers). Built with PyQt6.
+*   **`app/ui`**: Handles the user interface (Views). Built with PyQt6.
+*   **`app/controllers`**: Handlers linking the UI interactions to the services.
 *   **`app/services`**: Business logic layer that orchestrates operations between the UI, Data, and Engine layers.
 *   **`app/engine`**: The core simulation engine powered by `landlab`. This layer is pure logic and isolated from the UI and Database.
 *   **`app/data`**: Manages data persistence using SQLAlchemy. Handles database models and repositories.
@@ -22,7 +23,9 @@ The project follows a strict layered architecture to ensure separation of concer
 ### Simulation & Science
 *   **Landlab**: The core landscape evolution modeling library.
 *   **NumPy**: High-performance numerical computing.
-*   **Rasterio**: Geospatial data (GeoTIFF) handling and transformations.
+*   **Rasterio**: Geospatial raster data (GeoTIFF) handling.
+*   **GeoPandas**: Geospatial vector data (Shapefile) handling.
+*   **Fiona**: Reading and writing geospatial data formats.
 
 ### Visualization
 *   **Matplotlib**: Static 2D plotting (Topography, Change Maps).

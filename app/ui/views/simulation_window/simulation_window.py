@@ -3,12 +3,12 @@ from app.controllers.simulation_controller import SimulationController
 from app.ui.views.dialogs.add_component import AddComponentDlg
 from app.ui.views.ui_generated.simulation import Ui_SimulationSetup
 from app.ui.views.simulation_results import SimulationResultsWindow
-from app.logging import log_action
+from app.core.logging import log_action
 from app.ui.views.simulation_window.map_view import MapViewWidget
 from app.ui.widgets.component_table import ComponentTableManager
 from app.ui.window_manager import WindowManager
 from app.ui.validators.simulation_validator import SimulationValidator
-from app.ui.constants import SimulationDefaults, LocationDataKeys, ComponentDataKeys, SimulationParamKeys
+from app.core.constants import SimulationDefaults, LocationDataKeys, ComponentDataKeys
 
 class SimulationWindow(QMainWindow):
     """

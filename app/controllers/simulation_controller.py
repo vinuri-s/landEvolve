@@ -1,6 +1,5 @@
 from app.services.location_service import LocationService
 from app.services.simulation_service import SimulationService
-from app.ui.workers import SimulationWorker
 import os
 
 class SimulationController:

@@ -26,9 +26,7 @@ class ILogger(ABC):
     @abstractmethod
     def log_action(self, action_name: str, details: Dict[str, Any] = None):
         """Log a specific user or system action for analytics/auditing."""
-        pass
 
     @abstractmethod
     def log_method_call(self, class_name: str, method_name: str, args: tuple = None, kwargs: dict = None, execution_time_ms: float = None):
         """Log a method execution for debugging and tracing."""
-        pass

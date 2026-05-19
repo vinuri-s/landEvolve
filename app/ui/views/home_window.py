@@ -3,9 +3,9 @@ from PyQt6 import QtGui
 from PyQt6.QtCore import Qt
 from app.ui.views.simulation_window.simulation_window import SimulationWindow
 from app.ui.views.ui_generated.home import Ui_Home
-from app.config import Config
+from app.core.config import Config
 from app.ui.window_manager import WindowManager
-from app.ui.constants import HomeWindowConsts
+from app.core.constants import HomeWindowConsts
 
 class HomeWindow(QMainWindow):
     """

@@ -13,10 +13,8 @@ from app.engine.io import (
     save_geotiff,
     plot_topography,
     plot_difference,
-    save_overlay_image,
 )
-from app.config import Config
-from app.services.feature_mask_service import FeatureMaskService
+from app.core.config import Config
 
 
 class SimulationRunner:
@@ -135,7 +133,12 @@ class SimulationRunner:
 
         self.log(100, "Done")
 
-        return {"output_dir": str(self.output_dir)}
+        return {
+            "output_dir": str(self.output_dir),
+            "initial_plot": str(self.output_dir / "init.png"),
+            "final_plot": str(self.output_dir / "final.png"),
+            "change_plot": str(self.output_dir / "diff.png")
+        }
 
 
 def run_simulation(sim_params, progress_callback=None):

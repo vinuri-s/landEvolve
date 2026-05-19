@@ -1,11 +1,11 @@
 import os
-from app.config import Config
+from app.core.config import Config
 from app.engine.runner import run_simulation
 from app.data.database import db_manager
 from app.data.repositories.lithology_repository import LithologyRepository
 from app.data.repositories.component_repository import ComponentRepository
 
-from app.logging.manager import LogManager
+from app.core.logging.manager import LogManager
 logger = LogManager.get_logger("backend")
 
 class SimulationService:

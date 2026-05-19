@@ -1,5 +1,5 @@
 from PyQt6.QtWidgets import QMessageBox
-from app.ui.constants import SimulationParamKeys, ComponentDataKeys
+from app.core.constants import SimulationParamKeys, ComponentDataKeys
 
 class SimulationValidator:
     """

@@ -1,6 +1,6 @@
 from app.services.base_service import BaseService
 from app.data.repositories.component_repository import ComponentRepository, ComponentParamRepository
-from app.logging import log_method
+from app.core.logging import log_method
 
 class ComponentService(BaseService):
     """

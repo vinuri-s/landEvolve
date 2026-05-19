@@ -2,7 +2,7 @@ from landlab import RasterModelGrid
 import numpy as np
 import rasterio
 import os
-from app.config import Config
+from app.core.config import Config
 
 class RasterModel:
     def __init__(self, geo_tiff_file=None, geology_file=None, shape=None, xy_spacing=None, 
