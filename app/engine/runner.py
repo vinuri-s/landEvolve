@@ -108,6 +108,22 @@ class SimulationRunner:
 
         steps = int(total_time / dt)
         t = 0.0
+        
+        # Setup Feature Tracker
+        from app.engine.feature_tracker import FeatureTracker
+        import os
+        
+        track_feature = self.params.get("track_feature", False)
+        feature_shp = self.params.get("feature_shapefile")
+        
+        tracker = None
+        if track_feature and feature_shp and os.path.exists(feature_shp):
+            self.log(18, "Initializing Feature Tracker...")
+            tracker = FeatureTracker(feature_shp, tif)
+            if tracker.mask is not None:
+                tracker.record_step(0.0, grid.at_node["topographic__elevation"])
+            else:
+                tracker = None
 
         for i in range(steps):
 
@@ -115,6 +131,9 @@ class SimulationRunner:
 
             for comp in components:
                 comp.run(dt)
+                
+            if tracker:
+                tracker.record_step(t, grid.at_node["topographic__elevation"])
 
             if i % max(1, steps // 20) == 0:
                 self.log(int(20 + 60 * i / steps), f"Step {i}/{steps}")
@@ -130,6 +149,12 @@ class SimulationRunner:
 
         save_geotiff(str(self.output_dir / "final.tif"), final, tif)
         save_geotiff(str(self.output_dir / "diff.tif"), diff, tif)
+        
+        tracker_csv = None
+        tracker_plot = None
+        if tracker:
+            self.log(95, "Exporting feature tracking data...")
+            tracker_csv, tracker_plot = tracker.export(str(self.output_dir))
 
         self.log(100, "Done")
 
@@ -138,7 +163,9 @@ class SimulationRunner:
             "initial_plot": str(self.output_dir / "init.png"),
             "final_plot": str(self.output_dir / "final.png"),
             "change_plot": str(self.output_dir / "diff.png"),
-            "diff_max": max_diff
+            "diff_max": max_diff,
+            "tracker_csv": tracker_csv,
+            "tracker_plot": tracker_plot
         }
 
 

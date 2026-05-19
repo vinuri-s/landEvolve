@@ -1,11 +1,13 @@
 from PyQt6.QtWidgets import (
     QMainWindow, QVBoxLayout, QHBoxLayout, QPushButton, 
-    QWidget, QTabWidget, QMessageBox
+    QWidget, QTabWidget, QMessageBox, QLabel
 )
-from PyQt6.QtCore import QTimer
+from PyQt6.QtCore import QTimer, Qt
+from PyQt6.QtGui import QPixmap
+import os
 from app.ui.window_manager import WindowManager
 from app.core.constants import (
-    SimulationResultsWindowConsts,
+    SimulationResultsWindowConsts, SimulationResultKeys
 )
 from app.core.logging.simulation_log import SimulationLogger
 from app.ui.views.dialogs.simulation_stats_dialog import SimulationStatsDialog
@@ -87,6 +89,27 @@ class SimulationResultsWindow(QMainWindow):
         # --- Tab 2: 3D Visualization (Interactive) ---
         self.view_3d = ThreeDView()
         self.tabs.addTab(self.view_3d, SimulationResultsWindowConsts.TAB_3D_VISUALIZATION)
+        
+        # --- Tab 3: Feature Tracking (Dynamic) ---
+        tracker_plot = self.image_paths.get(SimulationResultKeys.TRACKER_PLOT)
+        if tracker_plot and os.path.exists(tracker_plot):
+            tracker_widget = QWidget()
+            layout = QVBoxLayout(tracker_widget)
+            
+            lbl = QLabel()
+            pixmap = QPixmap(tracker_plot)
+            # Scale to fit nicely in the tab
+            lbl.setPixmap(pixmap.scaled(800, 600, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            layout.addWidget(lbl)
+            
+            csv_path = self.image_paths.get(SimulationResultKeys.TRACKER_CSV)
+            if csv_path:
+                info_lbl = QLabel(f"Data saved to:\\n{csv_path}")
+                info_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                layout.addWidget(info_lbl)
+                
+            self.tabs.addTab(tracker_widget, SimulationResultsWindowConsts.TAB_FEATURE_TRACKING)
 
         # Bottom Button Area
         button_layout = QHBoxLayout()

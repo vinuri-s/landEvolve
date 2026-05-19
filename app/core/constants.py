@@ -59,6 +59,8 @@ class SimulationResultKeys:
     OUTPUT_DIR = "output_dir"
     GRID_SIZE = "grid_size"
     DIFF_MAX = "diff_max"
+    TRACKER_CSV = "tracker_csv"
+    TRACKER_PLOT = "tracker_plot"
 
 
 class SimulationStatsKeys:
@@ -82,8 +84,9 @@ class SimulationResultsWindowConsts:
     WINDOW_TITLE_PROGRESS = "Simulation Progress"
     WINDOW_TITLE_RESULTS = "Simulation Results"
     TAB_2D_VISUALIZATION = "2D Visualization"
-    TAB_3D_VISUALIZATION = "3D Visualization"
-    BTN_SHOW_STATS = "Show Stats"
+    TAB_3D_VISUALIZATION = "3D Map"
+    TAB_FEATURE_TRACKING = "Feature Tracking"
+    BTN_SHOW_STATS = "Show Statistics"
     BTN_CLOSE = "Close"
 
 
