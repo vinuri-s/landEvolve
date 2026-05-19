@@ -68,6 +68,13 @@ Manages data persistence.
 *   **`DatabaseManager`**: Handles SQLite connection and session management.
 *   **Repositories**: Data access patterns for `Locations`, `Components`, and `SimulationHistory`.
 
+### 5. Geospatial Logic & Data Processing
+Under the hood, LandEvolve handles complex geospatial transformations to ensure data aligns perfectly:
+*   **Input File Parsing & Downsampling**: DEMs (GeoTIFFs) are parsed via `rasterio` and injected directly into a Landlab `RasterModelGrid`. **The simulation engine always processes the data at 100% full, native resolution.** However, *after* the simulation completes, high-resolution output GeoTIFFs are dynamically downsampled using `NumPy` striding *only* before being passed to the 3D renderer. This ensures the scientific accuracy is uncompromised while preventing WebGL memory exhaustion in the desktop UI.
+*   **Coordinate Matching (CRS)**: When users load custom Shapefiles, `GeoPandas` automatically parses and transforms the Coordinate Reference System (CRS) to WGS84 (EPSG:4326) so polygons accurately overlay on the interactive web map. GeoTIFF bounding boxes are identically extracted and transformed using `rasterio.warp`.
+*   **Difference Map Auto-Scaling**: To visualize erosion vs. deposition accurately, the engine calculates the *absolute maximum change* across the entire grid. It then applies a mathematically **symmetric scale** (e.g., `-8.5m` to `+8.5m`). This guarantees that `0.0m` of change (stable ground) sits dead-center in the diverging Red-Blue colormap (pure white), avoiding false coloration of unchanged terrain.
+*   **3D Mesh Generation**: Instead of relying on heavy globe engines (like Cesium), LandEvolve reads elevation GeoTIFFs into 2D NumPy arrays, passes them to Plotly (`go.Surface`), and exports a standalone HTML WebGL object. This interactive 3D mesh is then natively embedded into the desktop app via `QWebEngineView`.
+
 ## 🚀 Getting Started
 
 ### Prerequisites

@@ -157,8 +157,8 @@ def regenerate_2d_difference_map(diff_tif_path, output_png_path, vmin=None, vmax
                 data = data.astype(float)
                 data[data == src.nodata] = np.nan
         
-        plot_difference(data, shape, "Topographic Change", output_png_path, vmin=vmin, vmax=vmax)
-        return True
+        max_abs = plot_difference(data, shape, "Topographic Change", output_png_path, vmin=vmin, vmax=vmax)
+        return max_abs
     except Exception as e:
         print(f"Error regenerating difference map: {e}")
         return False

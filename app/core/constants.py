@@ -58,6 +58,7 @@ class SimulationResultKeys:
     CHANGE_PLOT = "change_plot"
     OUTPUT_DIR = "output_dir"
     GRID_SIZE = "grid_size"
+    DIFF_MAX = "diff_max"
 
 
 class SimulationStatsKeys:

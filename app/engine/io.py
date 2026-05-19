@@ -48,12 +48,16 @@ def plot_difference(data, shape, title, output_path, vmin=None, vmax=None):
             max_abs = 1.0
         vmin = -max_abs
         vmax = max_abs
+    else:
+        max_abs = max(abs(vmin), abs(vmax))
 
     plt.imshow(data.reshape(shape), cmap='RdBu', vmin=vmin, vmax=vmax)
     plt.colorbar(label='Elevation Change (m)')
     plt.title(title)
     plt.savefig(output_path)
     plt.close()
+    
+    return max_abs
 
 def plot_soil_transport(data, shape, output_path):
     plt.figure(figsize=(12, 8))

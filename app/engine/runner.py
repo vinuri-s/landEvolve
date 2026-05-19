@@ -126,7 +126,7 @@ class SimulationRunner:
 
         plot_topography(initial, grid.shape, "Initial", str(self.output_dir / "init.png"))
         plot_topography(final, grid.shape, "Final", str(self.output_dir / "final.png"))
-        plot_difference(diff, grid.shape, "Change", str(self.output_dir / "diff.png"))
+        max_diff = plot_difference(diff, grid.shape, "Change", str(self.output_dir / "diff.png"))
 
         save_geotiff(str(self.output_dir / "final.tif"), final, tif)
         save_geotiff(str(self.output_dir / "diff.tif"), diff, tif)
@@ -137,7 +137,8 @@ class SimulationRunner:
             "output_dir": str(self.output_dir),
             "initial_plot": str(self.output_dir / "init.png"),
             "final_plot": str(self.output_dir / "final.png"),
-            "change_plot": str(self.output_dir / "diff.png")
+            "change_plot": str(self.output_dir / "diff.png"),
+            "diff_max": max_diff
         }
 
 

@@ -71,10 +71,12 @@ class Carousel2DWidget(QWidget):
         self.lbl_scale = QLabel(Carousel2DWidgetConsts.LBL_SCALE_RANGE)
         scale_layout.addWidget(self.lbl_scale)
         
+        diff_max = self.image_paths.get(SimulationResultKeys.DIFF_MAX, 1.0)
+        
         self.spin_scale = QDoubleSpinBox()
         self.spin_scale.setRange(0.01, 10000.0)
         self.spin_scale.setDecimals(2)
-        self.spin_scale.setValue(1.0)
+        self.spin_scale.setValue(float(diff_max))
         self.spin_scale.setSingleStep(0.1)
         scale_layout.addWidget(self.spin_scale)
         
@@ -108,11 +110,17 @@ class Carousel2DWidget(QWidget):
         diff_png = self.image_paths.get(SimulationResultKeys.CHANGE_PLOT)
         
         if diff_tif and diff_png and os.path.exists(diff_tif):
-            success = self.controller.regenerate_2d_difference_map(diff_tif, diff_png, vmin=vmin, vmax=vmax)
-            if success:
+            result = self.controller.regenerate_2d_difference_map(diff_tif, diff_png, vmin=vmin, vmax=vmax)
+            if result is not False:
                 # Reload the image to show updated scale
                 self.current_pixmap = QPixmap(diff_png)
                 self._refresh_image_scaling()
+                
+                # Update spinbox if it was an auto-reset and we got a valid number back
+                if vmin is None and vmax is None and isinstance(result, (int, float)):
+                    self.spin_scale.blockSignals(True)
+                    self.spin_scale.setValue(float(result))
+                    self.spin_scale.blockSignals(False)
 
     def _update_2d_display(self, result_key: str, title: str, active_btn: QPushButton): # Changed key to result_key
         """Helper to switch the currently displayed 2D map.""" # Updated docstring
