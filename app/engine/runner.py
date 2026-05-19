@@ -77,10 +77,28 @@ class SimulationRunner:
 
         self.log(15, "Building components...")
 
-        veg, flow, hill, ero, lith, other = [], [], [], [], [], []
+        veg_conf, flow_conf, hill_conf, ero_conf, lith_conf, other_conf = [], [], [], [], [], []
 
         for c in self.params["selected_components"]:
+            name = self._name(c["component"])
+            if name == "VegetationComponent":
+                veg_conf.append(c)
+            elif name == "FlowAccumulatorComponent":
+                flow_conf.append(c)
+            elif name == "DepthDependentDiffuserComponent":
+                hill_conf.append(c)
+            elif name in ("SpaceComponent", "SpaceLargeScaleEroderComponent"):
+                ero_conf.append(c)
+            elif name == "LithoLayersComponent":
+                lith_conf.append(c)
+            else:
+                other_conf.append(c)
 
+        # Build in strict dependency order (Flow MUST be built before SPACE)
+        ordered_confs = veg_conf + flow_conf + lith_conf + hill_conf + ero_conf + other_conf
+        
+        components = []
+        for c in ordered_confs:
             name = self._name(c["component"])
             p = c.get("params", {}).copy()
 
@@ -88,23 +106,8 @@ class SimulationRunner:
                 p["erodibility_map"] = self.params["erodibility_map"]
 
             inst = self._build(name, grid, p)
-            if inst is None:
-                continue
-
-            if name == "VegetationComponent":
-                veg.append(inst)
-            elif name == "FlowAccumulatorComponent":
-                flow.append(inst)
-            elif name == "DepthDependentDiffuserComponent":
-                hill.append(inst)
-            elif name in ("SpaceComponent", "SpaceLargeScaleEroderComponent"):
-                ero.append(inst)
-            elif name == "LithoLayersComponent":
-                lith.append(inst)
-            else:
-                other.append(inst)
-
-        components = veg + flow + lith + hill + ero + other
+            if inst is not None:
+                components.append(inst)
 
         steps = int(total_time / dt)
         t = 0.0

@@ -116,22 +116,34 @@ class BaseSpaceComponent(SimulationComponent):
 
 class VegetationComponent(SimulationComponent):
 
-    def __init__(self, grid, vegetation_factor=0.5, **kwargs):
+    def __init__(self, grid, **kwargs):
         super().__init__(grid)
 
-        self.grid._veg_factor = float(vegetation_factor)
+        self.mode = kwargs.get('vegetation_mode', 'Static')
+        self.max_cover = float(kwargs.get('max_vegetation_cover', 1.0))
+        self.growth_rate = float(kwargs.get('vegetation_growth_rate', 0.01))
+        self.decay_rate = float(kwargs.get('vegetation_decay_rate', 0.005))
+        
+        # Store factor globally on the grid for the Space/Eroder components to read
+        self.grid._veg_factor = float(kwargs.get('vegetation_erodibility_factor', 0.5))
+
+        initial_cover = float(kwargs.get('initial_vegetation_cover', 0.0))
 
         self._add_field_if_missing(
             "vegetation__cover_fraction",
-            np.zeros(grid.number_of_nodes),
+            np.full(grid.number_of_nodes, initial_cover),
             at="node"
         )
 
     def run(self, dt):
+        if self.mode != 'Dynamic':
+            return
+            
         veg = self.grid.at_node["vegetation__cover_fraction"]
 
-        veg += dt * (0.01 * (1 - veg) - 0.005 * veg)
-        np.clip(veg, 0, 1, out=veg)
+        # Dynamic Growth Model
+        veg += dt * (self.growth_rate * (self.max_cover - veg) - self.decay_rate * veg)
+        np.clip(veg, 0, self.max_cover, out=veg)
 
 
 # =========================================================
