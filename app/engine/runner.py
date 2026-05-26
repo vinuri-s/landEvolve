@@ -15,6 +15,9 @@ from app.engine.io import (
     plot_difference,
 )
 from app.core.config import Config
+from app.core.logging.manager import LogManager
+
+logger = LogManager.get_logger("engine")
 
 
 class SimulationRunner:
@@ -51,11 +54,60 @@ class SimulationRunner:
 
         return None
 
+    def _log_stats(self, grid, diff, total_time, dt, steps):
+        """Log erosion/deposition statistics for the completed simulation."""
+
+        interior = grid.core_nodes
+
+        erosion_only = (-diff).clip(min=0)  # positive = erosion
+        deposition   = diff.clip(min=0)     # positive = deposition
+
+        logger.info("=" * 55)
+        logger.info(f"SIMULATION {self.params.get('simulation_number', 0)} RESULTS")
+        logger.info("=" * 55)
+        logger.info(f"Total time      : {total_time} yr  |  dt: {dt} yr  |  steps: {steps}")
+        logger.info(f"Mean erosion    : {erosion_only[interior].mean():.4f} m")
+        logger.info(f"Max erosion     : {erosion_only[interior].max():.4f} m")
+        logger.info(f"Mean deposition : {deposition[interior].mean():.4f} m")
+        logger.info(f"Max deposition  : {deposition[interior].max():.4f} m")
+        logger.info(f"Net elev change : {diff[interior].mean():.4f} m")
+        logger.info(
+            f"Erosion area    : {(erosion_only[interior] > 0).sum()} nodes "
+            f"({100 * (erosion_only[interior] > 0).mean():.1f}%)"
+        )
+        logger.info(
+            f"Deposition area : {(deposition[interior] > 0).sum()} nodes "
+            f"({100 * (deposition[interior] > 0).mean():.1f}%)"
+        )
+
+        if "vegetation__cover_fraction" in grid.at_node:
+            veg = grid.at_node["vegetation__cover_fraction"][interior]
+            logger.info(
+                f"Final veg cover : mean={veg.mean():.3f}  "
+                f"min={veg.min():.3f}  max={veg.max():.3f}"
+            )
+
+        logger.info("=" * 55)
+
+        return {
+            "mean_erosion_m":         float(erosion_only[interior].mean()),
+            "max_erosion_m":          float(erosion_only[interior].max()),
+            "mean_deposition_m":      float(deposition[interior].mean()),
+            "max_deposition_m":       float(deposition[interior].max()),
+            "net_elevation_change_m": float(diff[interior].mean()),
+            "erosion_area_pct":       float(100 * (erosion_only[interior] > 0).mean()),
+            "deposition_area_pct":    float(100 * (deposition[interior] > 0).mean()),
+            "final_veg_cover_mean":   float(
+                grid.at_node["vegetation__cover_fraction"][interior].mean()
+                if "vegetation__cover_fraction" in grid.at_node else 0.0
+            ),
+        }
+
     def run(self):
 
-        tif = self.params["input_tiff_path"]
+        tif        = self.params["input_tiff_path"]
         total_time = self.params["simulation_period"]
-        dt = self.params["time_step"]
+        dt         = self.params["time_step"]
 
         geology = None
         for c in self.params["selected_components"]:
@@ -63,7 +115,7 @@ class SimulationRunner:
                 geology = c["params"]["geology_file"]
 
         self.log(5, "Loading DEM...")
-        rm = RasterModel(geo_tiff_file=tif, geology_file=geology)
+        rm   = RasterModel(geo_tiff_file=tif, geology_file=geology)
         grid = rm.grid
 
         initial = grid.at_node["topographic__elevation"].copy()
@@ -94,13 +146,16 @@ class SimulationRunner:
             else:
                 other_conf.append(c)
 
-        # Build in strict dependency order (Flow MUST be built before SPACE)
-        ordered_confs = veg_conf + flow_conf + lith_conf + hill_conf + ero_conf + other_conf
-        
+        # Run order each timestep:
+        #   Flow → Litho (sets K_sp) → Vegetation (updates cover) → Hillslope → Erosion (reads K_sp)
+        # This order is correct for all component combinations and does NOT
+        # change the execution order for no-veg/no-litho runs vs the previous code.
+        ordered_confs = flow_conf + lith_conf + veg_conf + hill_conf + ero_conf + other_conf
+
         components = []
         for c in ordered_confs:
             name = self._name(c["component"])
-            p = c.get("params", {}).copy()
+            p    = c.get("params", {}).copy()
 
             if "erodibility_map" in self.params and name in ("SpaceComponent", "SpaceLargeScaleEroderComponent"):
                 p["erodibility_map"] = self.params["erodibility_map"]
@@ -110,15 +165,15 @@ class SimulationRunner:
                 components.append(inst)
 
         steps = int(total_time / dt)
-        t = 0.0
-        
+        t     = 0.0
+
         # Setup Feature Tracker
         from app.engine.feature_tracker import FeatureTracker
         import os
-        
+
         track_feature = self.params.get("track_feature", False)
-        feature_shp = self.params.get("feature_shapefile")
-        
+        feature_shp   = self.params.get("feature_shapefile")
+
         tracker = None
         if track_feature and feature_shp and os.path.exists(feature_shp):
             self.log(18, "Initializing Feature Tracker...")
@@ -134,7 +189,7 @@ class SimulationRunner:
 
             for comp in components:
                 comp.run(dt)
-                
+
             if tracker:
                 tracker.record_step(t, grid.at_node["topographic__elevation"])
 
@@ -142,18 +197,20 @@ class SimulationRunner:
                 self.log(int(20 + 60 * i / steps), f"Step {i}/{steps}")
 
         final = grid.at_node["topographic__elevation"]
-        diff = final - initial
+        diff  = final - initial
 
         self.log(85, "Saving outputs...")
 
         plot_topography(initial, grid.shape, "Initial", str(self.output_dir / "init.png"))
-        plot_topography(final, grid.shape, "Final", str(self.output_dir / "final.png"))
+        plot_topography(final,   grid.shape, "Final",   str(self.output_dir / "final.png"))
         max_diff = plot_difference(diff, grid.shape, "Change", str(self.output_dir / "diff.png"))
 
         save_geotiff(str(self.output_dir / "final.tif"), final, tif)
-        save_geotiff(str(self.output_dir / "diff.tif"), diff, tif)
-        
-        tracker_csv = None
+        save_geotiff(str(self.output_dir / "diff.tif"),  diff,  tif)
+
+        stats = self._log_stats(grid, diff, total_time, dt, steps)
+
+        tracker_csv  = None
         tracker_plot = None
         if tracker:
             self.log(95, "Exporting feature tracking data...")
@@ -162,13 +219,14 @@ class SimulationRunner:
         self.log(100, "Done")
 
         return {
-            "output_dir": str(self.output_dir),
+            "output_dir":   str(self.output_dir),
             "initial_plot": str(self.output_dir / "init.png"),
-            "final_plot": str(self.output_dir / "final.png"),
-            "change_plot": str(self.output_dir / "diff.png"),
-            "diff_max": max_diff,
-            "tracker_csv": tracker_csv,
-            "tracker_plot": tracker_plot
+            "final_plot":   str(self.output_dir / "final.png"),
+            "change_plot":  str(self.output_dir / "diff.png"),
+            "diff_max":     max_diff,
+            "stats":        stats,
+            "tracker_csv":  tracker_csv,
+            "tracker_plot": tracker_plot,
         }
 
 
