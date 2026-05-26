@@ -35,7 +35,7 @@ class SimulationComponent(abc.ABC):
 
 
 # =========================================================
-# LITHOLOGY HANDLER (raster → paint layer)
+# LITHOLOGY HANDLER (raster -> paint layer)
 # =========================================================
 
 class LithologyHandler:
@@ -62,7 +62,6 @@ class LithologyHandler:
                     return erodibility_map.get(int(x), default_val)
 
                 K = np.vectorize(map_k)(geo).flatten()
-
                 grid.at_node["K_sp"] = K
                 logger.info("Lithology paint layer created (K_sp)")
 
@@ -85,12 +84,11 @@ class BaseSpaceComponent(SimulationComponent):
         )
 
     def _ensure_fields(self, soil_depth=1.0):
-
         if "soil__depth" not in self.grid.at_node:
             self._add_field_if_missing(
                 "soil__depth",
                 np.full(self.grid.number_of_nodes, soil_depth),
-                at="node"
+                at="node",
             )
 
         if "bedrock__elevation" not in self.grid.at_node:
@@ -99,51 +97,193 @@ class BaseSpaceComponent(SimulationComponent):
                 - self.grid.at_node["soil__depth"]
             )
 
-    def _apply_vegetation(self, K_br, K_sed):
-        if "vegetation__cover_fraction" not in self.grid.at_node:
-            return K_br, K_sed
-
-        veg = np.clip(self.grid.at_node["vegetation__cover_fraction"], 0, 1)
-        factor = getattr(self.grid, "_veg_factor", 0.5)
-
-        mult = 1.0 - factor * veg
-        return K_br * mult, K_sed * mult
-
 
 # =========================================================
 # VEGETATION
 # =========================================================
 
 class VegetationComponent(SimulationComponent):
+    """
+    Geomorphology-focused vegetation component.
+
+    Physics
+    -------
+    Two mechanisms couple vegetation cover to erosion:
+
+    1. Erodibility reduction (K effect)
+       Root cohesion and surface litter reduce the erodibility of both
+       bedrock and sediment. Applied via the public property setters
+       space.K_br and space.K_sed which accept node arrays.
+       K_eff = K_base * (1 - erodibility_factor * cover)
+
+    2. Runoff reduction (Q effect)
+       Canopy and litter interception reduce the effective rainfall that
+       reaches the surface and drives overland flow. Applied by updating
+       the water__unit_flux_in field that FlowAccumulator reads.
+       runoff_eff = runoff_base * (1 - interception_factor * cover)
+
+    Vegetation dynamics
+    -------------------
+    Logistic growth sub-stepped internally (10 substeps per dt) to avoid
+    numerical overshoot with large timesteps (dt=10yr).
+
+    Each substep:
+        veg += dt_sub * growth_rate * veg * (1 - veg / max_cover)
+        effective_max = max_cover * (1 - 0.9 * da_norm)
+        veg += dt_sub * growth_rate * (effective_max - veg)
+
+    This ensures:
+    - Hillslopes grow toward max_cover (dense, protected)
+    - Channel nodes stay near bare (high drainage area suppression)
+    - Numerically stable even at dt=10yr with growth_rate=0.05
+
+    Parameters
+    ----------
+    vegetation_mode                : 'Dynamic' | 'Static'  (default 'Static')
+    initial_vegetation_cover       : float  (default 0.1)
+    max_vegetation_cover           : float  (default 0.95)
+    vegetation_growth_rate         : float  (default 0.05)
+    vegetation_erodibility_factor  : float  (default 0.8)
+        Fraction by which full cover reduces K (0=no effect, 1=zeroes K)
+    vegetation_interception_factor : float  (default 0.4)
+        Fraction of base runoff intercepted at full cover
+    base_runoff_rate               : float  (default 0.55)
+        Must match the runoff_rate passed to FlowAccumulatorComponent
+    """
+
+    # Number of internal substeps per simulation timestep.
+    # Keeps dt_sub * growth_rate < 0.1 for numerical stability.
+    _N_SUBSTEPS = 10
 
     def __init__(self, grid, **kwargs):
         super().__init__(grid)
 
-        self.mode = kwargs.get('vegetation_mode', 'Static')
-        self.max_cover = float(kwargs.get('max_vegetation_cover', 1.0))
-        self.growth_rate = float(kwargs.get('vegetation_growth_rate', 0.01))
-        self.decay_rate = float(kwargs.get('vegetation_decay_rate', 0.005))
-        
-        # Store factor globally on the grid for the Space/Eroder components to read
-        self.grid._veg_factor = float(kwargs.get('vegetation_erodibility_factor', 0.5))
+        self.mode        = kwargs.get("vegetation_mode", "Static")
+        self.max_cover   = float(kwargs.get("max_vegetation_cover", 0.95))
+        self.growth_rate = float(kwargs.get("vegetation_growth_rate", 0.05))
 
-        initial_cover = float(kwargs.get('initial_vegetation_cover', 0.0))
+        self._ero_factor = float(kwargs.get("vegetation_erodibility_factor", 0.8))
+        self._int_factor = float(kwargs.get("vegetation_interception_factor", 0.4))
 
-        self._add_field_if_missing(
-            "vegetation__cover_fraction",
-            np.full(grid.number_of_nodes, initial_cover),
-            at="node"
+        base_runoff = float(kwargs.get("base_runoff_rate", 0.55))
+
+        # Store on grid so Space and Flow components can read without
+        # needing a direct reference to VegetationComponent.
+        self.grid._veg_base_runoff = base_runoff
+        self.grid._veg_ero_factor  = self._ero_factor
+        self.grid._veg_int_factor  = self._int_factor
+
+        initial_cover = float(kwargs.get("initial_vegetation_cover", 0.1))
+
+        if "vegetation__cover_fraction" not in self.grid.at_node:
+            if self.mode == "Dynamic":
+                # Slope-based spatial init: steep nodes start with less cover.
+                # This creates realistic initial heterogeneity before dynamics
+                # take over.
+                slope = self._slope_at_nodes()
+                cover = np.clip(initial_cover - slope * 2.0, 0.0, self.max_cover)
+            else:
+                # Static: uniform cover that never changes.
+                cover = np.full(self.grid.number_of_nodes, initial_cover)
+
+            self.grid.add_field("vegetation__cover_fraction", cover, at="node")
+            logger.info(
+                f"VegetationComponent: cover initialised — "
+                f"mean={cover.mean():.3f}  min={cover.min():.3f}  "
+                f"max={cover.max():.3f}"
+            )
+
+        logger.info(
+            f"VegetationComponent: mode={self.mode}  "
+            f"growth_rate={self.growth_rate}  max_cover={self.max_cover}  "
+            f"erodibility_factor={self._ero_factor}  "
+            f"interception_factor={self._int_factor}  "
+            f"base_runoff={base_runoff}"
         )
 
-    def run(self, dt):
-        if self.mode != 'Dynamic':
-            return
-            
-        veg = self.grid.at_node["vegetation__cover_fraction"]
+    # ------------------------------------------------------------------
+    def _slope_at_nodes(self):
+        """Approximate slope magnitude at every node from link gradients."""
+        try:
+            elev  = self.grid.at_node["topographic__elevation"]
+            grads = np.abs(self.grid.calc_grad_at_link(elev))
+            slope = np.zeros(self.grid.number_of_nodes)
+            for node in self.grid.core_nodes:
+                links  = self.grid.links_at_node[node]
+                active = links[links >= 0]
+                if len(active):
+                    slope[node] = grads[active].max()
+            return np.clip(slope, 0.0, 1.0)
+        except Exception as e:
+            logger.warning(
+                f"VegetationComponent: slope init failed ({e}), "
+                f"using uniform cover"
+            )
+            return np.zeros(self.grid.number_of_nodes)
 
-        # Dynamic Growth Model
-        veg += dt * (self.growth_rate * (self.max_cover - veg) - self.decay_rate * veg)
-        np.clip(veg, 0, self.max_cover, out=veg)
+    # ------------------------------------------------------------------
+    def _get_da_norm(self):
+        """
+        Return normalised drainage area [0, 1] at every node.
+        Returns None if drainage_area field is not yet on the grid.
+        """
+        if "drainage_area" not in self.grid.at_node:
+            return None
+        da     = self.grid.at_node["drainage_area"]
+        da_max = da[self.grid.core_nodes].max()
+        if da_max <= 0:
+            return None
+        return np.clip(da / da_max, 0.0, 1.0)
+
+    # ------------------------------------------------------------------
+    def run(self, dt):
+        if self.mode != "Dynamic":
+            return
+
+        veg    = self.grid.at_node["vegetation__cover_fraction"]
+        dt_sub = dt / self._N_SUBSTEPS
+
+        # Pre-compute normalised drainage area once per timestep —
+        # it only changes when Flow runs, which is once per timestep.
+        da_norm = self._get_da_norm()
+        if da_norm is not None:
+            # effective_max: full on hillslopes, near-zero in main channels.
+            effective_max = self.max_cover * (1.0 - 0.9 * da_norm)
+        else:
+            effective_max = np.full(self.grid.number_of_nodes, self.max_cover)
+
+        # --- Sub-stepped vegetation update ---
+        # Taking _N_SUBSTEPS small steps instead of one big step keeps
+        # dt_sub * growth_rate << 1, preventing numerical overshoot that
+        # would otherwise cause cover to jump unrealistically far in one
+        # 10-year timestep and disrupt the sediment flux balance in Space.
+        for _ in range(self._N_SUBSTEPS):
+
+            # Logistic growth toward max_cover
+            veg += dt_sub * self.growth_rate * veg * (1.0 - veg / self.max_cover)
+
+            # Channel suppression: nudge toward effective_max each substep.
+            # Positive on hillslopes (grows toward max_cover).
+            # Negative in channels (suppresses cover toward near-zero).
+            veg += dt_sub * self.growth_rate * (effective_max - veg)
+
+            np.clip(veg, 0.0, self.max_cover, out=veg)
+
+        # --- Update runoff field (Q effect) ---
+        # Reduced runoff takes effect on the NEXT timestep when
+        # FlowAccumulator runs. One-timestep lag is physically reasonable
+        # (vegetation-hydrology response is not instantaneous).
+        if "water__unit_flux_in" in self.grid.at_node:
+            base   = getattr(self.grid, "_veg_base_runoff", 0.55)
+            factor = getattr(self.grid, "_veg_int_factor", 0.4)
+            self.grid.at_node["water__unit_flux_in"][:] = (
+                base * (1.0 - factor * veg)
+            )
+
+        logger.debug(
+            f"Vegetation updated: mean={veg.mean():.4f}  "
+            f"min={veg.min():.4f}  max={veg.max():.4f}"
+        )
 
 
 # =========================================================
@@ -151,12 +291,6 @@ class VegetationComponent(SimulationComponent):
 # =========================================================
 
 class LithoLayersComponent(SimulationComponent):
-
-    """
-    IMPORTANT FIX:
-    We DO NOT depend on LithoLayers internals.
-    We treat lithology as a mapping → K_sp field.
-    """
 
     def __init__(self, grid, **params):
         super().__init__(grid)
@@ -166,31 +300,21 @@ class LithoLayersComponent(SimulationComponent):
                 return ast.literal_eval(v)
             return v
 
-        self.z0s = np.array(safe(params["z0s"]), dtype=float)
-        self.ids = np.array(safe(params["ids"]))
-        self.attrs = safe(params["attrs"])
+        self.z0s     = np.array(safe(params["z0s"]), dtype=float)
+        self.ids     = np.array(safe(params["ids"]))
+        self.attrs   = safe(params["attrs"])
         self.rock_id = safe(params.get("rock_id", self.ids[-1]))
 
         self._add_field_if_missing(
             "K_sp",
             np.full(grid.number_of_nodes, 1e-6),
-            at="node"
+            at="node",
         )
 
     def run(self, dt):
-        """
-        Converts lithology model → grid paint layer
-        """
-
-        # simple stratigraphy logic (stable + safe)
-        # newest layer dominates
-        active_layer = self.rock_id
-
-        k_map = self.attrs.get("K_sp", {})
-
-        self.grid.at_node["K_sp"][:] = np.array(
-            [k_map.get(int(active_layer), 1e-6)] * self.grid.number_of_nodes
-        )
+        k_map  = self.attrs.get("K_sp", {})
+        base_k = k_map.get(int(self.rock_id), 1e-6)
+        self.grid.at_node["K_sp"][:] = base_k
 
 
 # =========================================================
@@ -204,23 +328,41 @@ class SpaceComponent(BaseSpaceComponent):
 
         self._ensure_fields(params.get("soil_depth", 1.0))
 
-        valid = inspect.signature(Space.__init__).parameters
-        safe_params = {k: v for k, v in params.items() if k in valid}
+        # Store base K values so vegetation can scale them correctly
+        self._base_K_br  = float(params.get("K_br", 1e-5))
+        self._base_K_sed = float(params.get("K_sed", 1e-4))
 
-        self.space = Space(grid, **safe_params)
+        valid       = inspect.signature(Space.__init__).parameters
+        safe_params = {k: v for k, v in params.items() if k in valid}
+        self.space  = Space(grid, **safe_params)
 
     def run(self, dt):
-
         self._clip_soil()
 
+        # Determine base K — use lithology field if present, else params
         if "K_sp" in self.grid.at_node:
-            K = self.grid.at_node["K_sp"]
+            K_br  = self.grid.at_node["K_sp"].copy()
+            K_sed = K_br * (self._base_K_sed / max(self._base_K_br, 1e-12))
+        else:
+            K_br  = np.full(self.grid.number_of_nodes, self._base_K_br)
+            K_sed = np.full(self.grid.number_of_nodes, self._base_K_sed)
 
-            K_br, K_sed = self._apply_vegetation(K, K * 100.0)
+        # Apply vegetation erodibility reduction (K effect)
+        # Uses public property setters which correctly handle node arrays
+        if "vegetation__cover_fraction" in self.grid.at_node:
+            veg    = np.clip(self.grid.at_node["vegetation__cover_fraction"], 0, 1)
+            factor = getattr(self.grid, "_veg_ero_factor", 0.8)
+            mult   = 1.0 - factor * veg
+            K_br   = K_br  * mult
+            K_sed  = K_sed * mult
+            logger.debug(
+                f"SpaceComponent K mult: mean={mult.mean():.3f}  "
+                f"min={mult.min():.3f}  max={mult.max():.3f}"
+            )
 
-            # SAFE UPDATE (no private API abuse where possible)
-            self.space._K_br = K_br
-            self.space._K_sed = K_sed
+        # Public property setters — correct API, accepts node arrays
+        self.space.K_br  = K_br
+        self.space.K_sed = K_sed
 
         self.space.run_one_step(dt)
 
@@ -236,28 +378,47 @@ class SpaceLargeScaleEroderComponent(BaseSpaceComponent):
 
         self._ensure_fields(params.get("soil_depth", 1.0))
 
-        valid = inspect.signature(SpaceLargeScaleEroder.__init__).parameters
-        safe_params = {k: v for k, v in params.items() if k in valid}
+        # Store base K values so vegetation can scale them correctly
+        self._base_K_br  = float(params.get("K_br", 1e-5))
+        self._base_K_sed = float(params.get("K_sed", 1e-4))
 
-        self.space = SpaceLargeScaleEroder(grid, **safe_params)
+        valid       = inspect.signature(SpaceLargeScaleEroder.__init__).parameters
+        safe_params = {k: v for k, v in params.items() if k in valid}
+        self.space  = SpaceLargeScaleEroder(grid, **safe_params)
 
     def run(self, dt):
-
         self._clip_soil()
 
+        # Determine base K — use lithology field if present, else params
         if "K_sp" in self.grid.at_node:
-            K = self.grid.at_node["K_sp"]
+            K_br  = self.grid.at_node["K_sp"].copy()
+            K_sed = K_br * (self._base_K_sed / max(self._base_K_br, 1e-12))
+        else:
+            K_br  = np.full(self.grid.number_of_nodes, self._base_K_br)
+            K_sed = np.full(self.grid.number_of_nodes, self._base_K_sed)
 
-            K_br, K_sed = self._apply_vegetation(K, K * 100.0)
+        # Apply vegetation erodibility reduction (K effect)
+        # Uses public property setters which correctly handle node arrays
+        if "vegetation__cover_fraction" in self.grid.at_node:
+            veg    = np.clip(self.grid.at_node["vegetation__cover_fraction"], 0, 1)
+            factor = getattr(self.grid, "_veg_ero_factor", 0.8)
+            mult   = 1.0 - factor * veg
+            K_br   = K_br  * mult
+            K_sed  = K_sed * mult
+            logger.debug(
+                f"SpaceLargeScaleEroderComponent K mult: mean={mult.mean():.3f}  "
+                f"min={mult.min():.3f}  max={mult.max():.3f}"
+            )
 
-            self.space._K_br = K_br
-            self.space._K_sed = K_sed
+        # Public property setters — correct API, accepts node arrays
+        self.space.K_br  = K_br
+        self.space.K_sed = K_sed
 
         self.space.run_one_step(dt)
 
 
 # =========================================================
-# FLOW (FIXED)
+# FLOW
 # =========================================================
 
 class FlowAccumulatorComponent(SimulationComponent):
@@ -265,12 +426,22 @@ class FlowAccumulatorComponent(SimulationComponent):
     def __init__(self, grid, **params):
         super().__init__(grid)
 
-        # 🚨 CRITICAL FIX: strip ALL non-landlab args
         for bad in ["erodibility_map", "lithology_type", "geology_file"]:
             params.pop(bad, None)
 
+        # Pop runoff_rate before passing to FlowAccumulator (not a landlab param).
+        # Store on grid so VegetationComponent can scale it.
+        runoff_rate = float(params.pop("runoff_rate", 1.0))
+        self.grid._veg_base_runoff = runoff_rate
+
         if "water__unit_flux_in" not in grid.at_node:
-            grid.add_ones("water__unit_flux_in", at="node")
+            grid.add_field(
+                "water__unit_flux_in",
+                np.full(grid.number_of_nodes, runoff_rate),
+                at="node",
+            )
+        else:
+            grid.at_node["water__unit_flux_in"][:] = runoff_rate
 
         self.flow = FlowAccumulator(grid, **params)
 
@@ -289,12 +460,17 @@ class DepthDependentDiffuserComponent(SimulationComponent):
 
         if "soil__depth" not in grid.at_node:
             grid.add_ones("soil__depth", at="node")
-            
+
         if "soil_production__rate" not in grid.at_node:
             grid.add_zeros("soil_production__rate", at="node")
-            
+
         if "bedrock__elevation" not in grid.at_node:
-            grid.add_field("bedrock__elevation", grid.at_node["topographic__elevation"].copy() - grid.at_node["soil__depth"].copy(), at="node")
+            grid.add_field(
+                "bedrock__elevation",
+                grid.at_node["topographic__elevation"].copy()
+                - grid.at_node["soil__depth"].copy(),
+                at="node",
+            )
 
         self.diff = DepthDependentDiffuser(grid, **params)
 
