@@ -155,28 +155,6 @@ class DynamicFormWidget(QWidget):
             lithology_combo.currentTextChanged.connect(update_fields_visibility)
             update_fields_visibility()
             
-        if "vegetation_mode" in self.fields:
-            veg_mode_combo = self.fields["vegetation_mode"]
-            
-            veg_dynamic_fields = [
-                "max_vegetation_cover",
-                "vegetation_growth_rate",
-                "vegetation_decay_rate"
-            ]
-
-            def update_veg_visibility():
-                is_dynamic = (veg_mode_combo.currentText() == "Dynamic")
-                for field_name in veg_dynamic_fields:
-                    if field_name in self.fields:
-                        widget = self.fields[field_name]
-                        label_item = self.form_layout.labelForField(widget)
-                        
-                        widget.setVisible(is_dynamic)
-                        if label_item:
-                            label_item.setVisible(is_dynamic)
-
-            veg_mode_combo.currentTextChanged.connect(update_veg_visibility)
-            update_veg_visibility()
 
     def get_form_data(self):
         data = {}

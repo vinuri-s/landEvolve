@@ -76,24 +76,49 @@ class AddComponentDlg(QDialog):
 
     def load_component_data(self, selected_component, params=None):
         self.selected_component = selected_component
-        
+
         layout = self.ui.dynamic_frame.layout()
         if layout is not None:
             while layout.count():
                 child = layout.takeAt(0)
                 if child.widget():
                     child.widget().deleteLater()
-                
+
         if self.selected_component:
-            if hasattr(self.selected_component, "params") and self.selected_component.params:
+            if selected_component.name == "VegetationComponent":
+                self._render_vegetation_form(params)
+            elif selected_component.name == "LithoLayersComponent":
+                self._render_lithology_form(params)
+            elif hasattr(self.selected_component, "params") and self.selected_component.params:
                 config = self.controller.get_dynamic_form_config(self.selected_component.params)
                 self.render_dynamic_form(config, params)
-        
+
+    def _render_lithology_form(self, params=None):
+        from app.ui.widgets.lithology_config_widget import LithologyConfigWidget
+        self.dynamic_form = LithologyConfigWidget(parent=self)
+        if params:
+            self.dynamic_form.set_form_data(params)
+        layout = self.ui.dynamic_frame.layout()
+        if layout is None:
+            layout = QVBoxLayout(self.ui.dynamic_frame)
+        layout.addWidget(self.dynamic_form)
+
+    def _render_vegetation_form(self, params=None):
+        from app.ui.widgets.vegetation_config_widget import VegetationConfigWidget
+        self.dynamic_form = VegetationConfigWidget(parent=self)
+        if params:
+            self.dynamic_form.set_form_data(params)
+
+        layout = self.ui.dynamic_frame.layout()
+        if layout is None:
+            layout = QVBoxLayout(self.ui.dynamic_frame)
+        layout.addWidget(self.dynamic_form)
+
     def render_dynamic_form(self, config, params=None):
         self.dynamic_form = DynamicFormWidget(config, parent=self)
         if params:
              self.dynamic_form.set_form_data(params)
-             
+
         layout = self.ui.dynamic_frame.layout()
         if layout is None:
             layout = QVBoxLayout(self.ui.dynamic_frame)
