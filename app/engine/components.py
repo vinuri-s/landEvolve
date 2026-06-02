@@ -2,7 +2,6 @@ import abc
 import inspect
 import json
 import numpy as np
-import rasterio
 import ast
 
 from landlab.components import (
@@ -12,10 +11,6 @@ from landlab.components import (
     DepthDependentDiffuser,
     LithoLayers,
 )
-
-from app.core.logging.manager import LogManager
-
-logger = LogManager.get_logger("engine")
 
 
 # =========================================================
@@ -34,42 +29,6 @@ class SimulationComponent(abc.ABC):
     def _add_field_if_missing(self, name, value, at="node"):
         if name not in self.grid[at]:
             self.grid.add_field(name, value, at=at)
-
-
-# =========================================================
-# LITHOLOGY HANDLER (raster → paint layer)
-# =========================================================
-
-class LithologyHandler:
-
-    @staticmethod
-    def apply_heterogeneous_lithology(grid, geology_file, erodibility_map, default_val=1e-6):
-
-        if not geology_file:
-            return
-
-        try:
-            with rasterio.open(geology_file) as src:
-                geo = src.read(1)
-
-                nodata = src.nodata if src.nodata is not None else -9999
-                geo = np.where(geo == nodata, np.nan, geo)
-
-                if geo.shape != grid.shape:
-                    raise ValueError("Geology raster must match grid shape")
-
-                def map_k(x):
-                    if np.isnan(x):
-                        return default_val
-                    return erodibility_map.get(int(x), default_val)
-
-                K = np.vectorize(map_k)(geo).flatten()
-
-                grid.at_node["K_sp"] = K
-                logger.info("Lithology paint layer created (K_sp)")
-
-        except Exception as e:
-            logger.error(f"Lithology loading failed: {e}")
 
 
 # =========================================================
@@ -203,12 +162,10 @@ class VegetationComponent(SimulationComponent):
 
         n = grid.number_of_nodes
         grid._veg_class_grid = np.full(n, self.static_class_id, dtype=int)
-        grid._veg_classes = self.classes
 
         grid._veg_K_sed_mult = np.ones(n)
         grid._veg_K_br_mult = np.ones(n)
         grid._veg_D_mult = np.ones(n)
-        grid._veg_runoff_mult = np.ones(n)
 
         if "water__unit_flux_in" in grid.at_node:
             grid._base_runoff = np.array(grid.at_node["water__unit_flux_in"], dtype=float)
@@ -237,7 +194,6 @@ class VegetationComponent(SimulationComponent):
         self.grid._veg_K_sed_mult = K_sed
         self.grid._veg_K_br_mult = K_br
         self.grid._veg_D_mult = D
-        self.grid._veg_runoff_mult = runoff
 
         if "water__unit_flux_in" in self.grid.at_node:
             new_runoff = (self.grid._base_runoff * runoff).copy()

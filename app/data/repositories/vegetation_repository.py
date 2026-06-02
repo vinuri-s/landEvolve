@@ -34,6 +34,3 @@ class VegetationClassRepository(BaseRepository):
         obj = self.get_by_id(class_id)
         if obj:
             self.delete(obj)
-
-    def count(self):
-        return self.session.query(VegetationClass).count()

@@ -69,12 +69,9 @@ class SimulationStatsKeys:
     """
     TOTAL_TIME = "total_time"
     START_TIME = "start_time"
-    END_TIME = "end_time"
     PEAK_RAM = "peak_ram"
     FINAL_RAM = "final_ram"
-    AVERAGE_RAM = "average_ram"
     RAM_READINGS = "ram_readings"
-    DETAILED_INFO = "detailed_info"
 
 
 class SimulationResultsWindowConsts:

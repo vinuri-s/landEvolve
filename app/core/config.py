@@ -15,8 +15,7 @@ class Config:
     
     # Resources (Read-only bundled assets)
     RESOURCES_DIR = _BUNDLED_ROOT / "resources"
-    INPUTS_DIR = _BUNDLED_ROOT / "resources" / "inputs"
-    
+
     # User data (Writable runtime assets)
     OUTPUTS_DIR = BASE_DIR / "resources" / "outputs"
     LOGS_DIR = BASE_DIR / "logs"

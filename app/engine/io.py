@@ -89,7 +89,6 @@
 
 import rasterio
 import matplotlib.pyplot as plt
-from matplotlib import colors
 import numpy as np
 
 def save_geotiff(filename, data, reference_tif):
@@ -149,25 +148,3 @@ def plot_difference(data, shape, title, output_path, vmin=None, vmax=None):
     plt.close()
 
     return max_abs
-
-def plot_soil_transport(data, shape, output_path):
-    plt.figure(figsize=(12, 8))
-    norm = colors.LogNorm(vmin=max(1e-12, np.nanmin(data)), vmax=np.nanmax(data))
-    plt.imshow(data.reshape(shape), cmap='viridis', norm=norm)
-    plt.colorbar(label='Sediment Flux (m³/m²/s)')
-    plt.title("Soil Transport Map (Sediment Flux)")
-    plt.savefig(output_path)  # fixed: removed duplicate savefig
-    plt.close()
-
-def save_overlay_image(data, shape, output_path, cmap='terrain', vmin=None, vmax=None):
-    """Save the data as an image without axes/margins for use as an overlay."""
-    fig = plt.figure(frameon=False)
-    fig.set_size_inches(10, 10 * (shape[0] / shape[1]))
-
-    ax = plt.Axes(fig, [0., 0., 1., 1.])
-    ax.set_axis_off()
-    fig.add_axes(ax)
-
-    ax.imshow(data.reshape(shape), cmap=cmap, aspect='auto', vmin=vmin, vmax=vmax)
-    fig.savefig(output_path, dpi=100, bbox_inches='tight', pad_inches=0, transparent=True)
-    plt.close(fig)
