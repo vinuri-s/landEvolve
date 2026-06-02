@@ -1,0 +1,8 @@
+[MAIN]
+# PyQt6 ships its Qt modules (QtWidgets, QtCore, QtGui, ...) as compiled
+# C-extensions, e.g. site-packages/PyQt6/QtWidgets.abi3.so. Pylint cannot
+# introspect compiled modules by default, so it raises false-positive
+# "No name 'QApplication' in module 'PyQt6.QtWidgets'" (E0611) errors even
+# though the names exist at runtime. Allowing the package tells Pylint to
+# import it for analysis, which resolves the names (and still catches real typos).
+extension-pkg-allow-list=PyQt6
