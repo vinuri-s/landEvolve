@@ -130,8 +130,11 @@ class VegetationComponent(SimulationComponent):
     vegetation_classes: dict {int class_id: {name, K_sed_multiplier, K_br_multiplier,
                                               linear_diffusivity_multiplier, runoff_multiplier}}
     vegetation_mode: 'Static' | 'Transition'
-    static_class_id: int  (used when mode == 'Static')
-    transitions: list of {source_class_id, target_class_id, timestep}  (mode == 'Transition')
+    static_class_id: int  (initial class for Static mode; fallback in Transition mode
+                           when no transitions are defined)
+    transitions: list of {source_class_id, target_class_id, timestep}  (Transition mode only).
+                 The grid is initialised to the source class of the earliest transition.
+                 All nodes carrying source_class_id flip to target_class_id at the given timestep.
     """
 
     def __init__(self, grid, vegetation_classes, **kwargs):
