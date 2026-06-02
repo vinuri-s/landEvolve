@@ -9,7 +9,6 @@ from app.ui.views.home_window import HomeWindow
 from app.ui.themes import ThemeManager
 from app.core.config import Config
 from app.data.database import db_manager
-from app.services.vegetation_service import VegetationService
 
 from app.core.logging import LogManager
 
@@ -18,14 +17,9 @@ def main():
     LogManager.setup()
     Config.init_directories()
 
-    # Initialize database, then let the service layer migrate/seed vegetation data
+    # Initialize database (reference data — components, lithologies, locations,
+    # vegetation classes — ships pre-populated in app_data.db).
     db_manager.create_tables()
-    veg_service = VegetationService()
-    try:
-        veg_service.migrate_legacy_component_params()
-        veg_service.seed_defaults()
-    finally:
-        veg_service.close()
 
     app = QApplication(sys.argv)
 

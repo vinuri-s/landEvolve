@@ -11,16 +11,6 @@ class VegetationService(BaseService):
     directly. Returns plain dicts so callers never depend on ORM objects.
     """
 
-    # Default presets used to seed an empty database (editable by the user).
-    DEFAULT_CLASSES = [
-        dict(name="Bare Ground", K_sed_multiplier=1.0, K_br_multiplier=1.0,
-             linear_diffusivity_multiplier=1.0, runoff_multiplier=1.0),
-        dict(name="Grass", K_sed_multiplier=0.7, K_br_multiplier=0.8,
-             linear_diffusivity_multiplier=0.8, runoff_multiplier=1.0),
-        dict(name="Large Trees", K_sed_multiplier=0.2, K_br_multiplier=0.4,
-             linear_diffusivity_multiplier=0.3, runoff_multiplier=0.7),
-    ]
-
     def __init__(self, session=None):
         super().__init__(session)
         self.repo = VegetationClassRepository(self.session)
@@ -77,24 +67,3 @@ class VegetationService(BaseService):
 
     def delete_class(self, class_id):
         self.repo.delete_by_id(class_id)
-
-    # ── bootstrap (called once at startup) ─────────────────────
-
-    def seed_defaults(self):
-        if self.repo.count() == 0:
-            for preset in self.DEFAULT_CLASSES:
-                self.repo.create(**preset)
-
-    def migrate_legacy_component_params(self):
-        """Remove the obsolete scalar vegetation params from the component table."""
-        from app.data.models import Component, ComponentParam
-        comp = (
-            self.session.query(Component)
-            .filter(Component.name == "VegetationComponent")
-            .first()
-        )
-        if comp:
-            self.session.query(ComponentParam).filter(
-                ComponentParam.component_id == comp.id
-            ).delete()
-            self.session.commit()

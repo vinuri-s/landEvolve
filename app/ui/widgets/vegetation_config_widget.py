@@ -1,13 +1,12 @@
 import json
 
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+    QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView, QDialog,
     QFormLayout, QDoubleSpinBox, QLineEdit, QComboBox,
     QButtonGroup, QRadioButton, QGroupBox, QSpinBox,
     QMessageBox, QAbstractItemView,
 )
-from PyQt6.QtCore import Qt
 
 from app.controllers.vegetation_controller import VegetationController
 

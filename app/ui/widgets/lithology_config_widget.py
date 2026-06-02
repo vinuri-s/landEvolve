@@ -240,19 +240,18 @@ class LithologyConfigWidget(QWidget):
             return
 
         try:
-            z0s   = list(ast.literal_eval(str(data.get("z0s",   "[10000.0]"))))
-            ids   = list(ast.literal_eval(str(data.get("ids",   "[1]"))))
-            attrs = ast.literal_eval(str(data.get("attrs", "{'K_sp': {}}")))
+            z0s = list(ast.literal_eval(str(data.get("z0s", "[10000.0]"))))
+            ids = list(ast.literal_eval(str(data.get("ids", "[1]"))))
         except Exception:
             return
 
         if not z0s or not ids or len(z0s) != len(ids):
             return
 
-        # Clear existing rows
+        # Clear existing rows. K_sp values are driven by the selected rock type
+        # (from the lithology DB), so only the layer geometry + rock ids are restored.
         self._table.setRowCount(0)
 
-        ksp_map = attrs.get("K_sp", {})
         prev_depth = 0.0
 
         for i, (depth, rock_id) in enumerate(zip(z0s, ids)):
