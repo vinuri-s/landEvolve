@@ -161,7 +161,15 @@ class VegetationComponent(SimulationComponent):
         self.current_timestep = 0
 
         n = grid.number_of_nodes
-        grid._veg_class_grid = np.full(n, self.static_class_id, dtype=int)
+        # In Transition mode the grid starts with the source class of the
+        # earliest-scheduled transition (not static_class_id, which is unused
+        # in this mode and often left at a default that doesn't match).
+        if self.mode == 'Transition' and self.transitions:
+            earliest = min(self.transitions, key=lambda t: t['timestep'])
+            initial_class_id = earliest['source_class_id']
+        else:
+            initial_class_id = self.static_class_id
+        grid._veg_class_grid = np.full(n, initial_class_id, dtype=int)
 
         grid._veg_K_sed_mult = np.ones(n)
         grid._veg_K_br_mult = np.ones(n)
