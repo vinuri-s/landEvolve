@@ -4,6 +4,7 @@ from app.engine.runner import run_simulation
 from app.data.database import db_manager
 from app.data.repositories.lithology_repository import LithologyRepository
 from app.data.repositories.component_repository import ComponentRepository
+from app.services.vegetation_service import VegetationService
 
 from app.core.logging.manager import LogManager
 logger = LogManager.get_logger("backend")
@@ -36,16 +37,21 @@ class SimulationService:
         2. Merges user parameters with system defaults.
         3. Calls the engine runner.
         """
-        # Fetch erodibility map and DEFAULTS from DB
+        # Fetch erodibility map, component DEFAULTS, and vegetation classes from DB
         erodibility_map = {}
         defaults_map = {}
+        vegetation_classes = {}
         session = db_manager.get_session()
         try:
             lith_repo = LithologyRepository(session)
             erodibility_map = lith_repo.get_erodibility_map()
-            
+
             comp_repo = ComponentRepository(session)
             defaults_map = comp_repo.get_all_defaults()
+
+            # Vegetation definitions injected into params so the engine,
+            # which must stay database-isolated, never touches the DB itself.
+            vegetation_classes = VegetationService(session).get_classes_map()
         except Exception as e:
             logger.error(f"Failed to fetch data from DB: {e}")
             erodibility_map = {}
@@ -53,6 +59,7 @@ class SimulationService:
             session.close()
 
         sim_params['erodibility_map'] = erodibility_map
+        sim_params['vegetation_classes'] = vegetation_classes
         
         # Merge defaults into selected components
         if 'selected_components' in sim_params:

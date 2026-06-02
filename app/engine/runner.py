@@ -34,29 +34,12 @@ class SimulationRunner:
     def _name(self, comp):
         return getattr(comp, "name", None) or getattr(comp, "__name__", None)
 
-    def _fetch_vegetation_classes(self):
-        from app.data.database import db_manager
-        from app.data.repositories.vegetation_repository import VegetationClassRepository
-        session = db_manager.get_session()
-        try:
-            repo = VegetationClassRepository(session)
-            return {
-                vc.id: {
-                    'name': vc.name,
-                    'K_sed_multiplier': vc.K_sed_multiplier,
-                    'K_br_multiplier': vc.K_br_multiplier,
-                    'linear_diffusivity_multiplier': vc.linear_diffusivity_multiplier,
-                    'runoff_multiplier': vc.runoff_multiplier,
-                }
-                for vc in repo.get_all()
-            }
-        finally:
-            session.close()
-
     def _build(self, name, grid, params):
 
         if name == "VegetationComponent":
-            veg_classes = self._fetch_vegetation_classes()
+            # Vegetation class definitions are injected into sim_params by the
+            # service layer; the engine stays database-isolated.
+            veg_classes = self.params.get("vegetation_classes", {})
             return VegetationComponent(grid, vegetation_classes=veg_classes, **params)
         if name == "FlowAccumulatorComponent":
             return FlowAccumulatorComponent(grid, **params)

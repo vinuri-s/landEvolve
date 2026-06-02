@@ -9,13 +9,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 
-from app.data.database import db_manager
-from app.data.repositories.vegetation_repository import VegetationClassRepository
-
-
-def _get_repo():
-    session = db_manager.get_session()
-    return VegetationClassRepository(session), session
+from app.controllers.vegetation_controller import VegetationController
 
 
 # ──────────────────────────────────────────────────────────────
@@ -94,7 +88,7 @@ class VegetationConfigWidget(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._sessions = []
+        self.controller = VegetationController()
         self._build_ui()
         self._load_classes()
 
@@ -190,32 +184,28 @@ class VegetationConfigWidget(QWidget):
     # ── Class library helpers ─────────────────────────────────
 
     def _load_classes(self):
-        repo, session = _get_repo()
-        try:
-            classes = repo.get_all()
-            self._populate_class_table(classes)
-            self._populate_class_combos(classes)
-        finally:
-            session.close()
+        classes = self.controller.get_classes()
+        self._populate_class_table(classes)
+        self._populate_class_combos(classes)
 
     def _populate_class_table(self, classes):
         self._class_table.setRowCount(0)
         for vc in classes:
             row = self._class_table.rowCount()
             self._class_table.insertRow(row)
-            self._class_table.setItem(row, 0, QTableWidgetItem(str(vc.id)))
-            self._class_table.setItem(row, 1, QTableWidgetItem(vc.name))
-            self._class_table.setItem(row, 2, QTableWidgetItem(f"{vc.K_sed_multiplier:.3f}"))
-            self._class_table.setItem(row, 3, QTableWidgetItem(f"{vc.K_br_multiplier:.3f}"))
-            self._class_table.setItem(row, 4, QTableWidgetItem(f"{vc.linear_diffusivity_multiplier:.3f}"))
-            self._class_table.setItem(row, 5, QTableWidgetItem(f"{vc.runoff_multiplier:.3f}"))
+            self._class_table.setItem(row, 0, QTableWidgetItem(str(vc["id"])))
+            self._class_table.setItem(row, 1, QTableWidgetItem(vc["name"]))
+            self._class_table.setItem(row, 2, QTableWidgetItem(f"{vc['K_sed_multiplier']:.3f}"))
+            self._class_table.setItem(row, 3, QTableWidgetItem(f"{vc['K_br_multiplier']:.3f}"))
+            self._class_table.setItem(row, 4, QTableWidgetItem(f"{vc['linear_diffusivity_multiplier']:.3f}"))
+            self._class_table.setItem(row, 5, QTableWidgetItem(f"{vc['runoff_multiplier']:.3f}"))
 
     def _populate_class_combos(self, classes):
         prev_static = self._static_class_combo.currentData()
 
         self._static_class_combo.clear()
         for vc in classes:
-            self._static_class_combo.addItem(vc.name, vc.id)
+            self._static_class_combo.addItem(vc["name"], vc["id"])
 
         if prev_static is not None:
             idx = self._static_class_combo.findData(prev_static)
@@ -233,18 +223,14 @@ class VegetationConfigWidget(QWidget):
                     current = cell_widget.currentData()
                     cell_widget.clear()
                     for vc in classes:
-                        cell_widget.addItem(vc.name, vc.id)
+                        cell_widget.addItem(vc["name"], vc["id"])
                     if current is not None:
                         idx = cell_widget.findData(current)
                         if idx >= 0:
                             cell_widget.setCurrentIndex(idx)
 
     def _get_class_names(self):
-        repo, session = _get_repo()
-        try:
-            return repo.get_all()
-        finally:
-            session.close()
+        return self.controller.get_classes()
 
     def _selected_class_id(self):
         row = self._class_table.currentRow()
@@ -262,11 +248,7 @@ class VegetationConfigWidget(QWidget):
             if not vals['name']:
                 QMessageBox.warning(self, "Validation", "Class name cannot be empty.")
                 return
-            repo, session = _get_repo()
-            try:
-                repo.create(**vals)
-            finally:
-                session.close()
+            self.controller.create_class(**vals)
             self._load_classes()
 
     def _on_edit_class(self):
@@ -274,18 +256,7 @@ class VegetationConfigWidget(QWidget):
         if cls_id is None:
             QMessageBox.information(self, "Edit Class", "Select a class to edit.")
             return
-        repo, session = _get_repo()
-        try:
-            vc = repo.get_by_id(cls_id)
-            existing = {
-                'name': vc.name,
-                'K_sed_multiplier': vc.K_sed_multiplier,
-                'K_br_multiplier': vc.K_br_multiplier,
-                'linear_diffusivity_multiplier': vc.linear_diffusivity_multiplier,
-                'runoff_multiplier': vc.runoff_multiplier,
-            }
-        finally:
-            session.close()
+        existing = self.controller.get_class(cls_id)
 
         dlg = _VegetationClassDialog(self, existing=existing)
         if dlg.exec() == QDialog.DialogCode.Accepted:
@@ -293,11 +264,7 @@ class VegetationConfigWidget(QWidget):
             if not vals['name']:
                 QMessageBox.warning(self, "Validation", "Class name cannot be empty.")
                 return
-            repo2, session2 = _get_repo()
-            try:
-                repo2.update(cls_id, **vals)
-            finally:
-                session2.close()
+            self.controller.update_class(cls_id, **vals)
             self._load_classes()
 
     def _on_delete_class(self):
@@ -311,11 +278,7 @@ class VegetationConfigWidget(QWidget):
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if confirm == QMessageBox.StandardButton.Yes:
-            repo, session = _get_repo()
-            try:
-                repo.delete_by_id(cls_id)
-            finally:
-                session.close()
+            self.controller.delete_class(cls_id)
             self._load_classes()
 
     # ── Mode visibility ───────────────────────────────────────
@@ -330,7 +293,7 @@ class VegetationConfigWidget(QWidget):
     def _make_class_combo(self, classes, selected_id=None):
         combo = QComboBox()
         for vc in classes:
-            combo.addItem(vc.name, vc.id)
+            combo.addItem(vc["name"], vc["id"])
         if selected_id is not None:
             idx = combo.findData(selected_id)
             if idx >= 0:

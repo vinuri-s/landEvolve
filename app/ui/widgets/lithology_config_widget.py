@@ -8,19 +8,10 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 
-from app.data.database import db_manager
-from app.data.repositories.lithology_repository import LithologyRepository
+from app.controllers.lithology_controller import LithologyController
 
 _BASE_DEPTH_PADDING = 10_000.0   # extra depth added to the base layer
 _BASE_ROW_COLOR     = "#2a2a3a"  # slightly different shade for the base row
-
-
-def _load_lithologies():
-    session = db_manager.get_session()
-    try:
-        return LithologyRepository(session).get_all()
-    finally:
-        session.close()
 
 
 class LithologyConfigWidget(QWidget):
@@ -38,7 +29,8 @@ class LithologyConfigWidget(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._lithologies = _load_lithologies()
+        self.controller = LithologyController()
+        self._lithologies = self.controller.get_lithologies()
         self._build_ui()
         self._add_default_stack()
 
@@ -90,10 +82,11 @@ class LithologyConfigWidget(QWidget):
     def _make_rock_combo(self, selected_id=None):
         combo = QComboBox()
         for lith in self._lithologies:
-            combo.addItem(f"{lith.name}  (K={lith.erodibility:.2e})", lith)
+            combo.addItem(f"{lith['name']}  (K={lith['erodibility']:.2e})", lith)
         if selected_id is not None:
             for i in range(combo.count()):
-                if combo.itemData(i) is not None and combo.itemData(i).id == selected_id:
+                data = combo.itemData(i)
+                if data is not None and data["id"] == selected_id:
                     combo.setCurrentIndex(i)
                     break
         combo.currentIndexChanged.connect(self._on_rock_changed)
@@ -120,7 +113,7 @@ class LithologyConfigWidget(QWidget):
                 continue
             lith = combo.currentData()
             if lith is not None:
-                item = QTableWidgetItem(f"{lith.erodibility:.3e}")
+                item = QTableWidgetItem(f"{lith['erodibility']:.3e}")
                 item.setForeground(QColor("#aaaaaa"))
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 self._table.setItem(row, 2, item)
@@ -151,10 +144,10 @@ class LithologyConfigWidget(QWidget):
     def _add_default_stack(self):
         """Seed with a two-layer default (first lithology on top, second as base)."""
         if len(self._lithologies) >= 2:
-            top_id  = self._lithologies[0].id
-            base_id = self._lithologies[1].id
+            top_id  = self._lithologies[0]["id"]
+            base_id = self._lithologies[1]["id"]
         elif len(self._lithologies) == 1:
-            top_id = base_id = self._lithologies[0].id
+            top_id = base_id = self._lithologies[0]["id"]
         else:
             top_id = base_id = None
 
@@ -177,7 +170,7 @@ class LithologyConfigWidget(QWidget):
 
         # Build new layer
         self._table.insertRow(base_row)
-        rock_id = self._lithologies[0].id if self._lithologies else None
+        rock_id = self._lithologies[0]["id"] if self._lithologies else None
         combo = self._make_rock_combo(rock_id)
         self._table.setCellWidget(base_row, 0, combo)
         spin = self._make_thickness_spin(10.0)
@@ -220,9 +213,9 @@ class LithologyConfigWidget(QWidget):
             if lith is None:
                 continue
 
-            rock_id = lith.id
+            rock_id = lith["id"]
             ids.append(rock_id)
-            ksp_map[rock_id] = lith.erodibility
+            ksp_map[rock_id] = lith["erodibility"]
 
             if self._is_base_row(row):
                 # Base layer: pad depth so it extends well below any erosion
@@ -271,7 +264,7 @@ class LithologyConfigWidget(QWidget):
             # Find matching lithology
             matched_id = None
             for lith in self._lithologies:
-                if lith.id == rock_id:
+                if lith["id"] == rock_id:
                     matched_id = rock_id
                     break
 
