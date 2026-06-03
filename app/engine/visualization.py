@@ -226,29 +226,42 @@ import os
 # -----------------------------
 def diagnose_space_regime(z_diff):
 
-    pos = np.sum(z_diff > 0)
-    neg = np.sum(z_diff < 0)
+    pos = int(np.sum(z_diff > 0))
+    neg = int(np.sum(z_diff < 0))
 
-    max_pos = np.nanmax(z_diff) if np.any(z_diff > 0) else 0
-    min_neg = np.nanmin(z_diff) if np.any(z_diff < 0) else 0
+    max_pos = float(np.nanmax(z_diff)) if np.any(z_diff > 0) else 0.0
+    min_neg = float(np.nanmin(z_diff)) if np.any(z_diff < 0) else 0.0
+    abs_max = float(np.nanmax(np.abs(z_diff)))
 
-    net = np.nansum(z_diff)
+    net = float(np.nansum(z_diff))
+
+    regime_label = ""
+    if pos < 0.01 * max(neg, 1):
+        regime_label = "⚠️ Transport-dominated system → Deposition suppressed or highly transient"
+    if net < 0:
+        label = "→ Net sediment export dominates domain"
+        regime_label = (regime_label + "\n" + label).strip() if regime_label else label
 
     print("\n--- SPACE REGIME DIAGNOSTIC ---")
     print(f"Deposition cells: {pos}")
     print(f"Erosion cells: {neg}")
-    print(f"Max deposition: {max_pos}")
-    print(f"Max erosion: {min_neg}")
-    print(f"Net sediment change: {net}")
-
-    if pos < 0.01 * max(neg, 1):
-        print("\n⚠️ Regime: Transport-dominated system")
-        print("→ Deposition is suppressed or highly transient")
-
-    if net < 0:
-        print("→ Net sediment export dominates domain")
-
+    print(f"Max deposition: {max_pos:.4f} m")
+    print(f"Max erosion: {min_neg:.4f} m")
+    print(f"Absolute max elevation change: {abs_max:.4f} m")
+    print(f"Net sediment change: {net:.4f}")
+    if regime_label:
+        print(regime_label)
     print("--------------------------------\n")
+
+    return {
+        "abs_max_change": abs_max,
+        "deposition_cells": pos,
+        "erosion_cells": neg,
+        "max_deposition": max_pos,
+        "max_erosion": min_neg,
+        "net_change": net,
+        "regime_label": regime_label,
+    }
 
 
 # -----------------------------
@@ -423,7 +436,7 @@ def regenerate_2d_difference_map(diff_tif_path, output_png_path, vmin=None, vmax
         if vmin is None or vmax is None:
             valid = data[~np.isnan(data)] if np.issubdtype(data.dtype, np.floating) else data.flatten()
             if valid.size > 0:
-                scale = float(np.max(np.abs(valid)))
+                scale = float(np.nanpercentile(np.abs(valid), 99))
                 if scale == 0:
                     scale = 0.1
             else:

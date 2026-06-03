@@ -116,7 +116,6 @@ def plot_topography(data, shape, title, output_path, cmap='terrain', vmin=None, 
     plt.figure(figsize=(10, 6))
     plt.imshow(data.reshape(shape), cmap=cmap, vmin=vmin, vmax=vmax)
     plt.colorbar(label='Elevation (m)')
-    plt.title(title)
     plt.savefig(output_path)
     plt.close()
 
@@ -126,7 +125,7 @@ def plot_difference(data, shape, title, output_path, vmin=None, vmax=None):
     if vmin is None or vmax is None:
         valid_data = data[~np.isnan(data)]
         if valid_data.size > 0:
-            max_abs = np.max(np.abs(valid_data))
+            max_abs = float(np.nanpercentile(np.abs(valid_data), 99))
             if max_abs == 0:
                 max_abs = 0.1
         else:

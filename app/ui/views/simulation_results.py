@@ -83,9 +83,25 @@ class SimulationResultsWindow(QMainWindow):
         # Force all tab headers to have exactly the same width
         self.tabs.setStyleSheet("""
             QTabBar::tab {
-                width: 200px;
-                height: 35px;
+                width: 140px;
+                height: 28px;
+                font-size: 12px;
                 font-weight: bold;
+                background-color: #d0d0d0;
+                color: #333333;
+                border: 1px solid #aaaaaa;
+                border-bottom: none;
+                padding: 3px 8px;
+            }
+            QTabBar::tab:selected {
+                background-color: #006400;
+                color: #ffffff;
+                border-color: #004d00;
+                border-bottom: 2px solid #006400;
+            }
+            QTabBar::tab:hover:!selected {
+                background-color: #008000;
+                color: #ffffff;
             }
         """)
         main_layout.addWidget(self.tabs)

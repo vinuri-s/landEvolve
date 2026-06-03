@@ -61,6 +61,13 @@ class SimulationResultKeys:
     DIFF_MAX = "diff_max"
     TRACKER_CSV = "tracker_csv"
     TRACKER_PLOT = "tracker_plot"
+    DIAG_ABS_MAX_CHANGE = "diag_abs_max_change"
+    DIAG_DEPOSITION_CELLS = "diag_deposition_cells"
+    DIAG_EROSION_CELLS = "diag_erosion_cells"
+    DIAG_MAX_DEPOSITION = "diag_max_deposition"
+    DIAG_MAX_EROSION = "diag_max_erosion"
+    DIAG_NET_CHANGE = "diag_net_change"
+    DIAG_REGIME_LABEL = "diag_regime_label"
 
 
 class SimulationStatsKeys:

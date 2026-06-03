@@ -141,6 +141,10 @@ class ThreeDView(QWidget):
 
         if result is not False and result:
             self.load_plot(html_output)
+            if vmin is None and vmax is None and isinstance(result, float):
+                self.spin_scale.blockSignals(True)
+                self.spin_scale.setValue(result)
+                self.spin_scale.blockSignals(False)
         else:
             print(ThreeDViewConsts.LOG_GENERATION_FAILED)
             return False

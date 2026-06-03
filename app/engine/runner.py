@@ -14,6 +14,7 @@ from app.engine.io import (
     plot_topography,
     plot_difference,
 )
+from app.engine.visualization import diagnose_space_regime
 from app.core.config import Config
 
 
@@ -155,7 +156,9 @@ class SimulationRunner:
 
         save_geotiff(str(self.output_dir / "final.tif"), final, tif)
         save_geotiff(str(self.output_dir / "diff.tif"), diff, tif)
-        
+
+        diag = diagnose_space_regime(diff)
+
         tracker_csv = None
         tracker_plot = None
         if tracker:
@@ -170,6 +173,14 @@ class SimulationRunner:
             "final_plot": str(self.output_dir / "final.png"),
             "change_plot": str(self.output_dir / "diff.png"),
             "diff_max": max_diff,
+            "grid_size": f"{grid.shape[0]} × {grid.shape[1]}",
+            "diag_abs_max_change": diag["abs_max_change"],
+            "diag_deposition_cells": diag["deposition_cells"],
+            "diag_erosion_cells": diag["erosion_cells"],
+            "diag_max_deposition": diag["max_deposition"],
+            "diag_max_erosion": diag["max_erosion"],
+            "diag_net_change": diag["net_change"],
+            "diag_regime_label": diag["regime_label"],
             "tracker_csv": tracker_csv,
             "tracker_plot": tracker_plot
         }

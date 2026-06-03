@@ -13,16 +13,16 @@ class SimulationLogger:
         """Returns a formatted string containing simulation configuration parameters."""
         details = []
         details.append("=== Simulation Parameters ===")
-        
+
         # We handle safely retrieving values that might not exist yet
         input_path = sim_params.get(SimulationParamKeys.INPUT_TIFF_PATH, 'Unknown')
         details.append(f"Input Data: {os.path.basename(input_path) if isinstance(input_path, str) else 'Unknown'}")
-        
+
         details.append(f"Grid Size: {output_data.get(SimulationResultKeys.GRID_SIZE, 'Unknown')}")
         details.append(f"Duration: {sim_params.get(SimulationParamKeys.SIMULATION_PERIOD)} years")
         details.append(f"Time Step: {sim_params.get(SimulationParamKeys.TIME_STEP)} years")
         details.append(f"Simulation ID: {sim_params.get(SimulationParamKeys.SIMULATION_NUMBER)}")
-        
+
         details.append("\n=== Components Used ===")
         components = sim_params.get(SimulationParamKeys.SELECTED_COMPONENTS, [])
         if not components:
@@ -32,13 +32,34 @@ class SimulationLogger:
                 c_obj = comp.get('component')
                 c_name = c_obj.name if c_obj else "Unknown Component"
                 details.append(f"{i+1}. {c_name}")
-                
+
                 params = comp.get('params', {})
                 if params:
                     for k, v in params.items():
                         if k == 'erodibility_map':
                             continue
                         details.append(f"   - {k}: {v}")
+
+        # Space regime diagnostics
+        abs_max = output_data.get(SimulationResultKeys.DIAG_ABS_MAX_CHANGE)
+        dep_cells = output_data.get(SimulationResultKeys.DIAG_DEPOSITION_CELLS)
+        if abs_max is not None and dep_cells is not None:
+            ero_cells = output_data.get(SimulationResultKeys.DIAG_EROSION_CELLS, 0)
+            max_dep = output_data.get(SimulationResultKeys.DIAG_MAX_DEPOSITION, 0.0)
+            max_ero = output_data.get(SimulationResultKeys.DIAG_MAX_EROSION, 0.0)
+            net = output_data.get(SimulationResultKeys.DIAG_NET_CHANGE, 0.0)
+            regime = output_data.get(SimulationResultKeys.DIAG_REGIME_LABEL, "")
+
+            details.append("\n--- SPACE REGIME DIAGNOSTIC ---")
+            details.append(f"Absolute max elevation change: {abs_max:.4f} m")
+            details.append(f"Deposition cells: {dep_cells}")
+            details.append(f"Erosion cells: {ero_cells}")
+            details.append(f"Max deposition: {max_dep:.4f} m")
+            details.append(f"Max erosion: {max_ero:.4f} m")
+            details.append(f"Net sediment change: {net:.4f} m")
+            if regime:
+                details.append(regime)
+            details.append("--------------------------------")
 
         return "\n".join(details)
 
