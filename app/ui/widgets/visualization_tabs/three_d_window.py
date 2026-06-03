@@ -76,9 +76,9 @@ class ThreeDView(QWidget):
             result = self.generate_and_load(self.last_sim_params, self.last_output_data, self.last_controller, vmin=vmin, vmax=vmax, force_diff_mode=force_diff_mode)
 
             # Update spinbox after auto-reset with the computed scale
-            if vmin is None and vmax is None and isinstance(result, (int, float)):
+            if vmin is None and vmax is None and isinstance(result, float):
                 self.spin_scale.blockSignals(True)
-                self.spin_scale.setValue(float(result))
+                self.spin_scale.setValue(result)
                 self.spin_scale.blockSignals(False)
 
     def on_title_changed(self, title):
@@ -95,7 +95,7 @@ class ThreeDView(QWidget):
             var text = e.target.textContent;
             if (text === 'Difference Map') {
                 window.document.title = 'SHOW_SCALE_CONTROLS';
-            } else if (text === 'Final Elevation' || text === 'Input Elevation') {
+            } else if (text === 'Output Elevation' || text === 'Input Elevation') {
                 window.document.title = 'HIDE_SCALE_CONTROLS';
             }
         });

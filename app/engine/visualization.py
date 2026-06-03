@@ -421,8 +421,12 @@ def regenerate_2d_difference_map(diff_tif_path, output_png_path, vmin=None, vmax
                 data[data == src.nodata] = np.nan
 
         if vmin is None or vmax is None:
-            scale = np.nanpercentile(np.abs(data), 99)
-            if np.isnan(scale) or scale == 0:
+            valid = data[~np.isnan(data)] if np.issubdtype(data.dtype, np.floating) else data.flatten()
+            if valid.size > 0:
+                scale = float(np.max(np.abs(valid)))
+                if scale == 0:
+                    scale = 0.1
+            else:
                 scale = 1.0
             vmin = -scale
             vmax = scale
