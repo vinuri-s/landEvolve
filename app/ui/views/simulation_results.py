@@ -44,7 +44,8 @@ class SimulationResultsWindow(QMainWindow):
     def start_real_simulation(self):
         self.progress_tracker.start_tracking()
         
-        self.simulation_worker = self.simulation_controller.create_simulation_worker(self.sim_params)
+        from app.ui.workers import SimulationWorker
+        self.simulation_worker = SimulationWorker(self.sim_params, self.simulation_controller)
         self.simulation_worker.progress_updated.connect(self.progress_tracker.handle_progress_message)
         self.simulation_worker.finished.connect(self.on_simulation_finished)
         self.simulation_worker.error_occurred.connect(self.on_simulation_error)

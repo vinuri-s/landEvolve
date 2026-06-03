@@ -98,11 +98,11 @@ class SimulationRunner:
             else:
                 other_conf.append(c)
 
-        # Build in strict dependency order (Flow MUST be built before SPACE)
-        ordered_confs = veg_conf + flow_conf + lith_conf + hill_conf + ero_conf + other_conf
-        
-        components = []
-        for c in ordered_confs:
+        # Build order: Litho before Space so K_sp field exists at Space init time.
+        build_confs = veg_conf + flow_conf + lith_conf + hill_conf + ero_conf + other_conf
+
+        built = {}
+        for c in build_confs:
             name = self._name(c["component"])
             p = c.get("params", {}).copy()
 
@@ -111,7 +111,21 @@ class SimulationRunner:
 
             inst = self._build(name, grid, p)
             if inst is not None:
-                components.append(inst)
+                built.setdefault(name, []).append(inst)
+
+        # Run order: LithoLayers AFTER Space so K_sp is updated immediately
+        # after each erosion event, not one step before it.
+        run_order = ["VegetationComponent", "FlowAccumulatorComponent",
+                     "DepthDependentDiffuserComponent",
+                     "SpaceComponent", "SpaceLargeScaleEroderComponent",
+                     "LithoLayersComponent"]
+        components = []
+        for name in run_order:
+            components.extend(built.get(name, []))
+        # append anything else that doesn't fit a named category
+        for name, insts in built.items():
+            if name not in run_order:
+                components.extend(insts)
 
         steps = int(total_time / dt)
         t = 0.0

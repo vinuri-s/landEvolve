@@ -9,8 +9,88 @@ from PyQt6.QtWidgets import (
     QFileDialog,
     QPushButton,
     QHBoxLayout,
+    QLabel,
 )
+from PyQt6.QtCore import Qt
 from app.core.constants import DynamicFormConsts
+
+
+class LithologyPickerWidget(QWidget):
+    """
+    Composite widget for K_br: a QComboBox listing all lithologies from the DB
+    (showing name and erodibility) plus a 'Custom' option that reveals a
+    QDoubleSpinBox for manual entry.
+    """
+
+    CUSTOM_LABEL = "Custom value"
+
+    def __init__(self, default_value=None, parent=None):
+        super().__init__(parent)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+
+        self._lithologies = []  # list of {"name": str, "erodibility": float}
+        self._load_lithologies()
+
+        self.combo = QComboBox()
+        self.combo.addItem(self.CUSTOM_LABEL)
+        for lith in self._lithologies:
+            label = f"{lith['name']}  (K = {lith['erodibility']:.2e})"
+            self.combo.addItem(label)
+
+        self.spinbox = QDoubleSpinBox()
+        self.spinbox.setDecimals(8)
+        self.spinbox.setRange(1e-12, 1.0)
+        self.spinbox.setSingleStep(1e-6)
+        self.spinbox.setMinimumWidth(120)
+
+        layout.addWidget(self.combo, stretch=2)
+        layout.addWidget(self.spinbox, stretch=1)
+
+        self.combo.currentIndexChanged.connect(self._on_combo_changed)
+
+        # Set initial value
+        if default_value not in (None, ""):
+            self.setValue(float(default_value))
+        else:
+            self._on_combo_changed(0)
+
+    def _load_lithologies(self):
+        try:
+            from app.controllers.lithology_controller import LithologyController
+            self._lithologies = LithologyController().get_lithologies()
+        except Exception:
+            self._lithologies = []
+
+    def _on_combo_changed(self, index):
+        is_custom = (index == 0)
+        self.spinbox.setVisible(is_custom)
+        if not is_custom and index - 1 < len(self._lithologies):
+            # Sync spinbox to the chosen lithology's erodibility (useful if
+            # user later switches back to Custom — they see the last picked value)
+            self.spinbox.setValue(self._lithologies[index - 1]["erodibility"])
+
+    def value(self):
+        """Returns the effective K_br as a float."""
+        idx = self.combo.currentIndex()
+        if idx == 0:
+            return self.spinbox.value()
+        lith_idx = idx - 1
+        if lith_idx < len(self._lithologies):
+            return self._lithologies[lith_idx]["erodibility"]
+        return self.spinbox.value()
+
+    def setValue(self, v: float):
+        """Select the lithology whose erodibility matches v, else fall back to Custom."""
+        for i, lith in enumerate(self._lithologies):
+            if abs(lith["erodibility"] - v) < 1e-15:
+                self.combo.setCurrentIndex(i + 1)
+                return
+        # No exact match — use Custom
+        self.combo.setCurrentIndex(0)
+        self.spinbox.setValue(v)
 
 
 class DynamicFormWidget(QWidget):
@@ -29,7 +109,7 @@ class DynamicFormWidget(QWidget):
         main_layout.addWidget(scroll)
 
         for item in self.config:
-   
+
             label = item.get("label", "")
             field_type = item.get("type", "QLineEdit")
             validation = item.get("validation", None)
@@ -88,6 +168,11 @@ class DynamicFormWidget(QWidget):
                     except (ValueError, TypeError):
                         pass
 
+                self.fields[label] = widget
+                self.form_layout.addRow(label, widget)
+
+            elif field_type == "LithologyComboBox":
+                widget = LithologyPickerWidget(default_value=default_value)
                 self.fields[label] = widget
                 self.form_layout.addRow(label, widget)
 
@@ -154,12 +239,14 @@ class DynamicFormWidget(QWidget):
 
             lithology_combo.currentTextChanged.connect(update_fields_visibility)
             update_fields_visibility()
-            
+
 
     def get_form_data(self):
         data = {}
         for label, widget in self.fields.items():
-            if isinstance(widget, QLineEdit):
+            if isinstance(widget, LithologyPickerWidget):
+                data[label] = widget.value()
+            elif isinstance(widget, QLineEdit):
                 data[label] = widget.text()
             elif isinstance(widget, QComboBox):
                 data[label] = widget.currentText()
@@ -169,7 +256,7 @@ class DynamicFormWidget(QWidget):
 
     def set_form_data(self, data):
         """Populate form fields from a data dictionary."""
-        
+
         if not data:
             return
 
@@ -179,7 +266,13 @@ class DynamicFormWidget(QWidget):
 
             widget = self.fields[label]
 
-            if isinstance(widget, QLineEdit):
+            if isinstance(widget, LithologyPickerWidget):
+                try:
+                    widget.setValue(float(value))
+                except (ValueError, TypeError):
+                    pass
+
+            elif isinstance(widget, QLineEdit):
                 widget.setText(str(value))
 
             elif isinstance(widget, QComboBox):

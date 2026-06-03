@@ -77,9 +77,8 @@ class SimulationWindow(QMainWindow):
                 
             file_path = self.ui.featureShapefileLineEdit.text()
             if self.ui.trackFeatureCheckBox.isChecked() and file_path:
-                from app.services.shapefile_service import ShapefileService
                 try:
-                    results = ShapefileService.load_shapefiles_as_geojson([file_path])
+                    results = self.controller.load_shapefiles_as_geojson([file_path])
                     if results and len(results) > 0:
                         _, geojson_str = results[0]
                         self.map_widget.set_overlay('feature-tracker', geojson_str, line_color='white', fill_opacity=0.2)
@@ -215,9 +214,8 @@ class SimulationWindow(QMainWindow):
             self.ui.featureShapefileLineEdit.setText(file_path)
             
             # Instantly draw the shapefile on the map
-            from app.services.shapefile_service import ShapefileService
             try:
-                results = ShapefileService.load_shapefiles_as_geojson([file_path])
+                results = self.controller.load_shapefiles_as_geojson([file_path])
                 if results and len(results) > 0:
                     _, geojson_str = results[0]
                     self.map_widget.set_overlay('feature-tracker', geojson_str, line_color='white', fill_opacity=0.2)

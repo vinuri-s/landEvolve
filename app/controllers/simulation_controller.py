@@ -1,5 +1,6 @@
 from app.services.location_service import LocationService
 from app.services.simulation_service import SimulationService
+from app.services.shapefile_service import ShapefileService
 
 class SimulationController:
     """
@@ -22,12 +23,11 @@ class SimulationController:
     def run_simulation(self, sim_params, callback):
         return self.sim_service.run_simulation(sim_params, callback)
 
-    def create_simulation_worker(self, sim_params):
-        from app.ui.workers import SimulationWorker
-        return SimulationWorker(sim_params, self)
-    
     def get_next_simulation_number(self):
         return self.sim_service.get_next_simulation_number()
+
+    def load_shapefiles_as_geojson(self, file_paths: list):
+        return ShapefileService.load_shapefiles_as_geojson(file_paths)
 
     def get_geotiff_bounds(self, tiff_path):
         return self.sim_service.get_geotiff_bounds(tiff_path)
