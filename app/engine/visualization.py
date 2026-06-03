@@ -316,8 +316,12 @@ def generate_3d_comparison_html(
         if np.isnan(scale) or scale == 0:
             scale = 1.0
 
-        cmin = -scale
-        cmax = scale
+        if vmin is not None and vmax is not None:
+            cmin = vmin
+            cmax = vmax
+        else:
+            cmin = -scale
+            cmax = scale
 
         is_diff_mode = (vmin is not None or vmax is not None) or force_diff_mode
 
@@ -391,7 +395,7 @@ def generate_3d_comparison_html(
         )
 
         fig.write_html(output_html_path)
-        return True
+        return scale
 
     except Exception as e:
         print(f"Error: {e}")
@@ -416,17 +420,20 @@ def regenerate_2d_difference_map(diff_tif_path, output_png_path, vmin=None, vmax
                 data = data.astype(float)
                 data[data == src.nodata] = np.nan
 
-        scale = np.nanpercentile(np.abs(data), 99)
-        if np.isnan(scale) or scale == 0:
-            scale = 1.0
+        if vmin is None or vmax is None:
+            scale = np.nanpercentile(np.abs(data), 99)
+            if np.isnan(scale) or scale == 0:
+                scale = 1.0
+            vmin = -scale
+            vmax = scale
 
         return plot_difference(
             data,
             data.shape,
             "",
             output_png_path,
-            vmin=-scale,
-            vmax=scale
+            vmin=vmin,
+            vmax=vmax
         )
 
     except Exception as e:

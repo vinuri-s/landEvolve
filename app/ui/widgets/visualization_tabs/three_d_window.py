@@ -72,8 +72,14 @@ class ThreeDView(QWidget):
                 self.scale_controls.show()
             else:
                 self.scale_controls.hide()
-                
-            self.generate_and_load(self.last_sim_params, self.last_output_data, self.last_controller, vmin=vmin, vmax=vmax, force_diff_mode=force_diff_mode)
+
+            result = self.generate_and_load(self.last_sim_params, self.last_output_data, self.last_controller, vmin=vmin, vmax=vmax, force_diff_mode=force_diff_mode)
+
+            # Update spinbox after auto-reset with the computed scale
+            if vmin is None and vmax is None and isinstance(result, (int, float)):
+                self.spin_scale.blockSignals(True)
+                self.spin_scale.setValue(float(result))
+                self.spin_scale.blockSignals(False)
 
     def on_title_changed(self, title):
         if title == "SHOW_SCALE_CONTROLS":
@@ -131,9 +137,12 @@ class ThreeDView(QWidget):
             
         html_output = os.path.join(output_dir, ThreeDViewConsts.FILE_HTML_COMPARISON)
         
-        success = controller.generate_3d_model(input_tiff, final_tiff_path, html_output, vmin=vmin, vmax=vmax, force_diff_mode=force_diff_mode)
-        
-        if success:
+        result = controller.generate_3d_model(input_tiff, final_tiff_path, html_output, vmin=vmin, vmax=vmax, force_diff_mode=force_diff_mode)
+
+        if result is not False and result:
             self.load_plot(html_output)
         else:
             print(ThreeDViewConsts.LOG_GENERATION_FAILED)
+            return False
+
+        return result
