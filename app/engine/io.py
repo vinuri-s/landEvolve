@@ -1,5 +1,6 @@
 import rasterio
 import matplotlib.pyplot as plt
+from matplotlib.colors import SymLogNorm, ListedColormap, BoundaryNorm, LightSource
 import numpy as np
 
 def save_geotiff(filename, data, reference_tif):
@@ -30,7 +31,18 @@ def plot_topography(data, shape, title, output_path, cmap='terrain', vmin=None, 
     plt.savefig(output_path)
     plt.close()
 
-def plot_difference(data, shape, title, output_path, vmin=None, vmax=None):
+def plot_difference(data, shape, title, output_path, vmin=None, vmax=None,
+                    scaling="linear", hillshade_elev=None):
+    """Render an erosion/deposition difference map.
+
+    scaling="linear" keeps the original symmetric RdBu scale. scaling="symlog"
+    applies a symmetric-log normalization so small-magnitude erosion stays
+    visible even when deposition (or vice-versa) dominates the range.
+
+    If hillshade_elev (the corresponding terrain) is supplied, the change is
+    drawn semi-transparently over a shaded-relief underlay so it is read in its
+    topographic context.
+    """
     fig, ax = plt.subplots(figsize=(12, 8))
 
     if vmin is None or vmax is None:
@@ -46,7 +58,26 @@ def plot_difference(data, shape, title, output_path, vmin=None, vmax=None):
     else:
         max_abs = max(abs(vmin), abs(vmax))
 
-    im = ax.imshow(data.reshape(shape), cmap='RdBu', vmin=vmin, vmax=vmax)
+    # Optional shaded-relief underlay.
+    draped = hillshade_elev is not None
+    if draped:
+        z = np.asarray(hillshade_elev, dtype=float).reshape(shape)
+        ls = LightSource(azdeg=315, altdeg=45)
+        hs = ls.hillshade(np.nan_to_num(z, nan=np.nanmin(z)), vert_exag=2.0)
+        ax.imshow(hs, cmap="gray")
+
+    overlay_alpha = 0.6 if draped else 1.0
+
+    if scaling == "symlog":
+        # linthresh = region near zero treated linearly; below it small changes
+        # are amplified. Use a small fraction of the range so faint erosion shows.
+        linthresh = max(max_abs / 50.0, 1e-6)
+        norm = SymLogNorm(linthresh=linthresh, vmin=-max_abs, vmax=max_abs, base=10)
+        im = ax.imshow(data.reshape(shape), cmap='RdBu', norm=norm, alpha=overlay_alpha)
+    else:
+        im = ax.imshow(data.reshape(shape), cmap='RdBu', vmin=vmin, vmax=vmax,
+                       alpha=overlay_alpha)
+
     fig.colorbar(im, ax=ax, label='Elevation Change (m)')
 
     # No title
@@ -58,3 +89,54 @@ def plot_difference(data, shape, title, output_path, vmin=None, vmax=None):
     plt.close()
 
     return max_abs
+
+
+def plot_erosion_deposition_mask(data, shape, output_path, threshold=None):
+    """Render a categorical map: erosion vs. no-change vs. deposition.
+
+    Magnitude is ignored, so this answers "where is material leaving vs.
+    arriving" regardless of how lopsided the magnitudes are.
+    """
+    arr = data.reshape(shape).astype(float)
+
+    if threshold is None:
+        valid = arr[~np.isnan(arr)]
+        # Treat changes below ~1% of the typical signal as "no change".
+        if valid.size > 0:
+            threshold = max(float(np.nanpercentile(np.abs(valid), 99)) / 100.0, 1e-9)
+        else:
+            threshold = 1e-9
+
+    # -1 = erosion, 0 = no change, +1 = deposition
+    cat = np.zeros_like(arr)
+    cat[arr < -threshold] = -1
+    cat[arr > threshold] = 1
+    cat[np.isnan(arr)] = np.nan
+
+    fig, ax = plt.subplots(figsize=(12, 8))
+
+    cmap = ListedColormap(["#b2182b", "#f0f0f0", "#2166ac"])  # erosion / none / deposition
+    cmap.set_bad(color="white")
+    norm = BoundaryNorm([-1.5, -0.5, 0.5, 1.5], cmap.N)
+
+    ax.imshow(cat, cmap=cmap, norm=norm)
+
+    erosion_cells = int(np.sum(cat == -1))
+    deposition_cells = int(np.sum(cat == 1))
+
+    from matplotlib.patches import Patch
+    legend = [
+        Patch(facecolor="#b2182b", label=f"Erosion ({erosion_cells} cells)"),
+        Patch(facecolor="#f0f0f0", edgecolor="#cccccc", label="No change"),
+        Patch(facecolor="#2166ac", label=f"Deposition ({deposition_cells} cells)"),
+    ]
+    ax.legend(handles=legend, loc="upper right", framealpha=0.9)
+
+    ax.set_xlabel("Easting (columns)", fontsize=12)
+    ax.set_ylabel("Northing (rows)", fontsize=12)
+
+    plt.tight_layout()
+    plt.savefig(output_path)
+    plt.close()
+
+    return output_path

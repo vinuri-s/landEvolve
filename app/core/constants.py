@@ -56,6 +56,12 @@ class SimulationResultKeys:
     INITIAL_PLOT = "initial_plot"
     FINAL_PLOT = "final_plot"
     CHANGE_PLOT = "change_plot"
+    MASK_PLOT = "mask_plot"
+    TIMELINE_HTML = "timeline_html"
+    HYPSOMETRY_PLOT = "hypsometry_plot"
+    FLUX_PLOT = "flux_plot"
+    LONG_PROFILE_PLOT = "long_profile_plot"
+    SLOPE_AREA_PLOT = "slope_area_plot"
     OUTPUT_DIR = "output_dir"
     GRID_SIZE = "grid_size"
     DIFF_MAX = "diff_max"
@@ -89,7 +95,11 @@ class SimulationResultsWindowConsts:
     WINDOW_TITLE_RESULTS = "Simulation Results"
     TAB_2D_VISUALIZATION = "2D Visualization"
     TAB_3D_VISUALIZATION = "3D Map"
+    TAB_TIMELINE = "Sediment Timeline"
+    TAB_ANALYSIS = "Analysis"
     TAB_FEATURE_TRACKING = "Feature Tracking"
+    LBL_TIMELINE_NOT_AVAILABLE = "Sediment timeline not available for this simulation."
+    LBL_ANALYSIS_NOT_AVAILABLE = "No analysis plots available for this simulation."
     BTN_SHOW_STATS = "Show Statistics"
     BTN_CLOSE = "Close"
 
@@ -137,6 +147,7 @@ class Carousel2DWidgetConsts:
     LBL_SCALE_RANGE = "Scale Range (±m):"
     BTN_APPLY_SCALE = "Apply Scale"
     BTN_RESET_SCALE = "Reset to Auto"
+    CHK_SYMLOG = "Enhance small changes (log)"
 
 
 class HomeWindowConsts:

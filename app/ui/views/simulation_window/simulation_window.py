@@ -178,18 +178,8 @@ class SimulationWindow(QMainWindow):
             return
             
         try:
-            import rasterio
-            from shapely.geometry import box
-            import geopandas as gpd
-            
-            with rasterio.open(geotiff.tiff_file_path) as src:
-                bbox = box(*src.bounds)
-                gdf = gpd.GeoDataFrame({'geometry': [bbox]}, crs=src.crs)
-                
-                if gdf.crs:
-                    gdf = gdf.to_crs("EPSG:4326")
-                
-                geojson_str = gdf.to_json()
+            geojson_str = self.controller.get_geotiff_boundary_geojson(geotiff.tiff_file_path)
+            if geojson_str:
                 self.map_widget.set_overlay('dem-boundary', geojson_str, line_color='yellow', fill_opacity=0.0)
         except Exception as e:
             from app.core.logging.manager import LogManager

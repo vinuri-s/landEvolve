@@ -29,11 +29,14 @@ class SimulationController:
     def load_shapefiles_as_geojson(self, file_paths: list):
         return ShapefileService.load_shapefiles_as_geojson(file_paths)
 
+    def get_geotiff_boundary_geojson(self, tiff_path):
+        return ShapefileService.get_geotiff_boundary_geojson(tiff_path)
+
     def get_geotiff_bounds(self, tiff_path):
         return self.sim_service.get_geotiff_bounds(tiff_path)
 
     def generate_3d_model(self, input_tiff, final_tiff_path, html_output, vmin=None, vmax=None, force_diff_mode=False):
         return self.sim_service.generate_3d_model(input_tiff, final_tiff_path, html_output, vmin=vmin, vmax=vmax, force_diff_mode=force_diff_mode)
 
-    def regenerate_2d_difference_map(self, diff_tif_path, output_png_path, vmin=None, vmax=None):
-        return self.sim_service.regenerate_2d_difference_map(diff_tif_path, output_png_path, vmin=vmin, vmax=vmax)
+    def regenerate_2d_difference_map(self, diff_tif_path, output_png_path, vmin=None, vmax=None, scaling="linear"):
+        return self.sim_service.regenerate_2d_difference_map(diff_tif_path, output_png_path, vmin=vmin, vmax=vmax, scaling=scaling)

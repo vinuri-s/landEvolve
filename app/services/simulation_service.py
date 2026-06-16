@@ -142,6 +142,6 @@ class SimulationService:
         from app.engine.visualization import generate_3d_comparison_html
         return generate_3d_comparison_html(input_tiff, final_tiff_path, html_output, vmin=vmin, vmax=vmax, force_diff_mode=force_diff_mode)
 
-    def regenerate_2d_difference_map(self, diff_tif_path, output_png_path, vmin=None, vmax=None):
+    def regenerate_2d_difference_map(self, diff_tif_path, output_png_path, vmin=None, vmax=None, scaling="linear"):
         from app.engine.visualization import regenerate_2d_difference_map
-        return regenerate_2d_difference_map(diff_tif_path, output_png_path, vmin=vmin, vmax=vmax)
+        return regenerate_2d_difference_map(diff_tif_path, output_png_path, vmin=vmin, vmax=vmax, scaling=scaling)

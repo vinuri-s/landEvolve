@@ -59,6 +59,27 @@ class ShapefileService:
 
             geojson_str = gdf.to_json()
             geojson_results.append((file_name, geojson_str))
-            
+
         return geojson_results
+
+    @staticmethod
+    def get_geotiff_boundary_geojson(tiff_path: str) -> str | None:
+        """
+        Builds a WGS84 GeoJSON polygon of a GeoTIFF's bounding box, so the
+        MapView can outline the DEM extent. Keeps rasterio/shapely/geopandas
+        out of the UI layer.
+
+        Returns the GeoJSON string, or None if the file cannot be read.
+        """
+        import rasterio
+        from shapely.geometry import box
+
+        with rasterio.open(tiff_path) as src:
+            bbox = box(*src.bounds)
+            gdf = gpd.GeoDataFrame({'geometry': [bbox]}, crs=src.crs)
+
+            if gdf.crs and gdf.crs != "EPSG:4326":
+                gdf = gdf.to_crs("EPSG:4326")
+
+            return gdf.to_json()
 

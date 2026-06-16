@@ -1,5 +1,5 @@
 import os
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QDoubleSpinBox
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QDoubleSpinBox, QCheckBox
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtCore import Qt
 from app.core.constants import SimulationResultKeys, Carousel2DWidgetConsts
@@ -57,7 +57,7 @@ class Carousel2DWidget(QWidget):
         self.btn_diff.setCheckable(True) # Kept setCheckable
         self.btn_diff.clicked.connect(self.show_diff)
         controls.addWidget(self.btn_diff)
-        
+
         self.button_group = [self.btn_input, self.btn_final, self.btn_diff]
         
         controls.addStretch()
@@ -87,30 +87,47 @@ class Carousel2DWidget(QWidget):
         self.btn_reset_scale = QPushButton(Carousel2DWidgetConsts.BTN_RESET_SCALE)
         self.btn_reset_scale.clicked.connect(self.reset_scale)
         scale_layout.addWidget(self.btn_reset_scale)
-        
+
+        self.chk_symlog = QCheckBox(Carousel2DWidgetConsts.CHK_SYMLOG)
+        self.chk_symlog.setToolTip(
+            "Use a symmetric-log color scale so faint erosion stays visible "
+            "even when deposition dominates the range."
+        )
+        self.chk_symlog.toggled.connect(self.on_symlog_toggled)
+        scale_layout.addWidget(self.chk_symlog)
+
         self.scale_controls.hide()
         layout.addWidget(self.scale_controls, alignment=Qt.AlignmentFlag.AlignCenter)
 
     def apply_custom_scale(self):
         val = self.spin_scale.value()
         self._regenerate_diff_map(vmin=-val, vmax=val)
-        
+
     def reset_scale(self):
         self._regenerate_diff_map(vmin=None, vmax=None)
-        
+
+    def on_symlog_toggled(self):
+        # Re-render the difference map with the current scale + new scaling mode.
+        if self.chk_symlog.isChecked():
+            val = self.spin_scale.value()
+            self._regenerate_diff_map(vmin=-val, vmax=val)
+        else:
+            self._regenerate_diff_map(vmin=None, vmax=None)
+
     def _regenerate_diff_map(self, vmin, vmax):
         if not self.controller:
             return
-            
+
         output_dir = self.image_paths.get(SimulationResultKeys.OUTPUT_DIR)
         if not output_dir:
             return
-            
+
         diff_tif = os.path.join(output_dir, "diff.tif")
         diff_png = self.image_paths.get(SimulationResultKeys.CHANGE_PLOT)
-        
+        scaling = "symlog" if self.chk_symlog.isChecked() else "linear"
+
         if diff_tif and diff_png and os.path.exists(diff_tif):
-            result = self.controller.regenerate_2d_difference_map(diff_tif, diff_png, vmin=vmin, vmax=vmax)
+            result = self.controller.regenerate_2d_difference_map(diff_tif, diff_png, vmin=vmin, vmax=vmax, scaling=scaling)
             if result is not False:
                 # Reload the image to show updated scale
                 self.current_pixmap = QPixmap(diff_png)

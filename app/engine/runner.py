@@ -13,8 +13,16 @@ from app.engine.io import (
     save_geotiff,
     plot_topography,
     plot_difference,
+    plot_erosion_deposition_mask,
 )
-from app.engine.visualization import diagnose_space_regime
+from app.engine.visualization import diagnose_space_regime, generate_sediment_timeline_html
+from app.engine.science_plots import (
+    refresh_drainage,
+    plot_hypsometry,
+    plot_sediment_flux,
+    plot_river_long_profile,
+    plot_slope_area,
+)
 from app.core.config import Config
 
 
@@ -146,15 +154,27 @@ class SimulationRunner:
             else:
                 tracker = None
 
+        # Capture cumulative-change snapshots for the sediment-flow timeline.
+        # Aim for ~30 evenly spaced frames regardless of step count.
+        timeline_snapshots = [initial - initial]  # all-zero baseline at t=0
+        timeline_times = [0.0]
+        snapshot_every = max(1, steps // 30)
+
         for i in range(steps):
 
             t += dt
 
             for comp in components:
                 comp.run(dt)
-                
+
             if tracker:
                 tracker.record_step(t, grid.at_node["topographic__elevation"])
+
+            if (i + 1) % snapshot_every == 0 or i == steps - 1:
+                timeline_snapshots.append(
+                    grid.at_node["topographic__elevation"] - initial
+                )
+                timeline_times.append(t)
 
             if i % max(1, steps // 20) == 0:
                 self.log(int(20 + 60 * i / steps), f"Step {i}/{steps}")
@@ -166,10 +186,44 @@ class SimulationRunner:
 
         plot_topography(initial, grid.shape, "Initial", str(self.output_dir / "init.png"))
         plot_topography(final, grid.shape, "Final", str(self.output_dir / "final.png"))
-        max_diff = plot_difference(diff, grid.shape, "Change", str(self.output_dir / "diff.png"))
+        max_diff = plot_difference(diff, grid.shape, "Change", str(self.output_dir / "diff.png"),
+                                   hillshade_elev=final)
+
+        # Erosion/deposition categorical mask (magnitude-independent).
+        mask_png = str(self.output_dir / "mask.png")
+        plot_erosion_deposition_mask(diff, grid.shape, mask_png)
 
         save_geotiff(str(self.output_dir / "final.tif"), final, tif)
         save_geotiff(str(self.output_dir / "diff.tif"), diff, tif)
+
+        # Interactive sediment-flow timeline (scrubbable Plotly slider).
+        self.log(90, "Building sediment timeline...")
+        timeline_html = str(self.output_dir / "sediment_timeline.html")
+        timeline_result = generate_sediment_timeline_html(
+            timeline_snapshots, timeline_times, grid.shape, timeline_html
+        )
+        if timeline_result is False:
+            timeline_html = None
+
+        # ---- Scientific / geomorphic analysis plots ----
+        self.log(92, "Generating analysis plots...")
+        cell_area = float(grid.dx) * float(grid.dy)
+
+        # Re-route flow on the final topography so drainage-based plots reflect
+        # the final landscape, not the loop's transient routing state.
+        refresh_drainage(grid)
+
+        science_plots = {
+            "hypsometry_plot": plot_hypsometry(
+                initial, final, str(self.output_dir / "hypsometry.png")),
+            "flux_plot": plot_sediment_flux(
+                timeline_snapshots, timeline_times, cell_area,
+                str(self.output_dir / "flux.png")),
+            "long_profile_plot": plot_river_long_profile(
+                grid, initial, str(self.output_dir / "long_profile.png")),
+            "slope_area_plot": plot_slope_area(
+                grid, str(self.output_dir / "slope_area.png")),
+        }
 
         diag = diagnose_space_regime(diff)
 
@@ -186,6 +240,12 @@ class SimulationRunner:
             "initial_plot": str(self.output_dir / "init.png"),
             "final_plot": str(self.output_dir / "final.png"),
             "change_plot": str(self.output_dir / "diff.png"),
+            "mask_plot": mask_png,
+            "timeline_html": timeline_html,
+            "hypsometry_plot": science_plots["hypsometry_plot"],
+            "flux_plot": science_plots["flux_plot"],
+            "long_profile_plot": science_plots["long_profile_plot"],
+            "slope_area_plot": science_plots["slope_area_plot"],
             "diff_max": max_diff,
             "grid_size": f"{grid.shape[0]} × {grid.shape[1]}",
             "diag_abs_max_change": diag["abs_max_change"],

@@ -114,8 +114,14 @@ class SimulationResultsWindow(QMainWindow):
         # --- Tab 2: 3D Visualization (Interactive) ---
         self.view_3d = ThreeDView()
         self.tabs.addTab(self.view_3d, SimulationResultsWindowConsts.TAB_3D_VISUALIZATION)
-        
-        # --- Tab 3: Feature Tracking (Dynamic) ---
+
+        # --- Tab 3: Sediment Timeline (Interactive Plotly slider) ---
+        self._add_timeline_tab()
+
+        # --- Tab 4: Scientific Analysis plots ---
+        self._add_analysis_tab()
+
+        # --- Tab 5: Feature Tracking (Dynamic) ---
         tracker_plot = self.image_paths.get(SimulationResultKeys.TRACKER_PLOT)
         if tracker_plot and os.path.exists(tracker_plot):
             tracker_widget = QWidget()
@@ -153,6 +159,43 @@ class SimulationResultsWindow(QMainWindow):
         
         # Set default view using QTimer to ensure layout is ready
         QTimer.singleShot(0, self.tab_2d.show_final)
+
+    def _add_timeline_tab(self):
+        """Adds the interactive sediment-flow timeline (Plotly slider) tab."""
+        from PyQt6.QtWebEngineWidgets import QWebEngineView
+        from PyQt6.QtCore import QUrl
+
+        timeline_html = self.image_paths.get(SimulationResultKeys.TIMELINE_HTML)
+
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        if timeline_html and os.path.exists(timeline_html):
+            web_view = QWebEngineView()
+            web_view.setUrl(QUrl.fromLocalFile(timeline_html))
+            layout.addWidget(web_view)
+        else:
+            lbl = QLabel(SimulationResultsWindowConsts.LBL_TIMELINE_NOT_AVAILABLE)
+            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            layout.addWidget(lbl)
+
+        self.tabs.addTab(container, SimulationResultsWindowConsts.TAB_TIMELINE)
+
+    def _add_analysis_tab(self):
+        """Adds the scientific-analysis gallery tab."""
+        from app.ui.widgets.visualization_tabs.analysis_gallery import AnalysisGalleryWidget
+
+        plots = [
+            ("Erosion / Deposition Map", self.image_paths.get(SimulationResultKeys.MASK_PLOT)),
+            ("River Long Profile", self.image_paths.get(SimulationResultKeys.LONG_PROFILE_PLOT)),
+            ("Slope–Area Relationship", self.image_paths.get(SimulationResultKeys.SLOPE_AREA_PLOT)),
+            ("Sediment Budget Over Time", self.image_paths.get(SimulationResultKeys.FLUX_PLOT)),
+            ("Hypsometric Curve", self.image_paths.get(SimulationResultKeys.HYPSOMETRY_PLOT)),
+        ]
+
+        gallery = AnalysisGalleryWidget(plots)
+        self.tabs.addTab(gallery, SimulationResultsWindowConsts.TAB_ANALYSIS)
 
     def show_stats_dialog(self):
         """Calculates stats and shows the dialog."""
