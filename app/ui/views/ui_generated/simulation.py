@@ -110,11 +110,20 @@ class Ui_SimulationSetup(object):
         right_layout.addWidget(self.earthGroup)
         
         earth_layout = QtWidgets.QVBoxLayout(self.earthGroup)
+        # Stretch factor 1 so the map absorbs all extra vertical space; the
+        # toggle and DEM info line then hug directly beneath it.
         self.webView = QWebEngineView()
-        earth_layout.addWidget(self.webView)
-        
+        earth_layout.addWidget(self.webView, 1)
+
         self.showDemBoundaryToggle = QtWidgets.QCheckBox("Show DEM Boundary (Yellow)")
-        earth_layout.addWidget(self.showDemBoundaryToggle)
+        earth_layout.addWidget(self.showDemBoundaryToggle, 0)
+
+        self.demInfoLabel = QtWidgets.QLabel("")
+        self.demInfoLabel.setWordWrap(True)
+        self.demInfoLabel.setTextFormat(QtCore.Qt.TextFormat.RichText)
+        self.demInfoLabel.setStyleSheet("color: #d8d8d8; font-size: 11px; padding: 1px 2px;")
+        self.demInfoLabel.hide()
+        earth_layout.addWidget(self.demInfoLabel, 0)
         
         self.splitter.addWidget(right_container)
         self.splitter.setSizes([300, 500])

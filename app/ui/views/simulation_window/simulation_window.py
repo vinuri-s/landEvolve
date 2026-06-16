@@ -171,19 +171,49 @@ class SimulationWindow(QMainWindow):
     def _on_toggle_dem_boundary(self, checked):
         if not checked:
             self.map_widget.remove_overlay('dem-boundary')
+            self.ui.demInfoLabel.hide()
+            self.ui.demInfoLabel.clear()
             return
-            
+
         geotiff = self.ui.resolutionComboBox.currentData()
-        if not geotiff: 
+        if not geotiff:
             return
-            
+
         try:
             geojson_str = self.controller.get_geotiff_boundary_geojson(geotiff.tiff_file_path)
             if geojson_str:
                 self.map_widget.set_overlay('dem-boundary', geojson_str, line_color='yellow', fill_opacity=0.0)
+            self._show_dem_info(geotiff.tiff_file_path)
         except Exception as e:
             from app.core.logging.manager import LogManager
             LogManager.get_logger("ui").error(f"Failed to generate DEM boundary: {e}")
+
+    def _show_dem_info(self, tiff_path):
+        """Populates the DEM info label with size, resolution, CRS and elevation
+        range so the user can sanity-check the input before running."""
+        info = self.controller.get_geotiff_info(tiff_path)
+        if not info:
+            self.ui.demInfoLabel.hide()
+            return
+
+        elev = "n/a"
+        if info.get("min_elev") is not None:
+            elev = f"{info['min_elev']}–{info['max_elev']} m"
+
+        # Compact single line so it stays readable without eating vertical space.
+        self.ui.demInfoLabel.setText(
+            f"{info['width']}×{info['height']} px "
+            f"&nbsp;·&nbsp; {info['resolution']} m "
+            f"&nbsp;·&nbsp; {info['crs']} "
+            f"&nbsp;·&nbsp; elev {elev}"
+        )
+        self.ui.demInfoLabel.setToolTip(
+            f"Size: {info['width']} × {info['height']} px\n"
+            f"Resolution: {info['resolution']} (CRS units)\n"
+            f"CRS: {info['crs']}\n"
+            f"Elevation: {elev} (mean {info.get('mean_elev')} m)"
+        )
+        self.ui.demInfoLabel.show()
             
     def _toggle_feature_tracking(self, checked):
         self.ui.featureShapefileLabel.setVisible(checked)

@@ -32,6 +32,9 @@ class SimulationController:
     def get_geotiff_boundary_geojson(self, tiff_path):
         return ShapefileService.get_geotiff_boundary_geojson(tiff_path)
 
+    def get_geotiff_info(self, tiff_path):
+        return self.sim_service.get_geotiff_info(tiff_path)
+
     def get_geotiff_bounds(self, tiff_path):
         return self.sim_service.get_geotiff_bounds(tiff_path)
 

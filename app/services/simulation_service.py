@@ -145,3 +145,48 @@ class SimulationService:
     def regenerate_2d_difference_map(self, diff_tif_path, output_png_path, vmin=None, vmax=None, scaling="linear"):
         from app.engine.visualization import regenerate_2d_difference_map
         return regenerate_2d_difference_map(diff_tif_path, output_png_path, vmin=vmin, vmax=vmax, scaling=scaling)
+
+    def get_geotiff_info(self, tiff_path):
+        """
+        Reads summary metadata + elevation statistics from a DEM GeoTIFF so the
+        UI can preview it before running. Returns a dict, or None if unreadable.
+        Keeps rasterio/numpy out of the UI layer.
+        """
+        if not tiff_path or not os.path.exists(tiff_path):
+            return None
+        try:
+            import rasterio
+            import numpy as np
+
+            with rasterio.open(tiff_path) as src:
+                data = src.read(1).astype("float64")
+                if src.nodata is not None:
+                    data[data == src.nodata] = np.nan
+
+                valid = data[~np.isnan(data)]
+                res_x, res_y = src.res
+
+                # Prefer a compact "EPSG:xxxx" code. Some DEMs only embed a full
+                # WKT projection string; resolve it to its EPSG code, else fall
+                # back to the human-readable CRS name (never the raw WKT blob).
+                crs = "Unknown"
+                if src.crs:
+                    epsg = src.crs.to_epsg()
+                    if epsg:
+                        crs = f"EPSG:{epsg}"
+                    else:
+                        crs = src.crs.to_dict().get("proj") or src.crs.to_string()
+
+                return {
+                    "width": src.width,
+                    "height": src.height,
+                    "resolution": round(float(res_x), 4),
+                    "crs": crs,
+                    "min_elev": round(float(np.min(valid)), 2) if valid.size else None,
+                    "max_elev": round(float(np.max(valid)), 2) if valid.size else None,
+                    "mean_elev": round(float(np.mean(valid)), 2) if valid.size else None,
+                    "nodata": src.nodata,
+                }
+        except Exception as e:
+            logger.error(f"Error reading GeoTIFF info: {e}")
+            return None
