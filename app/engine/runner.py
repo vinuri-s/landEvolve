@@ -22,6 +22,9 @@ from app.engine.science_plots import (
     plot_sediment_flux,
     plot_river_long_profile,
     plot_slope_area,
+    plot_erosion_rate,
+    plot_drainage_network,
+    plot_soil_thickness,
 )
 from app.core.config import Config
 
@@ -223,6 +226,12 @@ class SimulationRunner:
                 grid, initial, str(self.output_dir / "long_profile.png")),
             "slope_area_plot": plot_slope_area(
                 grid, str(self.output_dir / "slope_area.png")),
+            "erosion_rate_plot": plot_erosion_rate(
+                diff, grid.shape, total_time, str(self.output_dir / "erosion_rate.png")),
+            "drainage_network_plot": plot_drainage_network(
+                grid, str(self.output_dir / "drainage_network.png")),
+            "soil_thickness_plot": plot_soil_thickness(
+                grid, str(self.output_dir / "soil_thickness.png")),
         }
 
         diag = diagnose_space_regime(diff)
@@ -246,6 +255,9 @@ class SimulationRunner:
             "flux_plot": science_plots["flux_plot"],
             "long_profile_plot": science_plots["long_profile_plot"],
             "slope_area_plot": science_plots["slope_area_plot"],
+            "erosion_rate_plot": science_plots["erosion_rate_plot"],
+            "drainage_network_plot": science_plots["drainage_network_plot"],
+            "soil_thickness_plot": science_plots["soil_thickness_plot"],
             "diff_max": max_diff,
             "grid_size": f"{grid.shape[0]} × {grid.shape[1]}",
             "diag_abs_max_change": diag["abs_max_change"],

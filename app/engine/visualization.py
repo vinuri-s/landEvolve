@@ -173,7 +173,9 @@ def generate_3d_comparison_html(
             margin=dict(l=65, r=50, b=65, t=90),
             scene=dict(
                 xaxis_title='Easting (columns)',
-                yaxis_title='Northing (rows)',
+                # Row 0 of the raster is north; Plotly maps rows to y increasing
+                # upward, so reverse it to keep north at the top like the 2D maps.
+                yaxis=dict(title='Northing (rows)', autorange='reversed'),
                 zaxis_title='Elevation / Change (m)',
                 zaxis=dict(range=z_range) if z_range else dict(),
                 aspectratio=dict(x=1, y=1, z=0.5),
