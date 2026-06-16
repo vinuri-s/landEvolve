@@ -179,6 +179,18 @@ class DynamicFormConsts:
     FIELD_K_BR = "K_br"
     FIELD_LITHOLOGY_TYPE = "lithology_type"
 
+    # Precipitation mode-conditional fields
+    FIELD_PRECIP_MODE = "mode"
+    FIELD_PRECIPITATION = "precipitation"
+    FIELD_PRECIP_RASTER = "precipitation_raster"
+    FIELD_FINAL_PRECIPITATION = "final_precipitation"
+    FIELD_VARIABILITY = "variability"
+    FIELD_RANDOM_SEED = "random_seed"
+    PRECIP_MODE_UNIFORM = "Uniform"
+    PRECIP_MODE_SPATIAL = "Spatial"
+    PRECIP_MODE_STOCHASTIC = "Stochastic"
+    PRECIP_MODE_TREND = "Trend"
+
 
 class ThreeDViewConsts:
     """

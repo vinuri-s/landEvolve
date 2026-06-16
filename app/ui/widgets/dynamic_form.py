@@ -9,9 +9,7 @@ from PyQt6.QtWidgets import (
     QFileDialog,
     QPushButton,
     QHBoxLayout,
-    QLabel,
 )
-from PyQt6.QtCore import Qt
 from app.core.constants import DynamicFormConsts
 
 
@@ -240,6 +238,44 @@ class DynamicFormWidget(QWidget):
             lithology_combo.currentTextChanged.connect(update_fields_visibility)
             update_fields_visibility()
 
+        # Precipitation: show only the parameters relevant to the selected mode.
+        if DynamicFormConsts.FIELD_PRECIP_MODE in self.fields and \
+                DynamicFormConsts.FIELD_PRECIPITATION in self.fields:
+            mode_combo = self.fields[DynamicFormConsts.FIELD_PRECIP_MODE]
+
+            def update_precip_visibility():
+                mode = mode_combo.currentText()
+                spatial = mode == DynamicFormConsts.PRECIP_MODE_SPATIAL
+                stochastic = mode == DynamicFormConsts.PRECIP_MODE_STOCHASTIC
+                trend = mode == DynamicFormConsts.PRECIP_MODE_TREND
+
+                # `precipitation` is the mean/start value for every mode except Spatial.
+                self._set_row_visible(DynamicFormConsts.FIELD_PRECIPITATION, not spatial)
+                self._set_row_visible(DynamicFormConsts.FIELD_PRECIP_RASTER, spatial)
+                self._set_row_visible(DynamicFormConsts.FIELD_FINAL_PRECIPITATION, trend)
+                self._set_row_visible(DynamicFormConsts.FIELD_VARIABILITY, stochastic)
+                self._set_row_visible(DynamicFormConsts.FIELD_RANDOM_SEED, stochastic)
+
+            mode_combo.currentTextChanged.connect(update_precip_visibility)
+            update_precip_visibility()
+
+    def _set_row_visible(self, field_key, visible):
+        """Show/hide a form row (widget + its label) by field key, handling the
+        composite file-edit widget whose row holds a container, not the field."""
+        if field_key not in self.fields:
+            return
+        widget = self.fields[field_key]
+        # The row widget is the field itself, except for QFileEdit where the row
+        # holds the line-edit's parent container.
+        row_widget = widget
+        label_item = self.form_layout.labelForField(widget)
+        if label_item is None and widget.parentWidget() is not None:
+            row_widget = widget.parentWidget()
+            label_item = self.form_layout.labelForField(row_widget)
+
+        row_widget.setVisible(visible)
+        if label_item:
+            label_item.setVisible(visible)
 
     def get_form_data(self):
         data = {}

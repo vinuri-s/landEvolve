@@ -1,6 +1,7 @@
 import abc
 import inspect
 import json
+import os
 import numpy as np
 import ast
 
@@ -29,6 +30,128 @@ class SimulationComponent(abc.ABC):
     def _add_field_if_missing(self, name, value, at="node"):
         if name not in self.grid[at]:
             self.grid.add_field(name, value, at=at)
+
+
+# =========================================================
+# PRECIPITATION
+# =========================================================
+
+class PrecipitationComponent(SimulationComponent):
+    """
+    Sets the runoff field (`water__unit_flux_in`) that FlowAccumulator converts
+    to `surface_water__discharge`, so climate controls erosion. This is the
+    clean, physically-correct insertion point: it writes the *base* runoff each
+    step (before FlowAccumulator routes it), and any vegetation runoff
+    multiplier composes on top.
+
+    The modes are chosen for the **long-term** nature of these simulations
+    (dt of years-to-millennia, far larger than individual storms), so they
+    represent *effective* climate forcing rather than sub-timestep storms:
+
+    * **Uniform**    — constant effective precipitation over the whole grid
+                       (the standard LEM baseline).
+    * **Spatial**    — per-node effective precipitation from a (mean-annual)
+                       rainfall raster, resampled to the grid: orographic /
+                       spatial gradients, constant in time.
+    * **Stochastic** — inter-period climate variability: each timestep draws a
+                       mean precipitation from a gamma distribution (mean =
+                       `precipitation`, coefficient of variation = `variability`),
+                       producing wet/dry periods that drive episodic erosion.
+                       (Aggregating sub-storm events is meaningless when
+                       dt >> storm scale — it averages out — so we model
+                       variability at the timestep scale instead.)
+    * **Trend**      — deterministic climate change: precipitation varies
+                       linearly from `precipitation` to `final_precipitation`
+                       over the simulation (e.g. progressive drying/wetting).
+
+    Effective runoff = precipitation x runoff_coefficient, in the same units as
+    FlowAccumulator's `runoff_rate` (default 1.0 reproduces prior behaviour),
+    so existing K_sed/K_br calibration stays valid.
+    """
+
+    def __init__(self, grid, **params):
+        super().__init__(grid)
+
+        self.mode = str(params.get("mode", "Uniform")).strip()
+        self.precip = float(params.get("precipitation", 1.0))
+        self.coeff = float(params.get("runoff_coefficient", 1.0))
+        self.final_precip = float(params.get("final_precipitation", self.precip))
+        self.variability = float(params.get("variability", 0.0))
+        # Injected by the runner so Trend mode knows the full simulation length.
+        self.total_time = float(params.get("total_time", 0.0))
+        self._elapsed = 0.0
+
+        seed = params.get("random_seed", None)
+        try:
+            self._rng = np.random.default_rng(int(seed)) if seed not in (None, "", 0, "0") else np.random.default_rng()
+        except (ValueError, TypeError):
+            self._rng = np.random.default_rng()
+
+        if "water__unit_flux_in" not in grid.at_node:
+            grid.add_ones("water__unit_flux_in", at="node")
+
+        # Static per-node spatial field (Spatial mode only); other modes are
+        # spatially uniform and computed per step.
+        self._spatial = self._load_raster(grid, params.get("precipitation_raster")) \
+            if self.mode == "Spatial" else None
+
+        self._apply(self._field_for_now())
+
+    def _apply(self, field):
+        # `_base_runoff` is the climate signal the vegetation multiplier rides on.
+        self.grid._base_runoff = np.array(field, dtype=float)
+        self.grid.at_node["water__unit_flux_in"][:] = field
+
+    def _field_for_now(self):
+        """Per-node runoff field for the current simulation state."""
+        n = self.grid.number_of_nodes
+        if self.mode == "Spatial":
+            return self._spatial * self.coeff
+
+        if self.mode == "Trend":
+            frac = min(self._elapsed / self.total_time, 1.0) if self.total_time > 0 else 0.0
+            rate = self.precip + (self.final_precip - self.precip) * frac
+        elif self.mode == "Stochastic":
+            rate = self._stochastic_rate()
+        else:  # Uniform
+            rate = self.precip
+
+        return np.full(n, max(rate, 0.0) * self.coeff, dtype=float)
+
+    def _stochastic_rate(self):
+        """Draw a timestep mean precipitation from a gamma distribution with the
+        given mean and coefficient of variation (gamma keeps it non-negative)."""
+        cv = self.variability
+        if cv <= 0 or self.precip <= 0:
+            return self.precip
+        shape = 1.0 / (cv * cv)
+        scale = self.precip * cv * cv
+        return float(self._rng.gamma(shape, scale))
+
+    def _load_raster(self, grid, path):
+        n = grid.number_of_nodes
+        if not path or not os.path.exists(path):
+            print("PrecipitationComponent: raster not found; using uniform precipitation value.")
+            return np.full(n, self.precip, dtype=float)
+        try:
+            import rasterio
+            from rasterio.enums import Resampling
+            with rasterio.open(path) as src:
+                data = src.read(1, out_shape=grid.shape, resampling=Resampling.bilinear).astype(float)
+                if src.nodata is not None:
+                    data[data == src.nodata] = np.nan
+            flat = data.flatten()
+            if np.isnan(flat).any():
+                mean = np.nanmean(flat)
+                flat = np.where(np.isnan(flat), mean if np.isfinite(mean) else self.precip, flat)
+            return flat
+        except Exception as e:
+            print(f"PrecipitationComponent: raster load failed ({e}); using uniform precipitation.")
+            return np.full(n, self.precip, dtype=float)
+
+    def run(self, dt):
+        self._elapsed += dt
+        self._apply(self._field_for_now())
 
 
 # =========================================================
@@ -231,6 +354,11 @@ class VegetationComponent(SimulationComponent):
                         changed = True
             if changed:
                 self._update_multipliers()
+
+        # Re-apply the runoff multiplier every step so it composes with a
+        # (possibly time-varying) precipitation base set just before this runs.
+        if "water__unit_flux_in" in self.grid.at_node:
+            self._update_multipliers()
 
 
 # =========================================================
