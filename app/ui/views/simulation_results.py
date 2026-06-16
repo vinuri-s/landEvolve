@@ -188,7 +188,6 @@ class SimulationResultsWindow(QMainWindow):
 
         plots = [
             ("Erosion / Deposition Map", self.image_paths.get(SimulationResultKeys.MASK_PLOT)),
-            ("Erosion / Deposition Rate", self.image_paths.get(SimulationResultKeys.EROSION_RATE_PLOT)),
             ("Drainage Network", self.image_paths.get(SimulationResultKeys.DRAINAGE_NETWORK_PLOT)),
             ("Soil / Alluvium Thickness", self.image_paths.get(SimulationResultKeys.SOIL_THICKNESS_PLOT)),
             ("River Long Profile", self.image_paths.get(SimulationResultKeys.LONG_PROFILE_PLOT)),

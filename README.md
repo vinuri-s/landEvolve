@@ -54,6 +54,8 @@ A modern, responsive PyQt6 interface.
 *   **`SimulationResultsWindow`**: Displays simulation progress and final results.
     *   **2D Visualization**: Carousel view of Initial, Final, and Difference maps.
     *   **3D Visualization**: Interactive 3D terrain viewer.
+    *   **Sediment Timeline**: Animated, scrubbable view of erosion/deposition over time.
+    *   **Analysis**: Scientific plots (drainage network, soil thickness, long profile, slope–area, sediment budget, hypsometry) shown one at a time. See the [Visualizations & Plots](#-visualizations--plots) section for details.
 *   **`SimulationWorker`**: A background thread worker (`QThread`) that ensures the UI remains responsive while the heavy simulation runs.
 
 ### 3. Services (`app/services`)
@@ -84,6 +86,31 @@ LandEvolve operates on a strict, decoupled pipeline that handles complex geospat
 *   **Dynamic Downsampling**: *After* the simulation completes, high-resolution output GeoTIFFs (`final.tif`, `diff.tif`) are dynamically downsampled using `NumPy` striding *only* before being passed to the 3D renderer. This ensures scientific accuracy is completely uncompromised while preventing WebGL memory exhaustion in the desktop UI.
 *   **Difference Map Auto-Scaling**: To visualize erosion vs. deposition accurately, the engine calculates the *absolute maximum change* across the entire grid. It then applies a mathematically **symmetric scale** (e.g., `-8.5m` to `+8.5m`). This guarantees that `0.0m` of change (stable ground) sits dead-center in the diverging Red-Blue colormap (pure white), avoiding false coloration of unchanged terrain.
 *   **3D Mesh Generation**: Instead of relying on heavy, internet-dependent globe engines (like Cesium), LandEvolve reads the processed elevation arrays into Plotly (`go.Surface`) to generate a standalone HTML WebGL object. This interactive 3D mesh is natively embedded into the desktop app via `QWebEngineView`, ensuring offline capability and extreme performance.
+
+## 📊 Visualizations & Plots
+
+The results window groups outputs into tabs. Each plot below lists **what it shows** and **the logic behind it**. Analysis plots are defensive: if a required field is missing for a given run, the plot is skipped rather than failing.
+
+### 2D Visualization (`app/engine/io.py`)
+*   **Input / Final Elevation** — The terrain before and after the run, rendered with a `terrain` colormap. Straight `imshow` of the elevation arrays (north-up).
+*   **Difference Map** — *Where and how much* the surface eroded (red) or aggraded (blue). Computed as `final − initial` on a **symmetric** diverging Red-Blue scale so stable ground (0 m) is pure white. It is **draped over a shaded-relief hillshade** of the final terrain (`matplotlib.LightSource`) so change is read in its topographic context. A **symlog** toggle is available so faint erosion stays visible when deposition dominates the range.
+
+### 3D Map (`app/engine/visualization.py`)
+*   **Interactive 3D surface** with Input / Output / Difference modes (Plotly `go.Surface`, embedded WebGL). The difference mode colors the final surface by `final − initial`. The z-axis is **pinned to the true elevation range** so the scale matches the 2D maps, and the y-axis is reversed to keep north at the top.
+
+### Sediment Timeline (`app/engine/visualization.py`)
+*   **Animated, scrubbable heatmap** of *cumulative* erosion/deposition through time. During the run, ~30 evenly-spaced snapshots of `elevation − initial` are captured; Plotly renders them as time-slider frames (`zsmooth` interpolation) sharing one symmetric color scale, so you can watch sediment migrate.
+
+### Analysis (`app/engine/science_plots.py`)
+*   **Erosion / Deposition Map (mask)** — *Where* material left vs. arrived, ignoring magnitude. A 3-category map (erosion / no-change / deposition) thresholded near zero — answers "where does deposition go" even when magnitudes are lopsided.
+*   **Drainage Network** — *Where the rivers are.* A `log₁₀(drainage_area)` map: bright threads where flow concentrates, dark hillslopes between. Built from the routed drainage area (boundary nodes blanked).
+*   **Soil / Alluvium Thickness** — *Where sediment is stored vs. bedrock is exposed.* Maps the landlab `soil__depth` field (mobile sediment above bedrock), which SPACE conserves and redistributes each timestep.
+*   **River Long Profile** — *Channel incision and knickpoints.* Two panels along the main (trunk) channel from `ChannelProfiler`: elevation vs. downstream distance (initial vs. final), and an incision panel (`final − initial`) that makes the change legible even when the two profiles overlap.
+*   **Slope–Area Relationship** — *Erosion regime and steady state.* Log-log channel slope vs. drainage area. Hillslope noise is demoted to faint grey, channel nodes highlighted, and a binned-median trend line drawn through the channel data.
+*   **Sediment Budget Over Time** — *Transient vs. equilibrating system.* Cumulative eroded, deposited, and net-change **volumes** (m³) through time, derived from the timeline snapshots × cell area.
+*   **Hypsometric Curve** — *Basin maturity.* Cumulative area fraction vs. normalized elevation, initial vs. final.
+
+> **Routing note:** before the drainage-based plots (network, long profile, slope–area), flow is re-routed on the final topography with `FlowDirectorSteepest` so the analysis reflects the final landscape rather than the loop's transient state. This assumes hydrologically **filled** input DEMs (no in-loop depression handling, for speed).
 
 ## 🚀 Getting Started
 

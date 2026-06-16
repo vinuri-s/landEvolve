@@ -62,7 +62,6 @@ class SimulationResultKeys:
     FLUX_PLOT = "flux_plot"
     LONG_PROFILE_PLOT = "long_profile_plot"
     SLOPE_AREA_PLOT = "slope_area_plot"
-    EROSION_RATE_PLOT = "erosion_rate_plot"
     DRAINAGE_NETWORK_PLOT = "drainage_network_plot"
     SOIL_THICKNESS_PLOT = "soil_thickness_plot"
     OUTPUT_DIR = "output_dir"

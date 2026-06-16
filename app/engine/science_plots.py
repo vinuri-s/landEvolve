@@ -14,40 +14,11 @@ raising, so a partial result set never breaks a simulation run.
 
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.colors import TwoSlopeNorm
 
 
 # -----------------------------------------------------------------------------
 # Array-based plots (no grid required)
 # -----------------------------------------------------------------------------
-def plot_erosion_rate(diff, shape, total_time, output_path):
-    """Erosion/deposition expressed as a rate (m/yr) rather than total change —
-    the quantity geomorphologists compare between runs and against real-world
-    denudation rates."""
-    try:
-        if not total_time or total_time <= 0:
-            return None
-        rate = np.asarray(diff, dtype=float).reshape(shape) / float(total_time)
-
-        valid = rate[~np.isnan(rate)]
-        scale = float(np.nanpercentile(np.abs(valid), 99)) if valid.size else 1e-6
-        if scale == 0:
-            scale = 1e-6
-        norm = TwoSlopeNorm(vmin=-scale, vcenter=0.0, vmax=scale)
-
-        fig, ax = plt.subplots(figsize=(12, 8))
-        im = ax.imshow(rate, cmap="RdBu", norm=norm)
-        fig.colorbar(im, ax=ax, label="Rate (m/yr)")
-        ax.set_title("Erosion / Deposition Rate")
-        ax.set_xlabel("Easting (columns)")
-        ax.set_ylabel("Northing (rows)")
-        plt.tight_layout()
-        plt.savefig(output_path)
-        plt.close()
-        return output_path
-    except Exception as e:
-        print(f"Erosion-rate plot failed: {e}")
-        return None
 def plot_hypsometry(initial, final, output_path):
     """Cumulative-area vs. normalized-elevation curve, initial vs. final.
     A classic descriptor of basin maturity across any landscape type."""
