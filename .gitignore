@@ -23,12 +23,11 @@ resources/outputs/
 .DS_Store
 .pytest_cache/
 
-# DEM rasters: ignored by default, but the input DEMs are committed for
-# reproducibility — except the oversized 1 m Wairewa raster (810 MB), which
-# exceeds GitHub's 100 MB file limit and must be obtained separately / via LFS.
+# DEM rasters: ignored by default, but the input DEMs under resources/inputs
+# are committed for reproducibility. Keep individual files under GitHub's
+# 100 MB limit (use Git LFS or an external source for anything larger).
 *.tif
 !resources/inputs/**/*.tif
-resources/inputs/wairewa/wairewa_catchment_1m.tif
 
 # SQLite database — regenerated from app/data/seed.py on first run
 app/data/db/*.db
