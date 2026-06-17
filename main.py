@@ -17,9 +17,17 @@ def main():
     LogManager.setup()
     Config.init_directories()
 
-    # Initialize database (reference data — components, lithologies, locations,
-    # vegetation classes — ships pre-populated in app_data.db).
+    # Initialize database: create the schema, then seed the reference data
+    # (locations, DEMs, components, lithologies, vegetation classes) if the
+    # tables are empty. This regenerates a working DB from source, so the
+    # SQLite binary does not need to be committed.
     db_manager.create_tables()
+    from app.data.seed import seed_database
+    session = db_manager.get_session()
+    try:
+        seed_database(session)
+    finally:
+        session.close()
 
     app = QApplication(sys.argv)
 

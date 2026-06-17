@@ -26,8 +26,10 @@ resources/outputs/
 *.tif
 resources/inputs/**/*.tif
 
-# Sensitivity Analysis Outputs
-test/OAT_sensitivity_test/outputs/
+# SQLite database — regenerated from app/data/seed.py on first run
+app/data/db/*.db
+app/data/db/*.db-shm
+app/data/db/*.db-wal
 
 dist/
 build/

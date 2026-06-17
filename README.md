@@ -40,7 +40,7 @@ The project follows a strict layered architecture to ensure separation of concer
 ### 1. Application Engine (`app/engine`)
 The heart of the application, responsible for the actual scientific computation.
 *   **`SimulationRunner`**: The main driver that orchestrates the simulation loop, time-stepping, and component execution.
-*   **`RasterModel`**: Manages the simulation grid, loading DEMs (Digital Elevation Models), and initializing data fields (elevation, soil depth).
+*   **`RasterModel`**: Manages the simulation grid, loading DEMs (Digital Elevation Models) into a Landlab `RasterModelGrid` and initializing the `topographic__elevation` field (plus an optional `geology__type` field from a rock-type raster). Soil/sediment fields are created by the erosion components themselves.
 *   **`Components`** (`app/engine/components.py`): each is a thin wrapper exposing a Landlab process to the app, or custom logic layered on top.
 
     **Landlab-based components** (wrap a Landlab class directly):
@@ -63,25 +63,27 @@ The heart of the application, responsible for the actual scientific computation.
 ### 2. User Interface (`app/ui`)
 A modern, responsive PyQt6 interface.
 *   **`HomeWindow`**: The landing dashboard.
-*   **`SimulationWindow`**: The main setup screen for configuring simulation parameters, selecting components, and choosing locations.
+*   **`SimulationWindow`**: The main setup screen for configuring simulation parameters, selecting components, and choosing locations. Includes a satellite **Location Preview** map that can overlay the DEM boundary and show its metadata (size, resolution, CRS, elevation range).
 *   **`SimulationResultsWindow`**: Displays simulation progress and final results.
     *   **2D Visualization**: Carousel view of Initial, Final, and Difference maps.
     *   **3D Visualization**: Interactive 3D terrain viewer.
     *   **Sediment Timeline**: Animated, scrubbable view of erosion/deposition over time.
-    *   **Analysis**: Scientific plots (drainage network, soil thickness, long profile, slope–area, sediment budget, hypsometry) shown one at a time. See the [Visualizations & Plots](#-visualizations--plots) section for details.
+    *   **Analysis**: Scientific plots (erosion/deposition mask, drainage network, soil thickness, long profile, slope–area, sediment budget, hypsometry) shown one at a time. See the [Visualizations & Plots](#-visualizations--plots) section for details.
+    *   **Feature Tracking**: When enabled, shows the elevation/volume history of a user-supplied feature polygon over time (only present if a feature was tracked).
 *   **`SimulationWorker`**: A background thread worker (`QThread`) that ensures the UI remains responsive while the heavy simulation runs.
 
 ### 3. Services (`app/services`)
 Business logic layer acting as a bridge between UI and Data/Engine.
 *   **`SimulationService`**: Prepares simulation data, merges user parameters with database defaults, and triggers the engine.
 *   **`LocationService`**: Retrieves available simulation locations and resolution options.
-*   **`ComponentService`**: Retrieves Landlab component definitions and user-configurable parameters.
+*   **`ComponentService`**: Retrieves component definitions (Landlab-based and custom) and their user-configurable parameters.
 *   **`ShapefileService`**: Parses geographic shapefiles into GeoJSON format for the map UI.
 
 ### 4. Data Layer (`app/data`)
 Manages data persistence.
-*   **`DatabaseManager`**: Handles SQLite connection and session management.
-*   **Repositories**: Data access patterns for `Locations`, `Components`, and `SimulationHistory`.
+*   **`Database`** (instance `db_manager`): Handles SQLite connection and session management.
+*   **Models**: `Location`, `GeoTiff`, `Component`/`ComponentParam`, `Lithology`, and `VegetationClass`.
+*   **Repositories**: Data access for `Location`/`GeoTiff`, `Component`, `Lithology`, and `VegetationClass`.
 
 ### 5. Geospatial Logic, Data Processing & Engine Workflow
 LandEvolve operates on a strict, decoupled pipeline that handles complex geospatial transformations from user input down to scientific simulation and finally to visual output.
@@ -162,6 +164,25 @@ pip install -r requirements.txt
 python main.py
 ```
 
+> On first launch the app **creates and seeds its SQLite database automatically**: `Database.create_tables()` builds the schema and `app/data/seed.py` populates the reference data (locations, DEMs, components, lithologies, vegetation classes) if the tables are empty. The seed data lives in version control as source, so the database binary itself is not committed (it's generated locally and git-ignored). Seeding is idempotent — your edits and runs are never overwritten.
+
+## ▶️ Usage
+
+1. **Pick a location & resolution** in *Location Setup*. The satellite *Location Preview* can overlay the DEM boundary and show its metadata (size, resolution, CRS, elevation range).
+2. **Set the run length**: *Simulation Period* (total time) and *Time Step* (`dt`).
+3. *(Optional)* Enable **Track Interested Landscape Feature** and supply a polygon shapefile to monitor a specific area over time.
+4. **Add components** (*Add Component*) and configure their parameters — e.g. `FlowAccumulatorComponent`, a SPACE eroder, `DepthDependentDiffuserComponent`, `PrecipitationComponent`, `VegetationComponent`, `LithoLayersComponent`. Precipitation requires a Flow Accumulator to take effect.
+5. **Run Simulation**. Progress is shown live; the UI stays responsive (runs on a background thread).
+6. **Explore results** across the tabs: 2D maps, 3D map, Sediment Timeline, Analysis plots, and Feature Tracking. Use *Show Statistics* for performance/diagnostic metrics.
+
+### Outputs
+Each run is written to `resources/outputs/simulation_<N>/`, including:
+*   `init.png`, `final.png`, `diff.png` — 2D elevation and difference maps
+*   `final.tif`, `diff.tif` — GeoTIFFs of the final surface and total change
+*   `view_3d_comparison.html`, `sediment_timeline.html` — interactive 3D + timeline
+*   analysis plots (`mask.png`, `drainage_network.png`, `soil_thickness.png`, `long_profile.png`, `slope_area.png`, `flux.png`, `hypsometry.png`)
+*   `simulation_details.txt` — parameters, components, and diagnostics for the run
+
 ## 📦 Packaging (Executable Generation)
 
 You can package LandEvolve into a standalone executable that includes all dependencies (LandLab, Rasterio, PyQt6, etc.) using PyInstaller.
@@ -188,3 +209,7 @@ Run the executable from the generated `dist` folder:
 
 > [!NOTE]
 > On the first run, the application will initialize a `logs/` directory and a `app/data/db/` directory beside the executable for writable data.
+
+## 📄 License
+
+Released under the **MIT License** — see [LICENSE](LICENSE). © 2025 Vinuri Piyathilake.
