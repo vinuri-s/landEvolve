@@ -191,6 +191,13 @@ class DynamicFormConsts:
     PRECIP_MODE_STOCHASTIC = "Stochastic"
     PRECIP_MODE_TREND = "Trend"
 
+    # Tectonics mode-conditional fields
+    FIELD_TECT_MODE = "mode"
+    FIELD_UPLIFT_RATE = "uplift_rate"
+    FIELD_UPLIFT_RASTER = "uplift_raster"
+    TECT_MODE_UNIFORM = "Uniform"
+    TECT_MODE_SPATIAL = "Spatial"
+
 
 class ThreeDViewConsts:
     """

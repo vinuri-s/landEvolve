@@ -41,6 +41,7 @@ COMPONENTS = [
     {'id': 13, 'name': 'VegetationComponent', 'description': 'Applies vegetation cover effects via user-defined classes. Each class sets multipliers for erodibility (K_sed, K_br), hillslope diffusivity, and runoff. Supports Static mode (one class for the whole simulation) and Transition mode (scheduled class changes at specified timesteps).'},
     {'id': 14, 'name': 'LithoLayersComponent', 'description': 'A three-dimensional representation of material operated on by landlab components.'},
     {'id': 15, 'name': 'PrecipitationComponent', 'description': 'Sets runoff from precipitation (feeds Flow Accumulator). Modes: Uniform (constant), Spatial (rainfall raster), Stochastic (inter-period climate variability), Trend (linear climate change). Vegetation runoff multipliers compose on top.'},
+    {'id': 16, 'name': 'TectonicsComponent', 'description': 'Applies rock uplift each step (the tectonic forcing that builds relief against erosion). Uplifts core nodes only, keeping base level fixed. Modes: Uniform (constant block uplift) and Spatial (per-node uplift rate from a raster).'},
 ]
 
 COMPONENT_PARAMS = [
@@ -89,6 +90,9 @@ COMPONENT_PARAMS = [
     {'id': 82, 'component_id': 15, 'key': 'final_precipitation', 'type': 'QDoubleSpinBox', 'validation': '0.0|1000.0|0.1', 'default_value': '1.0'},
     {'id': 83, 'component_id': 15, 'key': 'variability', 'type': 'QDoubleSpinBox', 'validation': '0.0|5.0|0.05', 'default_value': '0.3'},
     {'id': 84, 'component_id': 15, 'key': 'random_seed', 'type': 'QLineEdit', 'validation': 'Optional', 'default_value': ''},
+    {'id': 85, 'component_id': 16, 'key': 'mode', 'type': 'QComboBox', 'validation': 'Uniform|Spatial', 'default_value': 'Uniform'},
+    {'id': 86, 'component_id': 16, 'key': 'uplift_rate', 'type': 'QDoubleSpinBox', 'validation': '0.0|1.0|0.0001', 'default_value': '0.001'},
+    {'id': 87, 'component_id': 16, 'key': 'uplift_raster', 'type': 'QFileEdit', 'validation': 'Optional', 'default_value': ''},
 ]
 
 LITHOLOGIES = [

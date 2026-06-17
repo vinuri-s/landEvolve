@@ -9,6 +9,7 @@ from app.engine.components import (
     VegetationComponent,
     LithoLayersComponent,
     PrecipitationComponent,
+    TectonicsComponent,
 )
 from app.engine.io import (
     save_geotiff,
@@ -55,6 +56,8 @@ class SimulationRunner:
             return VegetationComponent(grid, vegetation_classes=veg_classes, **params)
         if name == "PrecipitationComponent":
             return PrecipitationComponent(grid, **params)
+        if name == "TectonicsComponent":
+            return TectonicsComponent(grid, **params)
         if name == "FlowAccumulatorComponent":
             return FlowAccumulatorComponent(grid, **params)
         if name == "SpaceComponent":
@@ -94,12 +97,14 @@ class SimulationRunner:
 
         self.log(15, "Building components...")
 
-        precip_conf, veg_conf, flow_conf, hill_conf, ero_conf, lith_conf, other_conf = [], [], [], [], [], [], []
+        precip_conf, veg_conf, flow_conf, hill_conf, ero_conf, lith_conf, tect_conf, other_conf = [], [], [], [], [], [], [], []
 
         for c in self.params["selected_components"]:
             name = self._name(c["component"])
             if name == "PrecipitationComponent":
                 precip_conf.append(c)
+            elif name == "TectonicsComponent":
+                tect_conf.append(c)
             elif name == "VegetationComponent":
                 veg_conf.append(c)
             elif name == "FlowAccumulatorComponent":
@@ -122,7 +127,7 @@ class SimulationRunner:
 
         # Build order: Precipitation before Vegetation so the runoff base exists
         # when Vegetation captures it; Litho before Space so K_sp exists at init.
-        build_confs = precip_conf + veg_conf + flow_conf + lith_conf + hill_conf + ero_conf + other_conf
+        build_confs = precip_conf + veg_conf + flow_conf + lith_conf + hill_conf + ero_conf + tect_conf + other_conf
 
         built = {}
         for c in build_confs:
@@ -145,7 +150,8 @@ class SimulationRunner:
         run_order = ["PrecipitationComponent", "VegetationComponent", "FlowAccumulatorComponent",
                      "DepthDependentDiffuserComponent",
                      "SpaceComponent", "SpaceLargeScaleEroderComponent",
-                     "LithoLayersComponent"]
+                     "LithoLayersComponent",
+                     "TectonicsComponent"]
         components = []
         for name in run_order:
             components.extend(built.get(name, []))

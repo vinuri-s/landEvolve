@@ -58,6 +58,7 @@ The heart of the application, responsible for the actual scientific computation.
         *   **Stochastic** — inter-period variability: each step draws a mean from a gamma distribution (CV = `variability`) → wet/dry periods.
         *   **Trend** — climate change: precipitation ramps linearly from `precipitation` to `final_precipitation` over the run.
         *   Units match FlowAccumulator's `runoff_rate` (default `1.0` = prior behaviour), so existing `K` calibration stays valid.
+    *   `TectonicsComponent`: applies **rock uplift** each step — the tectonic forcing that competes with erosion to build relief. Landlab has no dedicated uplift component (the idiom is to add `uplift_rate × dt` to the elevation field), so this is custom logic. Only **core nodes** are uplifted (boundary/outlet nodes stay fixed as base level, so relief grows); when a bedrock field is present, **both `bedrock__elevation` and `topographic__elevation`** are raised to keep the SPACE soil/bedrock budget consistent. Runs at the end of each step (erode, then uplift). Modes: **Uniform** (constant block uplift) and **Spatial** (per-node uplift rate from a raster, for differential/tilted uplift).
 *   **`IO` & `Visualization`**: Handles reading/writing GeoTIFFs and generating 2D/3D result plots.
 
 ### 2. User Interface (`app/ui`)

@@ -33,6 +33,83 @@ class SimulationComponent(abc.ABC):
 
 
 # =========================================================
+# TECTONICS
+# =========================================================
+
+class TectonicsComponent(SimulationComponent):
+    """
+    Applies rock uplift to the landscape each step, the tectonic forcing that
+    competes with erosion to build relief. Landlab has no dedicated uplift
+    component — the idiomatic approach is to add ``uplift_rate * dt`` to the
+    elevation field — so this is custom logic, consistent with how the rest of
+    the engine is structured.
+
+    Two modes (long-term forcing):
+
+    * **Uniform** — constant block uplift: every core node rises at
+                    ``uplift_rate`` (length/time).
+    * **Spatial** — per-node uplift rate from a raster (resampled to the grid),
+                    for differential / tilted uplift across the domain.
+
+    Correctness details:
+
+    * Only **core nodes** are uplifted; boundary/outlet nodes stay fixed as base
+      level, so relief actually grows (uplifting everything just raises base
+      level).
+    * When a bedrock field exists (SPACE / diffuser), **both
+      ``bedrock__elevation`` and ``topographic__elevation`` are raised** by
+      ``uplift_rate * dt``, since ``topographic = bedrock + soil`` — uplifting
+      only the surface would corrupt the soil/bedrock budget.
+
+    Runs near the **end** of each step (after erosion), following the standard
+    landlab SPACE convention (erode, then uplift).
+    """
+
+    def __init__(self, grid, **params):
+        super().__init__(grid)
+
+        self.mode = str(params.get("mode", "Uniform")).strip()
+        self.uplift_rate = float(params.get("uplift_rate", 0.0))
+
+        n = grid.number_of_nodes
+        if self.mode == "Spatial":
+            self._rate_field = self._load_raster(grid, params.get("uplift_raster"))
+        else:
+            self._rate_field = np.full(n, self.uplift_rate, dtype=float)
+
+    def _load_raster(self, grid, path):
+        n = grid.number_of_nodes
+        if not path or not os.path.exists(path):
+            print("TectonicsComponent: uplift raster not found; using uniform uplift rate.")
+            return np.full(n, self.uplift_rate, dtype=float)
+        try:
+            import rasterio
+            from rasterio.enums import Resampling
+            with rasterio.open(path) as src:
+                data = src.read(1, out_shape=grid.shape, resampling=Resampling.bilinear).astype(float)
+                if src.nodata is not None:
+                    data[data == src.nodata] = np.nan
+            flat = data.flatten()
+            if np.isnan(flat).any():
+                mean = np.nanmean(flat)
+                flat = np.where(np.isnan(flat), mean if np.isfinite(mean) else self.uplift_rate, flat)
+            return flat
+        except Exception as e:
+            print(f"TectonicsComponent: uplift raster load failed ({e}); using uniform uplift.")
+            return np.full(n, self.uplift_rate, dtype=float)
+
+    def run(self, dt):
+        if dt <= 0:
+            return
+        core = self.grid.core_nodes
+        du = self._rate_field[core] * dt
+        self.grid.at_node["topographic__elevation"][core] += du
+        # Keep the rock column consistent with the surface for the SPACE budget.
+        if "bedrock__elevation" in self.grid.at_node:
+            self.grid.at_node["bedrock__elevation"][core] += du
+
+
+# =========================================================
 # PRECIPITATION
 # =========================================================
 

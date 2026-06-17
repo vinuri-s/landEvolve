@@ -259,6 +259,19 @@ class DynamicFormWidget(QWidget):
             mode_combo.currentTextChanged.connect(update_precip_visibility)
             update_precip_visibility()
 
+        # Tectonics: show the uplift rate (Uniform) or the uplift raster (Spatial).
+        if DynamicFormConsts.FIELD_TECT_MODE in self.fields and \
+                DynamicFormConsts.FIELD_UPLIFT_RATE in self.fields:
+            tect_mode_combo = self.fields[DynamicFormConsts.FIELD_TECT_MODE]
+
+            def update_tect_visibility():
+                spatial = tect_mode_combo.currentText() == DynamicFormConsts.TECT_MODE_SPATIAL
+                self._set_row_visible(DynamicFormConsts.FIELD_UPLIFT_RATE, not spatial)
+                self._set_row_visible(DynamicFormConsts.FIELD_UPLIFT_RASTER, spatial)
+
+            tect_mode_combo.currentTextChanged.connect(update_tect_visibility)
+            update_tect_visibility()
+
     def _set_row_visible(self, field_key, visible):
         """Show/hide a form row (widget + its label) by field key, handling the
         composite file-edit widget whose row holds a container, not the field."""
