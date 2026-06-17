@@ -41,11 +41,23 @@ The project follows a strict layered architecture to ensure separation of concer
 The heart of the application, responsible for the actual scientific computation.
 *   **`SimulationRunner`**: The main driver that orchestrates the simulation loop, time-stepping, and component execution.
 *   **`RasterModel`**: Manages the simulation grid, loading DEMs (Digital Elevation Models), and initializing data fields (elevation, soil depth).
-*   **`Components`**: Wrappers for Landlab processes:
-    *   `FlowAccumulatorComponent`: Calculates water flow directions and accumulation.
-    *   `SpaceComponent`: Stream Power with Alluvium Conservation and Entrainment (SPACE) large-scale eroder.
-    *   `DepthDependentDiffuserComponent`: Hillslope evolution using soil creep.
-    *   `PrecipitationComponent`: Drives the runoff that becomes discharge, so climate controls erosion. Runs **before** the Flow Accumulator and sets the base `water__unit_flux_in`, on top of which vegetation runoff multipliers compose. Its modes are tailored to the **long-term** nature of the simulations (timesteps far larger than individual storms), so they represent *effective* climate forcing rather than sub-timestep storms: **Uniform** (constant effective precipitation = `precipitation × runoff_coefficient`), **Spatial** (per-node runoff resampled from a mean-annual rainfall GeoTIFF — orographic gradients), **Stochastic** (inter-period climate variability — each timestep draws a mean from a gamma distribution with coefficient of variation `variability`, giving wet/dry periods that drive episodic erosion), and **Trend** (deterministic climate change — precipitation ramps linearly from `precipitation` to `final_precipitation` over the run). Precipitation is expressed in the same units as the Flow Accumulator's `runoff_rate` (default `1.0` reproduces prior behaviour), so existing erodibility (`K`) calibration stays valid.
+*   **`Components`** (`app/engine/components.py`): each is a thin wrapper exposing a Landlab process to the app, or custom logic layered on top.
+
+    **Landlab-based components** (wrap a Landlab class directly):
+    *   `FlowAccumulatorComponent` → Landlab `FlowAccumulator`: routes flow and computes `drainage_area` + `surface_water__discharge` from the runoff field.
+    *   `SpaceComponent` → Landlab `Space`: SPACE sediment-transport + bedrock eroder (uses discharge).
+    *   `SpaceLargeScaleEroderComponent` → Landlab `SpaceLargeScaleEroder`: large-scale, more robust SPACE variant.
+    *   `DepthDependentDiffuserComponent` → Landlab `DepthDependentDiffuser`: hillslope soil creep (depth-dependent linear diffusion).
+    *   `LithoLayersComponent` → Landlab `LithoLayers`: tracks layered rock types and refreshes the `K_sp` erodibility field as layers are exposed.
+
+    **Custom components** (custom logic, not a single Landlab class):
+    *   `VegetationComponent`: applies per-class multipliers to erodibility (`K_sed`, `K_br`), hillslope diffusivity, and runoff. Supports **Static** (one class throughout) and **Transition** (scheduled class changes at given timesteps) modes.
+    *   `PrecipitationComponent`: sets the runoff field (`water__unit_flux_in`) that FlowAccumulator turns into discharge, so climate controls erosion. Runs **before** FlowAccumulator/Vegetation; vegetation runoff multipliers compose on top. Modes are tailored to **long-term** timesteps (≫ storm scale), representing *effective* climate forcing:
+        *   **Uniform** — constant effective precipitation = `precipitation × runoff_coefficient`.
+        *   **Spatial** — per-node runoff resampled from a mean-annual rainfall GeoTIFF (orographic gradients).
+        *   **Stochastic** — inter-period variability: each step draws a mean from a gamma distribution (CV = `variability`) → wet/dry periods.
+        *   **Trend** — climate change: precipitation ramps linearly from `precipitation` to `final_precipitation` over the run.
+        *   Units match FlowAccumulator's `runoff_rate` (default `1.0` = prior behaviour), so existing `K` calibration stays valid.
 *   **`IO` & `Visualization`**: Handles reading/writing GeoTIFFs and generating 2D/3D result plots.
 
 ### 2. User Interface (`app/ui`)
