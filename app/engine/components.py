@@ -7,6 +7,7 @@ import ast
 
 from landlab.components import (
     FlowAccumulator,
+    LakeMapperBarnes,
     Space,
     SpaceLargeScaleEroder,
     DepthDependentDiffuser,
@@ -562,8 +563,33 @@ class FlowAccumulatorComponent(SimulationComponent):
 
         self.flow = FlowAccumulator(grid, **params)
 
+        # Depression handling. FlowDirectorSteepest/D8 alone dead-ends flow in
+        # internal pits, so SPACE dumps the whole upstream sediment load into the
+        # sink — the runaway multi-thousand-metre "deposition" spike. LakeMapperBarnes
+        # (Barnes priority-flood, pure-landlab/Cython — no richdem) reroutes flow
+        # across depressions each step in near-linear time.
+        #
+        # Crucially it fills a SCRATCH surface (`_depression_fill__surface`), not
+        # `topographic__elevation`, so the rerouting never injects fake sediment
+        # into the terrain that SPACE erodes.
+        if "_depression_fill__surface" not in grid.at_node:
+            grid.add_zeros("_depression_fill__surface", at="node")
+
+        director = str(params.get("flow_director", "")).lower()
+        method = "D8" if "d8" in director else "Steepest"
+        self.lake_mapper = LakeMapperBarnes(
+            grid,
+            method=method,
+            surface="topographic__elevation",
+            fill_surface="_depression_fill__surface",
+            fill_flat=False,
+            redirect_flow_steepest_descent=True,
+            reaccumulate_flow=True,
+        )
+
     def run(self, dt):
         self.flow.run_one_step()
+        self.lake_mapper.run_one_step()
 
 
 # =========================================================

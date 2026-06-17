@@ -107,15 +107,29 @@ def refresh_drainage(grid):
     receiver network reflect the final landscape, independent of whatever
     transient state the simulation loop left behind.
 
-    Uses plain FlowDirectorSteepest (no depression handling) — fast, and correct
-    when the input DEMs are hydrologically filled (e.g. in ArcGIS) beforehand.
+    Mirrors the simulation loop's routing: FlowDirectorSteepest plus a Barnes
+    priority-flood pass (LakeMapperBarnes) that reroutes flow across internal
+    depressions, so the drainage-based plots aren't distorted by pits even when
+    the input DEM wasn't hydrologically filled. The depression fill is written to
+    a scratch surface, never to `topographic__elevation`.
     Returns True on success, False if routing isn't applicable.
     """
     try:
-        from landlab.components import FlowAccumulator
+        from landlab.components import FlowAccumulator, LakeMapperBarnes
         if "topographic__elevation" not in grid.at_node:
             return False
         FlowAccumulator(grid, flow_director="FlowDirectorSteepest").run_one_step()
+        if "_depression_fill__surface" not in grid.at_node:
+            grid.add_zeros("_depression_fill__surface", at="node")
+        LakeMapperBarnes(
+            grid,
+            method="Steepest",
+            surface="topographic__elevation",
+            fill_surface="_depression_fill__surface",
+            fill_flat=False,
+            redirect_flow_steepest_descent=True,
+            reaccumulate_flow=True,
+        ).run_one_step()
         return True
     except Exception as e:
         print(f"Drainage refresh failed: {e}")

@@ -143,7 +143,17 @@ The results window groups outputs into tabs. Each plot below lists **what it sho
 *   **Sediment Budget Over Time** — *Transient vs. equilibrating system.* Cumulative eroded, deposited, and net-change **volumes** (m³) through time, derived from the timeline snapshots × cell area (tectonic uplift removed on Tectonics runs, so uplift isn't counted as deposition).
 *   **Hypsometric Curve** — *Basin maturity.* Cumulative area fraction vs. normalized elevation, initial vs. final.
 
-> **Routing note:** before the drainage-based plots (network, long profile, slope–area), flow is re-routed on the final topography with `FlowDirectorSteepest` so the analysis reflects the final landscape rather than the loop's transient state. This assumes hydrologically **filled** input DEMs (no in-loop depression handling, for speed).
+> **Routing note:** before the drainage-based plots (network, long profile, slope–area), flow is re-routed on the final topography with `FlowDirectorSteepest` **followed by a `LakeMapperBarnes` priority-flood pass**, mirroring the simulation loop. Internal depressions are rerouted automatically (the fill is written to a scratch surface, never to `topographic__elevation`), so the analysis isn't distorted by pits even on unfilled DEMs.
+
+## ⚠️ Important Notes (Input DEM Requirements)
+
+These assumptions are baked into the engine. Inputs that violate them produce physically meaningless output (typically a runaway "deposition" spike that flattens the colour scale on the result maps).
+
+*   **One DEM = one catchment (single outlet).** At startup the engine excludes all **NoData** cells (the void surrounding an irregular/clipped tile) by setting them to closed boundaries, then drains the catchment through its **single lowest edge outlet** (`set_watershed_boundary_condition`). This assumes the tile contains **one watershed**. A multi-basin tile would be forced through one outlet and give wrong results — clip such inputs into separate single-catchment DEMs first.
+    *   *Why this matters:* if NoData is left in the domain (e.g. it was loaded as `0` or a real elevation), those cells become active terrain, all flow and sediment route into the void, and you get an impossible multi-thousand-metre deposition spike. Always supply DEMs with a **properly defined NoData value** for cells outside the catchment.
+*   **DEMs should be hydrologically filled.** There is **no in-loop depression handling** (for speed): flow uses `FlowDirectorSteepest` and the final-state analysis re-routes with the same director. Internal pits/sinks in the input will trap flow and distort erosion. Fill (and ideally lightly smooth) your DEM before running. Closing the NoData void (above) handles the *boundary*, not internal depressions.
+*   **The simulation runs at full native resolution.** Elevation data is never downsampled during the physical steps — only the **3D viewer** downsamples afterward, purely for rendering. A very large, fine-resolution tile therefore drives both runtime and RAM; clip/coarsen the input if a run is too heavy.
+*   **Long-term (geomorphic) time scale.** Time steps represent **effective, long-term forcing** (≫ individual storms). Precipitation modes model *effective* climate, not weather events, and the default `K` calibration assumes this regime.
 
 ## 🚀 Getting Started
 
