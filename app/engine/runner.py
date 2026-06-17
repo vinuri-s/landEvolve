@@ -86,14 +86,26 @@ class SimulationRunner:
         rm = RasterModel(geo_tiff_file=tif, geology_file=geology)
         grid = rm.grid
 
-        initial = grid.at_node["topographic__elevation"].copy()
-
-        outlet = np.argmin(grid.at_node["topographic__elevation"])
-        grid.set_watershed_boundary_condition_outlet_id(
-            outlet,
-            grid.at_node["topographic__elevation"],
-            -9999.0,
+        # NoData cells (loaded as NaN by RasterModel) are the void surrounding an
+        # irregular catchment — often the majority of a clipped LiDAR tile. They
+        # must be excluded from the domain: left in, they sit as core nodes with
+        # garbage elevation and all flow/sediment routes into them, producing the
+        # runaway "deposition" spike. Mark them closed and drain the catchment
+        # through its single lowest edge outlet.
+        z = grid.at_node["topographic__elevation"]
+        self._nodata_mask = np.isnan(z)
+        # Replace NaN with a finite sentinel so it never enters the solvers; the
+        # mask is re-applied to NaN for plotting after the run.
+        z[self._nodata_mask] = -9999.0
+        grid.set_watershed_boundary_condition(
+            z,
+            nodata_value=-9999.0,
+            return_outlet_id=True,
+            remove_disconnected=True,  # drop catchment cells isolated by clipping
         )
+
+        initial = grid.at_node["topographic__elevation"].copy()
+        initial[self._nodata_mask] = np.nan  # keep the void masked in plots
 
         self.log(15, "Building components...")
 
@@ -209,7 +221,8 @@ class SimulationRunner:
             if i % max(1, steps // 20) == 0:
                 self.log(int(20 + 60 * i / steps), f"Step {i}/{steps}")
 
-        final = grid.at_node["topographic__elevation"]
+        final = grid.at_node["topographic__elevation"].copy()
+        final[self._nodata_mask] = np.nan  # re-mask the void for plots/rasters
         diff = final - initial
 
         # When tectonics ran, total change = uplift + erosion/deposition. Isolate
