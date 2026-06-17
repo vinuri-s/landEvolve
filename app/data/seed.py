@@ -15,7 +15,6 @@ from app.data.models import (
 
 LOCATIONS = [
     {'id': 8, 'name': 'Whiria Pa', 'latitude': -35.49182983769452, 'longitude': 173.4114087803103, 'description': 'Maori Sacred Place'},
-    {'id': 13, 'name': 'Wairewa Catchment', 'latitude': -43.7627778, 'longitude': 172.7997222, 'description': None},
     {'id': 14, 'name': 'Oruaka Pa', 'latitude': -43.82240988, 'longitude': 172.7117944, 'description': 'Pa site in wairewa catchment'},
     {'id': 16, 'name': 'Pakanae', 'latitude': -35.4988549, 'longitude': 173.442047, 'description': 'Maori Ancestral Land'},
     {'id': 17, 'name': 'Sunbury Ring 4', 'latitude': -37.553448, 'longitude': 144.703146, 'description': 'Aboriginal land'},
@@ -26,8 +25,6 @@ LOCATIONS = [
 
 GEOTIFFS = [
     {'id': 1, 'location_id': 8, 'tiff_file_path': 'resources/inputs/whiriapa/whiriapa_1m.tif', 'resolution': '1m'},
-    {'id': 5, 'location_id': 13, 'tiff_file_path': 'resources/inputs/wairewa/wairewa_catchment_8m.tif', 'resolution': '8 m'},
-    {'id': 6, 'location_id': 13, 'tiff_file_path': 'resources/inputs/wairewa/wairewa_catchment_1m.tif', 'resolution': '1 m'},
     {'id': 7, 'location_id': 14, 'tiff_file_path': 'resources/inputs/oruaka_pa/oruaka_pa.tif', 'resolution': '1 m'},
     {'id': 9, 'location_id': 16, 'tiff_file_path': 'resources/inputs/pakanae/pakanae.tif', 'resolution': '1 m'},
     {'id': 10, 'location_id': 17, 'tiff_file_path': 'resources/inputs/sunbury/sunbury.tif', 'resolution': '1m'},
