@@ -15,6 +15,9 @@ class ComponentController:
                 "label": param.label,
                 "type": param.type,
                 "default_value": param.default_value,
+                "display_name": param.display_name,
+                "units": param.units,
+                "description": param.description,
             }
 
             if param.validation:

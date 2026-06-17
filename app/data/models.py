@@ -52,7 +52,11 @@ class ComponentParam(Base):
     type = Column(String, nullable=False, default='QLineEdit')
     validation = Column(String, nullable=True)
     default_value = Column(String, nullable=True)
-    
+    # Presentation metadata for the configuration UI (layman-friendly).
+    display_name = Column(String, nullable=True)  # short plain-language name
+    units = Column(String, nullable=True)         # e.g. "m/yr", "fraction 0–1"
+    description = Column(Text, nullable=True)      # one-line tooltip
+
     component = relationship("Component", back_populates="params")
 
 class Lithology(Base):

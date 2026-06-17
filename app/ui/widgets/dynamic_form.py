@@ -9,7 +9,9 @@ from PyQt6.QtWidgets import (
     QFileDialog,
     QPushButton,
     QHBoxLayout,
+    QLabel,
 )
+from PyQt6.QtCore import Qt
 from app.core.constants import DynamicFormConsts
 
 
@@ -103,6 +105,10 @@ class DynamicFormWidget(QWidget):
         scroll.setWidgetResizable(True)
         scroll_content = QWidget()
         self.form_layout = QFormLayout(scroll_content)
+        # Keep labels vertically centred against their input widgets so the
+        # layman name + key/units line up cleanly with each control.
+        self.form_layout.setLabelAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        self.form_layout.setFormAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         scroll.setWidget(scroll_content)
         main_layout.addWidget(scroll)
 
@@ -112,6 +118,10 @@ class DynamicFormWidget(QWidget):
             field_type = item.get("type", "QLineEdit")
             validation = item.get("validation", None)
             default_value = item.get("default_value", None)
+
+            # Human-friendly row label: layman name + technical key + units,
+            # with a tooltip describing the parameter (all from the DB).
+            row_label = self._param_row_label(item)
 
             if field_type == "QLineEdit":
                 widget = QLineEdit()
@@ -123,7 +133,7 @@ class DynamicFormWidget(QWidget):
                     widget.setText(str(default_value))
 
                 self.fields[label] = widget
-                self.form_layout.addRow(label, widget)
+                self.form_layout.addRow(row_label, widget)
 
             elif field_type == "QComboBox":
                 widget = QComboBox()
@@ -139,14 +149,14 @@ class DynamicFormWidget(QWidget):
                         widget.setCurrentIndex(index)
 
                 self.fields[label] = widget
-                self.form_layout.addRow(label, widget)
+                self.form_layout.addRow(row_label, widget)
 
             elif field_type == "QDoubleSpinBox":
                 widget = QDoubleSpinBox()
-                widget.setDecimals(6)
                 widget.setMinimum(0.0)
 
                 # validation format: min|max|step
+                step = None
                 if validation:
                     parts = [part.strip() for part in validation.split("|")]
                     try:
@@ -155,9 +165,15 @@ class DynamicFormWidget(QWidget):
                         if len(parts) >= 2 and parts[1] != "":
                             widget.setMaximum(float(parts[1]))
                         if len(parts) >= 3 and parts[2] != "":
-                            widget.setSingleStep(float(parts[2]))
+                            step = float(parts[2])
+                            widget.setSingleStep(step)
                     except ValueError:
                         pass
+
+                # Show enough decimals to represent the step and default exactly
+                # (so e.g. K_sed=1e-4 or uplift_rate=0.001 are usable, while a
+                # step-0.1 control isn't padded with trailing zeros).
+                widget.setDecimals(self._decimals_for(step, default_value))
 
                 # default_value is the only true default
                 if default_value not in (None, ""):
@@ -167,12 +183,12 @@ class DynamicFormWidget(QWidget):
                         pass
 
                 self.fields[label] = widget
-                self.form_layout.addRow(label, widget)
+                self.form_layout.addRow(row_label, widget)
 
             elif field_type == "LithologyComboBox":
                 widget = LithologyPickerWidget(default_value=default_value)
                 self.fields[label] = widget
-                self.form_layout.addRow(label, widget)
+                self.form_layout.addRow(row_label, widget)
 
             elif field_type == "QFileEdit":
                 file_widget = QWidget()
@@ -201,7 +217,7 @@ class DynamicFormWidget(QWidget):
                 file_layout.addWidget(browse_btn)
 
                 self.fields[label] = line_edit
-                self.form_layout.addRow(label, file_widget)
+                self.form_layout.addRow(row_label, file_widget)
 
         conditional_fields = [
             DynamicFormConsts.FIELD_GEOLOGY_FILE,
@@ -271,6 +287,41 @@ class DynamicFormWidget(QWidget):
 
             tect_mode_combo.currentTextChanged.connect(update_tect_visibility)
             update_tect_visibility()
+
+    @staticmethod
+    def _decimals_for(*values):
+        """Decimal places needed to represent the given values exactly (e.g. a
+        step of 1e-4 -> 4), floored at 2 and capped at 10."""
+        d = 2
+        for v in values:
+            if v in (None, ""):
+                continue
+            try:
+                f = abs(float(v))
+            except (ValueError, TypeError):
+                continue
+            s = f"{f:.10f}".rstrip("0")
+            if "." in s:
+                d = max(d, len(s.split(".")[1]))
+        return min(d, 10)
+
+    def _param_row_label(self, item):
+        """Build a form-row label from DB metadata: layman name on top, the
+        technical key + units beneath, and the description as a tooltip."""
+        key = item.get("label", "")
+        name = item.get("display_name") or key
+        units = item.get("units") or ""
+        desc = item.get("description") or ""
+        sub = key + (f" &middot; {units}" if units else "")
+        # Single line so the label height matches single-line input widgets:
+        # layman name, then the technical key + units in small grey.
+        lbl = QLabel(
+            f'{name} &nbsp;<span style="color:#9aa0a6; font-size:10px;">({sub})</span>'
+        )
+        lbl.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        if desc:
+            lbl.setToolTip(desc)
+        return lbl
 
     def _set_row_visible(self, field_key, visible):
         """Show/hide a form row (widget + its label) by field key, handling the

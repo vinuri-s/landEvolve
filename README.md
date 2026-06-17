@@ -47,7 +47,7 @@ The heart of the application, responsible for the actual scientific computation.
     *   `FlowAccumulatorComponent` → Landlab `FlowAccumulator`: routes flow and computes `drainage_area` + `surface_water__discharge` from the runoff field.
     *   `SpaceComponent` → Landlab `Space`: SPACE sediment-transport + bedrock eroder (uses discharge).
     *   `SpaceLargeScaleEroderComponent` → Landlab `SpaceLargeScaleEroder`: large-scale, more robust SPACE variant.
-    *   `DepthDependentDiffuserComponent` → Landlab `DepthDependentDiffuser`: hillslope soil creep (depth-dependent linear diffusion).
+    *   `DepthDependentDiffuserComponent` → Landlab `DepthDependentDiffuser`: hillslope soil creep (depth-dependent linear diffusion). Landlab stores its diffusivity as a single scalar (`_K`), so a vegetation cover effect on hillslopes is applied as the **domain-mean** diffusivity multiplier — exact for uniform vegetation, an approximation for spatially-varying vegetation. (The SPACE erodibility multipliers, by contrast, are fully per-node.)
     *   `LithoLayersComponent` → Landlab `LithoLayers`: tracks layered rock types and refreshes the `K_sp` erodibility field as layers are exposed.
 
     **Custom components** (custom logic, not a single Landlab class):
@@ -60,6 +60,21 @@ The heart of the application, responsible for the actual scientific computation.
         *   Units match FlowAccumulator's `runoff_rate` (default `1.0` = prior behaviour), so existing `K` calibration stays valid.
     *   `TectonicsComponent`: applies **rock uplift** each step — the tectonic forcing that competes with erosion to build relief. Landlab has no dedicated uplift component (the idiom is to add `uplift_rate × dt` to the elevation field), so this is custom logic. Only **core nodes** are uplifted (boundary/outlet nodes stay fixed as base level, so relief grows); when a bedrock field is present, **both `bedrock__elevation` and `topographic__elevation`** are raised to keep the SPACE soil/bedrock budget consistent. Runs at the end of each step (erode, then uplift). Modes: **Uniform** (constant block uplift) and **Spatial** (per-node uplift rate from a raster, for differential/tilted uplift).
 *   **`IO` & `Visualization`**: Handles reading/writing GeoTIFFs and generating 2D/3D result plots.
+
+#### How the components work together
+You assemble a simulation by selecting components; the `SimulationRunner` builds and runs them in a fixed, physically-meaningful **order each timestep**:
+
+```
+Precipitation → Vegetation → FlowAccumulator → DepthDependentDiffuser → SPACE → LithoLayers → Tectonics
+   (set runoff)   (modulate)     (route water)      (hillslope creep)     (river erosion)  (rock K)   (uplift)
+```
+
+They are decoupled but communicate through shared Landlab grid fields, not direct calls:
+
+*   **Climate → water → erosion.** `Precipitation` writes the runoff field `water__unit_flux_in`; `Vegetation` multiplies it; `FlowAccumulator` turns it into `surface_water__discharge`; **SPACE** uses that discharge (with slope) to erode bedrock and move sediment. So changing precipitation propagates all the way to erosion.
+*   **Rock & vegetation → erodibility.** Each step, the effective `K_sed`/`K_br` pushed into the SPACE eroder is built from the lithology field `K_sp` (maintained by `LithoLayers` as layers are exposed) and the per-node vegetation multipliers — preserving the modeller's configured K_sed:K_br ratio.
+*   **Uplift vs. erosion.** `Tectonics` raises core nodes (bedrock + surface together) after erosion each step; relief reflects the competition between uplift and the erosion the other components produce. Boundary/outlet nodes stay fixed as base level.
+*   **Ordering guarantees.** Runoff is set before flow routing; vegetation/lithology K is applied before SPACE reads it; `LithoLayers` refreshes `K_sp` after erosion so the next step sees the newly exposed rock. A FlowAccumulator is required for the erosion components to receive discharge.
 
 ### 2. User Interface (`app/ui`)
 A modern, responsive PyQt6 interface.
@@ -78,12 +93,14 @@ Business logic layer acting as a bridge between UI and Data/Engine.
 *   **`SimulationService`**: Prepares simulation data, merges user parameters with database defaults, and triggers the engine.
 *   **`LocationService`**: Retrieves available simulation locations and resolution options.
 *   **`ComponentService`**: Retrieves component definitions (Landlab-based and custom) and their user-configurable parameters.
-*   **`ShapefileService`**: Parses geographic shapefiles into GeoJSON format for the map UI.
+*   **`ShapefileService`**: Parses geographic shapefiles into GeoJSON for the map UI, and builds DEM-boundary GeoJSON.
+*   **`LithologyService`**: Provides rock-type (lithology) definitions and erodibility values.
+*   **`VegetationService`**: Manages vegetation classes and their geomorphic multipliers (create / read / update / delete).
 
 ### 4. Data Layer (`app/data`)
 Manages data persistence.
 *   **`Database`** (instance `db_manager`): Handles SQLite connection and session management.
-*   **Models**: `Location`, `GeoTiff`, `Component`/`ComponentParam`, `Lithology`, and `VegetationClass`.
+*   **Models**: `Location`, `GeoTiff`, `Component`/`ComponentParam`, `Lithology`, and `VegetationClass`. Each `ComponentParam` carries presentation metadata (`display_name`, `units`, `description`) so the configuration dialog shows a layman-friendly name and units beside the technical key, with the description as a tooltip.
 *   **Repositories**: Data access for `Location`/`GeoTiff`, `Component`, `Lithology`, and `VegetationClass`.
 
 ### 5. Geospatial Logic, Data Processing & Engine Workflow
