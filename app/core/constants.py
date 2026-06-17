@@ -56,6 +56,7 @@ class SimulationResultKeys:
     INITIAL_PLOT = "initial_plot"
     FINAL_PLOT = "final_plot"
     CHANGE_PLOT = "change_plot"
+    GEOMORPHIC_CHANGE_PLOT = "geomorphic_change_plot"
     MASK_PLOT = "mask_plot"
     TIMELINE_HTML = "timeline_html"
     HYPSOMETRY_PLOT = "hypsometry_plot"
@@ -150,6 +151,7 @@ class Carousel2DWidgetConsts:
     BTN_APPLY_SCALE = "Apply Scale"
     BTN_RESET_SCALE = "Reset to Auto"
     CHK_SYMLOG = "Enhance small changes (log)"
+    CHK_REMOVE_UPLIFT = "Remove tectonic uplift"
 
 
 class HomeWindowConsts:

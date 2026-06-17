@@ -108,6 +108,12 @@ class TectonicsComponent(SimulationComponent):
         if "bedrock__elevation" in self.grid.at_node:
             self.grid.at_node["bedrock__elevation"][core] += du
 
+        # Accumulate total applied uplift so the post-run difference map can be
+        # corrected (final - initial - uplift = the geomorphic erosion signal).
+        if not hasattr(self.grid, "_cumulative_uplift"):
+            self.grid._cumulative_uplift = np.zeros(self.grid.number_of_nodes, dtype=float)
+        self.grid._cumulative_uplift[core] += du
+
 
 # =========================================================
 # PRECIPITATION

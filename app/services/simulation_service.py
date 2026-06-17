@@ -138,9 +138,9 @@ class SimulationService:
             logger.error(f"Error reading bounds: {e}")
             return default_bounds
 
-    def generate_3d_model(self, input_tiff, final_tiff_path, html_output, vmin=None, vmax=None, force_diff_mode=False):
+    def generate_3d_model(self, input_tiff, final_tiff_path, html_output, vmin=None, vmax=None, force_diff_mode=False, remove_uplift=False):
         from app.engine.visualization import generate_3d_comparison_html
-        return generate_3d_comparison_html(input_tiff, final_tiff_path, html_output, vmin=vmin, vmax=vmax, force_diff_mode=force_diff_mode)
+        return generate_3d_comparison_html(input_tiff, final_tiff_path, html_output, vmin=vmin, vmax=vmax, force_diff_mode=force_diff_mode, remove_uplift=remove_uplift)
 
     def regenerate_2d_difference_map(self, diff_tif_path, output_png_path, vmin=None, vmax=None, scaling="linear"):
         from app.engine.visualization import regenerate_2d_difference_map

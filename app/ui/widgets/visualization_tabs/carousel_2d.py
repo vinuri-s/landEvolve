@@ -96,8 +96,37 @@ class Carousel2DWidget(QWidget):
         self.chk_symlog.toggled.connect(self.on_symlog_toggled)
         scale_layout.addWidget(self.chk_symlog)
 
+        # Tectonic-uplift removal: only meaningful when a geomorphic (uplift-
+        # removed) difference map was produced (i.e. a Tectonics run). Default on
+        # so the erosion signal is visible instead of the uniform uplift.
+        self._has_geomorphic = bool(self.image_paths.get(SimulationResultKeys.GEOMORPHIC_CHANGE_PLOT))
+        self.chk_remove_uplift = QCheckBox(Carousel2DWidgetConsts.CHK_REMOVE_UPLIFT)
+        self.chk_remove_uplift.setToolTip(
+            "Show erosion/deposition with the tectonic uplift subtracted "
+            "(final - initial - uplift), so the geomorphic signal is visible."
+        )
+        self.chk_remove_uplift.setChecked(self._has_geomorphic)
+        self.chk_remove_uplift.setVisible(self._has_geomorphic)
+        self.chk_remove_uplift.toggled.connect(self.on_remove_uplift_toggled)
+        scale_layout.addWidget(self.chk_remove_uplift)
+
         self.scale_controls.hide()
         layout.addWidget(self.scale_controls, alignment=Qt.AlignmentFlag.AlignCenter)
+
+    def _active_diff_key(self):
+        """Result key for the difference image to show, honouring uplift removal."""
+        if self._has_geomorphic and self.chk_remove_uplift.isChecked():
+            return SimulationResultKeys.GEOMORPHIC_CHANGE_PLOT
+        return SimulationResultKeys.CHANGE_PLOT
+
+    def _active_diff_tif(self, output_dir):
+        name = "diff_geomorphic.tif" if (self._has_geomorphic and self.chk_remove_uplift.isChecked()) else "diff.tif"
+        return os.path.join(output_dir, name)
+
+    def on_remove_uplift_toggled(self):
+        # Reload the matching precomputed difference image at auto scale.
+        self.chk_symlog.setChecked(False)
+        self.show_diff()
 
     def apply_custom_scale(self):
         val = self.spin_scale.value()
@@ -122,8 +151,8 @@ class Carousel2DWidget(QWidget):
         if not output_dir:
             return
 
-        diff_tif = os.path.join(output_dir, "diff.tif")
-        diff_png = self.image_paths.get(SimulationResultKeys.CHANGE_PLOT)
+        diff_tif = self._active_diff_tif(output_dir)
+        diff_png = self.image_paths.get(self._active_diff_key())
         scaling = "symlog" if self.chk_symlog.isChecked() else "linear"
 
         if diff_tif and diff_png and os.path.exists(diff_tif):
@@ -147,7 +176,7 @@ class Carousel2DWidget(QWidget):
             
         self.lbl_title.setText(title) # Changed to lbl_title
         
-        if result_key == SimulationResultKeys.CHANGE_PLOT:
+        if active_btn == self.btn_diff:
             self.scale_controls.show()
         else:
             self.scale_controls.hide()
@@ -187,7 +216,7 @@ class Carousel2DWidget(QWidget):
         self._update_2d_display(SimulationResultKeys.FINAL_PLOT, Carousel2DWidgetConsts.BTN_FINAL, self.btn_final)
 
     def show_diff(self):
-        self._update_2d_display(SimulationResultKeys.CHANGE_PLOT, Carousel2DWidgetConsts.BTN_DIFF, self.btn_diff)
+        self._update_2d_display(self._active_diff_key(), Carousel2DWidgetConsts.BTN_DIFF, self.btn_diff)
 
     def resizeEvent(self, event):
         """Qt lifecycle hook intercept. Redraws the image when the user resizes the window."""

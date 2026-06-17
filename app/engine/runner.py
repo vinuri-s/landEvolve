@@ -180,8 +180,11 @@ class SimulationRunner:
                 tracker = None
 
         # Capture cumulative-change snapshots for the sediment-flow timeline.
-        # Aim for ~30 evenly spaced frames regardless of step count.
+        # Aim for ~30 evenly spaced frames regardless of step count. Also capture
+        # cumulative uplift per snapshot so tectonic forcing can be removed from
+        # the sediment timeline / budget (which are about erosion, not uplift).
         timeline_snapshots = [initial - initial]  # all-zero baseline at t=0
+        timeline_uplift = [initial - initial]     # uplift accumulated by t=0 (zero)
         timeline_times = [0.0]
         snapshot_every = max(1, steps // 30)
 
@@ -199,6 +202,8 @@ class SimulationRunner:
                 timeline_snapshots.append(
                     grid.at_node["topographic__elevation"] - initial
                 )
+                upl = getattr(grid, "_cumulative_uplift", None)
+                timeline_uplift.append(upl.copy() if upl is not None else (initial - initial))
                 timeline_times.append(t)
 
             if i % max(1, steps // 20) == 0:
@@ -206,6 +211,15 @@ class SimulationRunner:
 
         final = grid.at_node["topographic__elevation"]
         diff = final - initial
+
+        # When tectonics ran, total change = uplift + erosion/deposition. Isolate
+        # the geomorphic signal (final - initial - cumulative uplift) so the
+        # erosion/deposition maps aren't swamped by uniform uplift.
+        cumulative_uplift = getattr(grid, "_cumulative_uplift", None)
+        geomorphic_diff = (diff - cumulative_uplift) if cumulative_uplift is not None else None
+        # The mask and difference maps are about erosion/deposition, so base them
+        # on the geomorphic change when tectonics is active.
+        signal_diff = geomorphic_diff if geomorphic_diff is not None else diff
 
         self.log(85, "Saving outputs...")
 
@@ -216,16 +230,33 @@ class SimulationRunner:
 
         # Erosion/deposition categorical mask (magnitude-independent).
         mask_png = str(self.output_dir / "mask.png")
-        plot_erosion_deposition_mask(diff, grid.shape, mask_png)
+        plot_erosion_deposition_mask(signal_diff, grid.shape, mask_png)
 
         save_geotiff(str(self.output_dir / "final.tif"), final, tif)
         save_geotiff(str(self.output_dir / "diff.tif"), diff, tif)
+
+        # Uplift-removed difference map + rasters (only when tectonics ran).
+        geomorphic_diff_png = None
+        if geomorphic_diff is not None:
+            geomorphic_diff_png = str(self.output_dir / "diff_geomorphic.png")
+            plot_difference(geomorphic_diff, grid.shape, "Erosion (uplift removed)",
+                            geomorphic_diff_png, hillshade_elev=final)
+            save_geotiff(str(self.output_dir / "diff_geomorphic.tif"), geomorphic_diff, tif)
+            # Cumulative uplift raster, so the 3D view can subtract it on demand.
+            save_geotiff(str(self.output_dir / "uplift.tif"), cumulative_uplift, tif)
+
+        # Sediment timeline and budget are about erosion/deposition, so strip the
+        # tectonic uplift from each snapshot when tectonics ran.
+        if cumulative_uplift is not None:
+            sediment_snapshots = [s - u for s, u in zip(timeline_snapshots, timeline_uplift)]
+        else:
+            sediment_snapshots = timeline_snapshots
 
         # Interactive sediment-flow timeline (scrubbable Plotly slider).
         self.log(90, "Building sediment timeline...")
         timeline_html = str(self.output_dir / "sediment_timeline.html")
         timeline_result = generate_sediment_timeline_html(
-            timeline_snapshots, timeline_times, grid.shape, timeline_html
+            sediment_snapshots, timeline_times, grid.shape, timeline_html
         )
         if timeline_result is False:
             timeline_html = None
@@ -242,10 +273,11 @@ class SimulationRunner:
             "hypsometry_plot": plot_hypsometry(
                 initial, final, str(self.output_dir / "hypsometry.png")),
             "flux_plot": plot_sediment_flux(
-                timeline_snapshots, timeline_times, cell_area,
+                sediment_snapshots, timeline_times, cell_area,
                 str(self.output_dir / "flux.png")),
             "long_profile_plot": plot_river_long_profile(
-                grid, initial, str(self.output_dir / "long_profile.png")),
+                grid, initial, str(self.output_dir / "long_profile.png"),
+                uplift=cumulative_uplift),
             "slope_area_plot": plot_slope_area(
                 grid, str(self.output_dir / "slope_area.png")),
             "drainage_network_plot": plot_drainage_network(
@@ -269,6 +301,7 @@ class SimulationRunner:
             "initial_plot": str(self.output_dir / "init.png"),
             "final_plot": str(self.output_dir / "final.png"),
             "change_plot": str(self.output_dir / "diff.png"),
+            "geomorphic_change_plot": geomorphic_diff_png,
             "mask_plot": mask_png,
             "timeline_html": timeline_html,
             "hypsometry_plot": science_plots["hypsometry_plot"],

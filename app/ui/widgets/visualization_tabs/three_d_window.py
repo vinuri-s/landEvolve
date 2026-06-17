@@ -1,5 +1,5 @@
 import os
-from PyQt6.QtWidgets import QVBoxLayout, QHBoxLayout, QWidget, QLabel, QDoubleSpinBox, QPushButton
+from PyQt6.QtWidgets import QVBoxLayout, QHBoxLayout, QWidget, QLabel, QDoubleSpinBox, QPushButton, QCheckBox
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebEngineCore import QWebEngineSettings
 from PyQt6.QtCore import QUrl
@@ -33,7 +33,20 @@ class ThreeDView(QWidget):
         self.btn_reset_scale = QPushButton(Carousel2DWidgetConsts.BTN_RESET_SCALE)
         self.btn_reset_scale.clicked.connect(self.reset_scale)
         scale_layout.addWidget(self.btn_reset_scale)
-        
+
+        # Tectonic-uplift removal for the difference surface (only shown when a
+        # Tectonics run produced an uplift raster). Default on.
+        self._uplift_available = False
+        self.chk_remove_uplift = QCheckBox(Carousel2DWidgetConsts.CHK_REMOVE_UPLIFT)
+        self.chk_remove_uplift.setToolTip(
+            "Subtract tectonic uplift from the difference surface so the "
+            "geomorphic erosion/deposition signal is visible."
+        )
+        self.chk_remove_uplift.setChecked(True)
+        self.chk_remove_uplift.setVisible(False)
+        self.chk_remove_uplift.toggled.connect(self.on_remove_uplift_toggled)
+        scale_layout.addWidget(self.chk_remove_uplift)
+
         from PyQt6.QtWidgets import QSizePolicy
         self.scale_controls.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         
@@ -64,6 +77,10 @@ class ThreeDView(QWidget):
         self._regenerate_and_reload(vmin=-val, vmax=val)
         
     def reset_scale(self):
+        self._regenerate_and_reload(vmin=None, vmax=None, force_diff_mode=True)
+
+    def on_remove_uplift_toggled(self):
+        # Rebuild the difference surface with/without uplift and show it.
         self._regenerate_and_reload(vmin=None, vmax=None, force_diff_mode=True)
         
     def _regenerate_and_reload(self, vmin, vmax, force_diff_mode=False):
@@ -122,6 +139,11 @@ class ThreeDView(QWidget):
         if not output_dir or not os.path.exists(output_dir):
             return
 
+        # Tectonic uplift available? Show the toggle and honour its state.
+        self._uplift_available = os.path.exists(os.path.join(output_dir, "uplift.tif"))
+        self.chk_remove_uplift.setVisible(self._uplift_available)
+        remove_uplift = self._uplift_available and self.chk_remove_uplift.isChecked()
+
         # Locate Tiffs
         potential_tiffs = [f for f in os.listdir(output_dir) if f.endswith(ThreeDViewConsts.EXT_TIFF) and ThreeDViewConsts.STR_ELEVATION_SUBSTRING in f]
         # Fallback to any TIF if specific name lookup fails
@@ -137,7 +159,7 @@ class ThreeDView(QWidget):
             
         html_output = os.path.join(output_dir, ThreeDViewConsts.FILE_HTML_COMPARISON)
         
-        result = controller.generate_3d_model(input_tiff, final_tiff_path, html_output, vmin=vmin, vmax=vmax, force_diff_mode=force_diff_mode)
+        result = controller.generate_3d_model(input_tiff, final_tiff_path, html_output, vmin=vmin, vmax=vmax, force_diff_mode=force_diff_mode, remove_uplift=remove_uplift)
 
         if result is not False and result:
             self.load_plot(html_output)

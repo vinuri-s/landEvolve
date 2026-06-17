@@ -122,10 +122,13 @@ def refresh_drainage(grid):
         return False
 
 
-def plot_river_long_profile(grid, initial_elev, output_path, number_of_watersheds=1):
+def plot_river_long_profile(grid, initial_elev, output_path, number_of_watersheds=1, uplift=None):
     """Elevation-vs-downstream-distance along the main channel(s), initial vs.
     final, sampled along the final drainage network. Works for any terrain with
-    a routed drainage network (requires a FlowAccumulator in the run)."""
+    a routed drainage network (requires a FlowAccumulator in the run).
+
+    If `uplift` (cumulative uplift per node) is given, the incision panel shows
+    the geomorphic change with tectonic uplift removed."""
     try:
         from landlab.components import ChannelProfiler
 
@@ -142,16 +145,19 @@ def plot_river_long_profile(grid, initial_elev, output_path, number_of_watershed
 
         final_z = grid.at_node["topographic__elevation"]
         init_z = np.asarray(initial_elev, dtype=float)
+        uplift_arr = np.asarray(uplift, dtype=float) if uplift is not None else None
 
         # Gather the trunk channel into ordered distance/elevation arrays so the
         # incision panel reads continuously along the channel.
-        dists, zf, zi = [], [], []
+        dists, zf, zi, zu = [], [], [], []
         for outlet, segments in profiler.data_structure.items():
             for seg_id, seg in segments.items():
                 ids = seg["ids"]
                 dists.append(np.asarray(seg["distances"], dtype=float))
                 zf.append(final_z[ids])
                 zi.append(init_z[ids])
+                if uplift_arr is not None:
+                    zu.append(uplift_arr[ids])
 
         if not dists:
             plt.close("all")
@@ -163,6 +169,8 @@ def plot_river_long_profile(grid, initial_elev, output_path, number_of_watershed
         order = np.argsort(dist)
         dist, zf, zi = dist[order], zf[order], zi[order]
         incision = zf - zi  # negative = erosion (lowering), positive = aggradation
+        if uplift_arr is not None:
+            incision = incision - np.concatenate(zu)[order]  # remove tectonic uplift
 
         # Two stacked panels sharing the distance axis: the profile (where
         # initial/final overlap closely) and the incision (which makes the
@@ -185,7 +193,7 @@ def plot_river_long_profile(grid, initial_elev, output_path, number_of_watershed
         ax2.fill_between(dist, incision, 0, where=(incision >= 0),
                          color="#2166ac", alpha=0.6, label="Deposition")
         ax2.set_xlabel("Downstream distance (m)")
-        ax2.set_ylabel("Change (m)")
+        ax2.set_ylabel("Change, uplift removed (m)" if uplift_arr is not None else "Change (m)")
         ax2.legend(loc="lower right")
         ax2.grid(alpha=0.3)
 

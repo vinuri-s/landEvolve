@@ -79,7 +79,8 @@ def generate_3d_comparison_html(
     output_html_path,
     vmin=None,
     vmax=None,
-    force_diff_mode=False
+    force_diff_mode=False,
+    remove_uplift=False
 ):
 
     try:
@@ -101,6 +102,16 @@ def generate_3d_comparison_html(
         # Difference
         # -----------------------------
         z_diff = z_final - z_input
+
+        # Optionally subtract tectonic uplift (sibling uplift.tif) so the
+        # difference surface shows the geomorphic erosion/deposition signal
+        # instead of being dominated by uniform uplift.
+        if remove_uplift:
+            uplift_tiff = os.path.join(os.path.dirname(output_tiff), "uplift.tif")
+            if os.path.exists(uplift_tiff):
+                z_uplift = read_and_downsample(uplift_tiff)
+                if z_uplift is not None and z_uplift.shape == z_diff.shape:
+                    z_diff = z_diff - z_uplift
 
         diagnose_space_regime(z_diff)
 
