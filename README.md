@@ -226,6 +226,16 @@ Run the dedicated build script from the project root:
 python build_executable.py
 ```
 
+> [!NOTE]
+> The build uses `build_executable.py` (the equivalent `LandEvolve.spec` is kept in sync for `pyinstaller LandEvolve.spec`). Only **read-only runtime assets** are bundled:
+> - `resources/inputs/` — the sample/input DEMs (read from the bundle via `Config.RESOURCES_DIR`)
+> - `resources/about.jpg` — the home-screen image
+> - `app/data/db/app_data.db` — the seeded SQLite database, copied to a writable location on first launch
+>
+> Deliberately **not** bundled: `resources/outputs/` (writable, generated per run beside the executable), the empty `app/resources/` directory, dev docs, and the transient SQLite `-wal`/`-shm` files. This keeps the bundle lean and avoids shipping run artifacts.
+>
+> If you regenerate the seeded `app_data.db`, checkpoint any pending WAL writes first (open and cleanly close the app once) so the bundled `.db` is complete without its `-wal` sidecar.
+
 ### 2. Run the Executable
 
 #### macOS
