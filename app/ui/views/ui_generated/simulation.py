@@ -65,7 +65,19 @@ class Ui_SimulationSetup(object):
         
         self.featureShapefileLabel = QtWidgets.QLabel("Feature Shapefile:")
         location_form.addRow(self.featureShapefileLabel, self.featureShapefileWidget)
-        
+
+        # First-effect detection threshold (metres of geomorphic change at which
+        # the tracked feature is considered "first affected").
+        self.firstEffectThresholdLineEdit = QtWidgets.QLineEdit()
+        self.firstEffectThresholdLineEdit.setText("0.01")
+        self.firstEffectThresholdLineEdit.setPlaceholderText("e.g. 0.01")
+        self.firstEffectThresholdLineEdit.setToolTip(
+            "Change (in metres) the tracked feature must reach for the app to report\n"
+            "its 'first effect' time. Tectonic uplift is excluded from this measure."
+        )
+        self.firstEffectThresholdLabel = QtWidgets.QLabel("First-Effect Threshold (m):")
+        location_form.addRow(self.firstEffectThresholdLabel, self.firstEffectThresholdLineEdit)
+
         self.componentsGroup = QtWidgets.QGroupBox("Simulation Components")
         left_layout.addWidget(self.componentsGroup, 1)
         

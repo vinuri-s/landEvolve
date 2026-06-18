@@ -218,6 +218,8 @@ class SimulationWindow(QMainWindow):
     def _toggle_feature_tracking(self, checked):
         self.ui.featureShapefileLabel.setVisible(checked)
         self.ui.featureShapefileWidget.setVisible(checked)
+        self.ui.firstEffectThresholdLabel.setVisible(checked)
+        self.ui.firstEffectThresholdLineEdit.setVisible(checked)
         if not checked:
             self.ui.featureShapefileLineEdit.clear()
             self.map_widget.remove_overlay('feature-tracker')
@@ -238,7 +240,8 @@ class SimulationWindow(QMainWindow):
                 results = self.controller.load_shapefiles_as_geojson([file_path])
                 if results and len(results) > 0:
                     _, geojson_str = results[0]
-                    self.map_widget.set_overlay('feature-tracker', geojson_str, line_color='white', fill_opacity=0.2)
+                    # Zoom to the feature so the user sees exactly where it sits.
+                    self.map_widget.set_overlay('feature-tracker', geojson_str, line_color='white', fill_opacity=0.2, fit_bounds=True)
             except Exception as e:
                 from app.core.logging.manager import LogManager
                 LogManager.get_logger("ui").error(f"Failed to generate feature tracking overlay: {e}")
@@ -253,5 +256,6 @@ class SimulationWindow(QMainWindow):
             simulation_number=self.controller.get_next_simulation_number(),
             components_list=self.table_manager.get_components(),
             track_feature=self.ui.trackFeatureCheckBox.isChecked(),
-            feature_shapefile=self.ui.featureShapefileLineEdit.text()
+            feature_shapefile=self.ui.featureShapefileLineEdit.text(),
+            first_effect_threshold_text=self.ui.firstEffectThresholdLineEdit.text()
         )

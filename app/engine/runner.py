@@ -216,7 +216,11 @@ class SimulationRunner:
                 comp.run(dt)
 
             if tracker:
-                tracker.record_step(t, grid.at_node["topographic__elevation"])
+                tracker.record_step(
+                    t,
+                    grid.at_node["topographic__elevation"],
+                    getattr(grid, "_cumulative_uplift", None),
+                )
 
             if (i + 1) % snapshot_every == 0 or i == steps - 1:
                 timeline_snapshots.append(
@@ -311,9 +315,20 @@ class SimulationRunner:
 
         tracker_csv = None
         tracker_plot = None
+        tracker_first_effect = None
         if tracker:
             self.log(95, "Exporting feature tracking data...")
-            tracker_csv, tracker_plot = tracker.export(str(self.output_dir))
+            threshold = float(self.params.get("first_effect_threshold", 0.01))
+            tracker_csv, tracker_plot, tracker_first_effect = tracker.export(
+                str(self.output_dir), first_effect_threshold=threshold,
+                cell_area=float(grid.dx) * float(grid.dy),
+            )
+            if tracker_first_effect and tracker_first_effect.get("detected"):
+                self.log(96, f"Feature first affected at ~{tracker_first_effect['time']:g} years "
+                             f"(≥ {tracker_first_effect['threshold']:g} m change)")
+            elif tracker_first_effect:
+                self.log(96, f"Feature never changed by ≥ {tracker_first_effect['threshold']:g} m "
+                             f"(max observed {tracker_first_effect['max_observed']:g} m)")
 
         self.log(100, "Done")
 
@@ -341,7 +356,8 @@ class SimulationRunner:
             "diag_net_change": diag["net_change"],
             "diag_regime_label": diag["regime_label"],
             "tracker_csv": tracker_csv,
-            "tracker_plot": tracker_plot
+            "tracker_plot": tracker_plot,
+            "tracker_first_effect": tracker_first_effect,
         }
 
 

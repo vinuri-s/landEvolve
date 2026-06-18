@@ -132,7 +132,25 @@ class MapViewWidget:
                     }}
                 }}
                 
-                function setGeoJsonLayer(layerId, geoJsonData, color, fillColor, fillOpacity) {{
+                function _boundsOfGeoJson(geoJsonData) {{
+                    // Walk all coordinates and return [[minLng,minLat],[maxLng,maxLat]].
+                    var minLng = Infinity, minLat = Infinity, maxLng = -Infinity, maxLat = -Infinity;
+                    function visit(c) {{
+                        if (typeof c[0] === 'number' && typeof c[1] === 'number') {{
+                            minLng = Math.min(minLng, c[0]); maxLng = Math.max(maxLng, c[0]);
+                            minLat = Math.min(minLat, c[1]); maxLat = Math.max(maxLat, c[1]);
+                        }} else {{ for (var i = 0; i < c.length; i++) visit(c[i]); }}
+                    }}
+                    var feats = geoJsonData.features || [geoJsonData];
+                    for (var f = 0; f < feats.length; f++) {{
+                        var g = feats[f].geometry || feats[f];
+                        if (g && g.coordinates) visit(g.coordinates);
+                    }}
+                    if (!isFinite(minLng)) return null;
+                    return [[minLng, minLat], [maxLng, maxLat]];
+                }}
+
+                function setGeoJsonLayer(layerId, geoJsonData, color, fillColor, fillOpacity, fitBounds) {{
                     if (!map) return;
                     if (map.getSource(layerId)) {{
                         map.getSource(layerId).setData(geoJsonData);
@@ -142,21 +160,29 @@ class MapViewWidget:
                             'id': layerId + '-fill',
                             'type': 'fill',
                             'source': layerId,
-                            'paint': {{ 
-                                'fill-color': fillColor || color, 
-                                'fill-opacity': fillOpacity !== undefined ? fillOpacity : 0.1 
+                            'paint': {{
+                                'fill-color': fillColor || color,
+                                'fill-opacity': fillOpacity !== undefined ? fillOpacity : 0.1
                             }}
                         }});
                         map.addLayer({{
                             'id': layerId + '-line',
                             'type': 'line',
                             'source': layerId,
-                            'paint': {{ 
-                                'line-color': color, 
-                                'line-width': 4, 
-                                'line-opacity': 1.0 
+                            'paint': {{
+                                'line-color': color,
+                                'line-width': 4,
+                                'line-opacity': 1.0
                             }}
                         }});
+                    }}
+                    // Pan/zoom to the overlay so the user actually sees where it
+                    // landed. Small features (e.g. a 30 m archaeological ring inside
+                    // a ~750 m DEM) are otherwise an invisible speck at DEM zoom, so
+                    // allow zooming in close.
+                    if (fitBounds) {{
+                        var b = _boundsOfGeoJson(geoJsonData);
+                        if (b) map.fitBounds(b, {{ padding: 80, maxZoom: 19, duration: 800 }});
                     }}
                 }}
 
@@ -172,11 +198,17 @@ class MapViewWidget:
         """
         self.web_view.setHtml(html_content)
         
-    def set_overlay(self, layer_id: str, geojson_str: str, line_color: str, fill_color: str = None, fill_opacity: float = 0.0):
-        """Adds or updates a GeoJSON overlay on the map."""
+    def set_overlay(self, layer_id: str, geojson_str: str, line_color: str, fill_color: str = None, fill_opacity: float = 0.0, fit_bounds: bool = False):
+        """Adds or updates a GeoJSON overlay on the map.
+
+        When `fit_bounds` is True the map pans/zooms to the overlay's extent so
+        the user can see where it landed (used when a feature shapefile is first
+        selected).
+        """
         if fill_color is None:
             fill_color = line_color
-        script = f"if (typeof setGeoJsonLayer !== 'undefined') setGeoJsonLayer('{layer_id}', {geojson_str}, '{line_color}', '{fill_color}', {fill_opacity});"
+        fit = "true" if fit_bounds else "false"
+        script = f"if (typeof setGeoJsonLayer !== 'undefined') setGeoJsonLayer('{layer_id}', {geojson_str}, '{line_color}', '{fill_color}', {fill_opacity}, {fit});"
         self.web_view.page().runJavaScript(script)
 
     def remove_overlay(self, layer_id: str):

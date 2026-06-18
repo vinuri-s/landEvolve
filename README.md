@@ -85,7 +85,7 @@ A modern, responsive PyQt6 interface.
     *   **3D Visualization**: Interactive 3D terrain viewer.
     *   **Sediment Timeline**: Animated, scrubbable view of erosion/deposition over time.
     *   **Analysis**: Scientific plots (erosion/deposition mask, drainage network, soil thickness, long profile, slope–area, sediment budget, hypsometry) shown one at a time. See the [Visualizations & Plots](#-visualizations--plots) section for details.
-    *   **Feature Tracking**: When enabled, shows the elevation/volume history of a user-supplied feature polygon over time (only present if a feature was tracked).
+    *   **Feature Tracking**: When enabled, shows the elevation/volume history of a user-supplied feature polygon over time (only present if a feature was tracked). It also reports the **first-effect time** — the earliest point at which the evolving landscape produces a meaningful change in the feature (see below) — as a headline label and a marker on the plot.
 *   **`SimulationWorker`**: A background thread worker (`QThread`) that ensures the UI remains responsive while the heavy simulation runs.
 
 ### 3. Services (`app/services`)
@@ -114,6 +114,7 @@ LandEvolve operates on a strict, decoupled pipeline that handles complex geospat
 #### B. The Simulation Engine
 *   **Native Resolution Processing**: The parsed elevation data is injected directly into a Landlab `RasterModelGrid`. **The simulation engine always processes the topography mathematically at 100% full, native resolution.** No data is lost or downsampled during the physical simulation steps.
 *   **Time-Series Metric Tracking**: During the simulation loop, if Feature Tracking is enabled, the engine isolates the masked region at every time step to record localized Maximum Elevation, Minimum Elevation, Mean Elevation, and Volumetric Change metrics.
+*   **First-Effect Detection**: Alongside the history, the tracker detects *when the feature is first meaningfully affected* by the evolving landscape. It monitors the **peak absolute geomorphic change** within the feature each step (peak, not mean, so it catches the moment the erosion/deposition front first reaches any edge of the feature) and reports the earliest time that change crosses a threshold (`first_effect_threshold`, default `0.01 m`), **linearly interpolated** between time steps for sub-step precision. Tectonic **uplift is excluded** from this measure (change is computed as `elevation − cumulative_uplift`), so a uniform uplift signal doesn't mask the true onset of erosion/deposition. The result is shown in the app, marked on the tracking plot, and written to the engine log.
 
 #### C. Post-Processing & Visualization
 *   **Dynamic Downsampling**: *After* the simulation completes, high-resolution output GeoTIFFs (`final.tif`, `diff.tif`) are dynamically downsampled using `NumPy` striding *only* before being passed to the 3D renderer. This ensures scientific accuracy is completely uncompromised while preventing WebGL memory exhaustion in the desktop UI.
@@ -203,10 +204,25 @@ python main.py
 
 1. **Pick a location & resolution** in *Location Setup*. The satellite *Location Preview* can overlay the DEM boundary and show its metadata (size, resolution, CRS, elevation range).
 2. **Set the run length**: *Simulation Period* (total time) and *Time Step* (`dt`).
-3. *(Optional)* Enable **Track Interested Landscape Feature** and supply a polygon shapefile to monitor a specific area over time.
+3. *(Optional)* Enable **Track Interested Landscape Feature** and supply a polygon shapefile to monitor a specific area over time. Optionally set the **First-Effect Threshold (m)** (default `0.01`) — the amount of geomorphic change at which the feature is reported as "first affected".
 4. **Add components** (*Add Component*) and configure their parameters — e.g. `FlowAccumulatorComponent`, a SPACE eroder, `DepthDependentDiffuserComponent`, `PrecipitationComponent`, `VegetationComponent`, `LithoLayersComponent`. Precipitation requires a Flow Accumulator to take effect.
 5. **Run Simulation**. Progress is shown live; the UI stays responsive (runs on a background thread).
 6. **Explore results** across the tabs: 2D maps, 3D map, Sediment Timeline, Analysis plots, and Feature Tracking. Use *Show Statistics* for performance/diagnostic metrics.
+
+### Tracking a Feature of Interest
+
+If you care about a *specific* place in the DEM — a fan, terrace, archaeological site, road, channel reach — you can have LandEvolve monitor just that area through the run and tell you **when the evolving landscape first reaches it**.
+
+1. **Prepare a polygon shapefile** (`.shp`) outlining the area of interest. Any CRS is fine — it's automatically reprojected to match the DEM; the polygon is rasterized into a boolean mask so only pixels strictly inside it are monitored. (Provide the full shapefile set — `.shp`, `.shx`, `.dbf`, and ideally `.prj` — in the same folder.)
+2. In *Location Setup*, tick **Track Interested Landscape Feature**. A **Feature Shapefile** browse field appears — select your `.shp`. The polygon is drawn on the preview map so you can confirm placement.
+3. *(Optional)* Set the **First-Effect Threshold (m)** — how much geomorphic change counts as the feature being "first affected" (default `0.01 m`).
+4. Configure components and **Run Simulation** as usual.
+5. Open the **Feature Tracking** tab in the results. You get:
+    *   A **headline** stating when the feature was first affected, e.g. *"⏱ First effect on feature: ~230 years"* (or a note if it was never affected above the threshold).
+    *   A **two-panel time-series plot**: (top) the feature's mean / max / min **elevation** over time, and (bottom) its **erosion/deposition** — mean elevation change (m) and net **volume change** (m³) — with a vertical marker at the first-effect time on both panels.
+    *   `feature_tracking.csv` (columns: time, mean/max/min elevation, mean change, max absolute change, volume change) and `feature_tracking.png` in the run's output folder for further analysis.
+
+> **How "first effect" is determined:** each timestep the engine measures the **peak absolute geomorphic change** inside the feature mask (peak, so it catches the moment the erosion/deposition front first touches *any* edge), excludes tectonic uplift, and reports the earliest time that change crosses the threshold — linearly interpolated between steps for sub-timestep precision. See [First-Effect Detection](#b-the-simulation-engine) above for the rationale.
 
 ### Outputs
 Each run is written to `resources/outputs/simulation_<N>/`, including:

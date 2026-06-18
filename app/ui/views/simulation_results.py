@@ -127,13 +127,30 @@ class SimulationResultsWindow(QMainWindow):
             tracker_widget = QWidget()
             layout = QVBoxLayout(tracker_widget)
             
+            # Headline: when the tracked feature is first affected by the
+            # evolving landscape (geomorphic change, uplift excluded).
+            fe = self.image_paths.get(SimulationResultKeys.TRACKER_FIRST_EFFECT)
+            if fe:
+                if fe.get("detected"):
+                    fe_text = (f"⏱ First effect on feature: ~{fe['time']:g} years "
+                               f"(reached ≥ {fe['threshold']:g} m of change)")
+                    fe_color = "#1b5e20"
+                else:
+                    fe_text = (f"No significant effect: feature changed by at most "
+                               f"{fe.get('max_observed', 0):g} m (threshold {fe['threshold']:g} m)")
+                    fe_color = "#777"
+                fe_lbl = QLabel(fe_text)
+                fe_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                fe_lbl.setStyleSheet(f"QLabel {{ font-size: 15px; font-weight: bold; color: {fe_color}; padding: 6px; }}")
+                layout.addWidget(fe_lbl)
+
             lbl = QLabel()
             pixmap = QPixmap(tracker_plot)
             # Scale to fit nicely in the tab
             lbl.setPixmap(pixmap.scaled(800, 600, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
             lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
             layout.addWidget(lbl)
-            
+
             csv_path = self.image_paths.get(SimulationResultKeys.TRACKER_CSV)
             if csv_path:
                 info_lbl = QLabel(f"Data saved to:\\n{csv_path}")

@@ -16,7 +16,8 @@ class SimulationValidator:
                            simulation_number: int,
                            components_list: list,
                            track_feature: bool = False,
-                           feature_shapefile: str = "") -> dict:
+                           feature_shapefile: str = "",
+                           first_effect_threshold_text: str = "0.01") -> dict:
         
         sim_obj = {}
         
@@ -58,7 +59,19 @@ class SimulationValidator:
                 QMessageBox.warning(parent_window, "Missing Data", "Please select a shapefile for the tracked feature.")
                 return None
             sim_obj[SimulationParamKeys.FEATURE_SHAPEFILE] = feature_shapefile
+
+            # First-effect threshold: positive metres; fall back to the default
+            # on blank/invalid input rather than blocking the run.
+            try:
+                threshold = float(first_effect_threshold_text)
+                if threshold <= 0:
+                    raise ValueError
+            except (ValueError, TypeError):
+                QMessageBox.warning(parent_window, "Invalid Input",
+                                    "First-effect threshold must be a positive number; using 0.01 m.")
+                threshold = 0.01
+            sim_obj[SimulationParamKeys.FIRST_EFFECT_THRESHOLD] = threshold
         else:
             sim_obj[SimulationParamKeys.FEATURE_SHAPEFILE] = None
-            
+
         return sim_obj

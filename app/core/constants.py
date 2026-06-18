@@ -47,6 +47,7 @@ class SimulationParamKeys:
     SELECTED_COMPONENTS = "selected_components"
     TRACK_FEATURE = "track_feature"
     FEATURE_SHAPEFILE = "feature_shapefile"
+    FIRST_EFFECT_THRESHOLD = "first_effect_threshold"
 
 
 class SimulationResultKeys:
@@ -70,6 +71,7 @@ class SimulationResultKeys:
     DIFF_MAX = "diff_max"
     TRACKER_CSV = "tracker_csv"
     TRACKER_PLOT = "tracker_plot"
+    TRACKER_FIRST_EFFECT = "tracker_first_effect"
     DIAG_ABS_MAX_CHANGE = "diag_abs_max_change"
     DIAG_DEPOSITION_CELLS = "diag_deposition_cells"
     DIAG_EROSION_CELLS = "diag_erosion_cells"
