@@ -3,8 +3,42 @@ import rasterio
 from rasterio.features import geometry_mask
 import numpy as np
 import os
+import glob
+import shutil
+import tempfile
 import matplotlib.pyplot as plt
 import pandas as pd
+
+
+def _read_vector_robust(path):
+    """Read a vector file via pyogrio, then fiona, then a local-copy retry.
+
+    Mirrors ShapefileService's robustness for cloud-storage paths that GDAL
+    can't open directly. Kept self-contained so the engine doesn't depend on
+    the services layer.
+    """
+    last_err = None
+    for kwargs in ({}, {"engine": "fiona"}):
+        try:
+            return gpd.read_file(path, **kwargs)
+        except Exception as e:
+            last_err = e
+    stem = os.path.splitext(path)[0]
+    sidecars = glob.glob(glob.escape(stem) + ".*")
+    if not sidecars:
+        raise last_err
+    tmpdir = tempfile.mkdtemp(prefix="landevolve_shp_")
+    base = os.path.basename(stem)
+    local_shp = None
+    for sc in sidecars:
+        dst = os.path.join(tmpdir, base + os.path.splitext(sc)[1])
+        shutil.copy2(sc, dst)
+        if sc.lower().endswith(".shp"):
+            local_shp = dst
+    if local_shp is None:
+        raise last_err
+    return gpd.read_file(local_shp)
+
 
 class FeatureTracker:
     """
@@ -34,8 +68,8 @@ class FeatureTracker:
                 shape = src.shape
                 raster_crs = src.crs
 
-            gdf = gpd.read_file(self.shapefile_path)
-            
+            gdf = _read_vector_robust(self.shapefile_path)
+
             # Reproject if needed
             if gdf.crs and raster_crs and gdf.crs != raster_crs:
                 gdf = gdf.to_crs(raster_crs)

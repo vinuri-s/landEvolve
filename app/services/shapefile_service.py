@@ -1,12 +1,51 @@
+import glob
+import os
+import shutil
+import tempfile
+
 import geopandas as gpd
 
 class ShapefileService:
     """
-    Handles loading, validating, and transforming shapefiles into GeoJSON 
+    Handles loading, validating, and transforming shapefiles into GeoJSON
     so they can be rendered by the MapView.
     Acts as a bridge ensuring UI components do not depend on data-processing logic.
     """
-    
+
+    @staticmethod
+    def _read_vector(file_name: str):
+        """Read a vector file robustly.
+
+        Tries pyogrio, then fiona. If both fail on the original path — which
+        happens for some cloud-storage paths (OneDrive/iCloud) that GDAL can't
+        open directly even when readable by Python — the shapefile set is copied
+        to a local temp directory and read from there.
+        """
+        last_err = None
+        for kwargs in ({}, {"engine": "fiona"}):
+            try:
+                return gpd.read_file(file_name, **kwargs)
+            except Exception as e:
+                last_err = e
+
+        # Local-copy fallback: copy the .shp and ALL its sidecars (same stem) to
+        # a temp dir using plain Python I/O, then read the local copy.
+        stem = os.path.splitext(file_name)[0]
+        sidecars = glob.glob(glob.escape(stem) + ".*")
+        if not sidecars:
+            raise last_err
+        tmpdir = tempfile.mkdtemp(prefix="landevolve_shp_")
+        base = os.path.basename(stem)
+        local_shp = None
+        for sc in sidecars:
+            dst = os.path.join(tmpdir, base + os.path.splitext(sc)[1])
+            shutil.copy2(sc, dst)
+            if sc.lower().endswith(".shp"):
+                local_shp = dst
+        if local_shp is None:
+            raise last_err
+        return gpd.read_file(local_shp)
+
     @staticmethod
     def load_shapefiles_as_geojson(file_paths: list[str]) -> list[str]:
         """
@@ -25,13 +64,8 @@ class ShapefileService:
         geojson_results = []
         
         for file_name in file_paths:
-            try:
-                # Attempt default (pyogrio engine)
-                gdf = gpd.read_file(file_name)
-            except Exception:
-                # Fallback to fiona, which is extremely robust for ESRI shapefiles
-                gdf = gpd.read_file(file_name, engine='fiona')
-            
+            gdf = ShapefileService._read_vector(file_name)
+
             # Handle missing CRS (naive geometries)
             if gdf.crs is None:
                 # Heuristic: Check bounding box to guess CRS

@@ -252,12 +252,15 @@ class SimulationWindow(QMainWindow):
                 QMessageBox.warning(
                     self,
                     "Couldn't read shapefile",
-                    "The selected shapefile couldn't be opened for preview.\n\n"
-                    "Common causes:\n"
-                    "• It lives in cloud storage (OneDrive/iCloud/Dropbox) and isn't downloaded "
-                    "locally yet — right-click it in Finder/Explorer and choose “Always keep on this "
-                    "device”, then try again.\n"
-                    "• The companion files (.shx, .dbf, .prj) aren't next to the .shp.\n\n"
+                    "The selected shapefile couldn't be opened.\n\n"
+                    "This usually means the app's process isn't allowed to read the folder, "
+                    "which is common for cloud-storage locations (OneDrive/iCloud/Dropbox) on macOS.\n\n"
+                    "Try one of these:\n"
+                    "• Move/copy the shapefile (with its .shx, .dbf, .prj files) into a normal local "
+                    "folder — e.g. Documents or the project's resources folder — and select it there.\n"
+                    "• Grant your launcher file access: System Settings → Privacy & Security → "
+                    "Full Disk Access → enable Terminal (or your IDE), then relaunch.\n"
+                    "• Ensure the .shx, .dbf and .prj companion files sit next to the .shp.\n\n"
                     f"Details: {e}"
                 )
             
