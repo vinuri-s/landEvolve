@@ -129,6 +129,7 @@ def refresh_drainage(grid):
             fill_flat=False,
             redirect_flow_steepest_descent=True,
             reaccumulate_flow=True,
+            ignore_overfill=True,
         ).run_one_step()
         return True
     except Exception as e:

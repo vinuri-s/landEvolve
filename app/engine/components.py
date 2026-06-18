@@ -585,6 +585,9 @@ class FlowAccumulatorComponent(SimulationComponent):
             fill_flat=False,
             redirect_flow_steepest_descent=True,
             reaccumulate_flow=True,
+            # A pit can "overfill" when applying the minimum gradient would spill
+            # it through two outlets at once; tolerate it rather than aborting.
+            ignore_overfill=True,
         )
 
     def run(self, dt):
