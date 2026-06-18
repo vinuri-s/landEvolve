@@ -414,8 +414,10 @@ class VegetationComponent(SimulationComponent):
         self.grid._veg_D_mult = D
 
         if "water__unit_flux_in" in self.grid.at_node:
-            new_runoff = (self.grid._base_runoff * runoff).copy()
-            self.grid.at_node["water__unit_flux_in"] = new_runoff
+            # Write in-place (not a reassignment) so any component holding a
+            # reference to this field array sees the update, matching how
+            # PrecipitationComponent sets the runoff base.
+            self.grid.at_node["water__unit_flux_in"][:] = self.grid._base_runoff * runoff
 
     def run(self, dt):
         self.current_timestep += 1
@@ -618,7 +620,12 @@ class DepthDependentDiffuserComponent(SimulationComponent):
             )
 
         self._base_kd = float(params.get("linear_diffusivity", 1.0))
-        self.diff = DepthDependentDiffuser(grid, **params)
+
+        # Filter to the landlab eroder's accepted args (same guard the SPACE
+        # wrappers use), so an extra non-landlab config key never raises.
+        valid = inspect.signature(DepthDependentDiffuser.__init__).parameters
+        safe_params = {k: v for k, v in params.items() if k in valid}
+        self.diff = DepthDependentDiffuser(grid, **safe_params)
 
     def run(self, dt):
         # DepthDependentDiffuser stores its diffusivity as a scalar in `_K`

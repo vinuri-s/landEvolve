@@ -1,4 +1,5 @@
 import functools
+import inspect
 import time
 from typing import Callable
 
@@ -18,10 +19,6 @@ def log_method(func: Callable) -> Callable:
     """
     @functools.wraps(func)
     def wrapper(self, *args, **kwargs):
-        # We import here to avoid circular dependencies if LogManager
-        # is used in many files 
-        pass
-        
         start_time = time.time()
         
         try:
@@ -45,14 +42,13 @@ def log_method(func: Callable) -> Callable:
             logger = _get_logger_for_module(func.__module__)
             class_name = self.__class__.__name__
             logger.error(
-                f"Exception in {class_name}.{func.__name__}: {str(e)}", 
+                f"Exception in {class_name}.{func.__name__}: {str(e)}",
                 exc_info=True
             )
-            raise e
-            
+            raise
+
     return wrapper
 
-import inspect
 
 def log_action(action_name: str) -> Callable:
     """

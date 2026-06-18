@@ -5,6 +5,38 @@ from logging.handlers import RotatingFileHandler
 
 from app.core.logging.interfaces import ILogger
 
+# Cap on how much of any single argument is written to the log. Method calls may
+# receive large objects (numpy arrays, DEM grids, big dicts); logging their full
+# repr would be slow and bloat the log files, so each argument is summarised.
+_MAX_REPR_LEN = 200
+
+
+def _safe_repr(value: Any) -> str:
+    """Compact, bounded representation of an argument for logging.
+
+    Array-likes are summarised by type/shape rather than dumped; everything else
+    is repr'd and truncated to `_MAX_REPR_LEN` characters.
+    """
+    shape = getattr(value, "shape", None)
+    if shape is not None:  # numpy array, landlab field, etc.
+        return f"{type(value).__name__}(shape={tuple(shape)})"
+    try:
+        text = repr(value)
+    except Exception:
+        return f"<unrepresentable {type(value).__name__}>"
+    if len(text) > _MAX_REPR_LEN:
+        return text[:_MAX_REPR_LEN] + f"…(+{len(text) - _MAX_REPR_LEN} chars)"
+    return text
+
+
+def _safe_args(args: tuple = None, kwargs: dict = None) -> str:
+    parts = []
+    if args:
+        parts.append("args=(" + ", ".join(_safe_repr(a) for a in args) + ")")
+    if kwargs:
+        parts.append("kwargs={" + ", ".join(f"{k}={_safe_repr(v)}" for k, v in kwargs.items()) + "}")
+    return (" | " + " ".join(parts)) if parts else ""
+
 class AppLogger(ILogger):
     """
     A concrete implementation of ILogger that wraps Python's built-in logging system.
@@ -59,5 +91,5 @@ class AppLogger(ILogger):
 
     def log_method_call(self, class_name: str, method_name: str, args: tuple = None, kwargs: dict = None, execution_time_ms: float = None):
         time_str = f" in {execution_time_ms:.2f}ms" if execution_time_ms is not None else ""
-        args_str = f" | args={args} kwargs={kwargs}" if (args or kwargs) else ""
+        args_str = _safe_args(args, kwargs)
         self.logger.debug(f"[METHOD] {class_name}.{method_name}{time_str}{args_str}")

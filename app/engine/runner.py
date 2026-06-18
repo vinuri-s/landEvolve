@@ -28,6 +28,7 @@ from app.engine.science_plots import (
     plot_soil_thickness,
 )
 from app.core.config import Config
+from app.core.logging.manager import LogManager
 
 
 class SimulationRunner:
@@ -36,11 +37,18 @@ class SimulationRunner:
         self.params = sim_params
         self.progress_callback = progress_callback
 
-        self.output_dir = Config.OUTPUTS_DIR / f"simulation_{sim_params.get('simulation_number', 0)}"
+        self.sim_id = sim_params.get('simulation_number', 0)
+        self.output_dir = Config.OUTPUTS_DIR / f"simulation_{self.sim_id}"
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
+        # Persist the run narrative to engine.log, tagged with the simulation id
+        # so a single run's lines are greppable even across concurrent runs.
+        self._logger = LogManager.get_logger("engine")
+
     def log(self, p, msg):
-        print(f"[{p}%] {msg}")
+        line = f"[sim {self.sim_id}] [{p}%] {msg}"
+        print(line)
+        self._logger.info(line)
         if self.progress_callback:
             self.progress_callback(p, msg)
 
