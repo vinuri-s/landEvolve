@@ -234,8 +234,8 @@ class SimulationWindow(QMainWindow):
         )
         if file_path:
             self.ui.featureShapefileLineEdit.setText(file_path)
-            
-            # Instantly draw the shapefile on the map
+
+            # Instantly draw the shapefile on the map and zoom to it.
             try:
                 results = self.controller.load_shapefiles_as_geojson([file_path])
                 if results and len(results) > 0:
@@ -244,7 +244,22 @@ class SimulationWindow(QMainWindow):
                     self.map_widget.set_overlay('feature-tracker', geojson_str, line_color='white', fill_opacity=0.2, fit_bounds=True)
             except Exception as e:
                 from app.core.logging.manager import LogManager
+                from PyQt6.QtWidgets import QMessageBox
                 LogManager.get_logger("ui").error(f"Failed to generate feature tracking overlay: {e}")
+                # Surface an actionable message: the most common cause is a
+                # cloud-storage (OneDrive/iCloud/Dropbox) file that is still a
+                # placeholder, or a shapefile missing its sidecar files.
+                QMessageBox.warning(
+                    self,
+                    "Couldn't read shapefile",
+                    "The selected shapefile couldn't be opened for preview.\n\n"
+                    "Common causes:\n"
+                    "• It lives in cloud storage (OneDrive/iCloud/Dropbox) and isn't downloaded "
+                    "locally yet — right-click it in Finder/Explorer and choose “Always keep on this "
+                    "device”, then try again.\n"
+                    "• The companion files (.shx, .dbf, .prj) aren't next to the .shp.\n\n"
+                    f"Details: {e}"
+                )
             
     def collect_simulation_params(self):
         """Builds the final payload dictionary to pass to the Simulation Engine."""
