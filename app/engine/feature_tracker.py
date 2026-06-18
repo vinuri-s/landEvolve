@@ -1,6 +1,7 @@
 import geopandas as gpd
 import rasterio
 from rasterio.features import geometry_mask
+from shapely.validation import make_valid
 import numpy as np
 import os
 import glob
@@ -74,16 +75,41 @@ class FeatureTracker:
             if gdf.crs and raster_crs and gdf.crs != raster_crs:
                 gdf = gdf.to_crs(raster_crs)
 
-            # Extract valid geometries into a safe Python list to prevent C-extension bus errors
-            geometries = [geom for geom in gdf.geometry if geom is not None and geom.is_valid]
-            
+            # Repair invalid geometries rather than discarding them. Shapefiles
+            # exported from ArcGIS frequently have self-intersecting/improper
+            # rings that report is_valid == False; dropping them would leave an
+            # empty mask and silently skip feature tracking. make_valid (with a
+            # buffer(0) fallback) fixes them while preserving the area.
+            geometries = []
+            for geom in gdf.geometry:
+                if geom is None or geom.is_empty:
+                    continue
+                if not geom.is_valid:
+                    try:
+                        geom = make_valid(geom)
+                    except Exception:
+                        try:
+                            geom = geom.buffer(0)
+                        except Exception:
+                            continue
+                if geom is not None and not geom.is_empty:
+                    geometries.append(geom)
+
             if len(geometries) > 0:
-                # invert=True means pixels INSIDE the polygon are True
-                self.mask = geometry_mask(geometries, transform=transform, invert=True, out_shape=shape).flatten()
-                
+                # invert=True → pixels covered by the geometry are True.
+                # all_touched=True → also capture pixels merely *touched* by the
+                # geometry, so lines (every pixel the line crosses) and points
+                # (their containing pixel) yield a usable mask, not just polygons.
+                self.mask = geometry_mask(
+                    geometries, transform=transform, invert=True,
+                    out_shape=shape, all_touched=True,
+                ).flatten()
+
                 if not np.any(self.mask):
                     print("FeatureTracker: Warning, mask is empty. Feature is likely outside the grid.")
                     self.mask = None
+            else:
+                print("FeatureTracker: Warning, no usable geometries in the shapefile.")
         except Exception as e:
             print(f"FeatureTracker Initialization Error: {e}")
 
@@ -219,8 +245,8 @@ class FeatureTracker:
         # with optional volume on a twin axis.
         ax_chg.axhline(0.0, color="black", linewidth=0.8, alpha=0.6)
         ax_chg.plot(df["Time (Years)"], df["Mean Change (m)"], label="Mean Change", color="darkorange", linewidth=2)
-        ax_chg.set_ylabel("Mean Elevation Change (m)", color="darkorange")
-        ax_chg.tick_params(axis="y", labelcolor="darkorange")
+        ax_chg.set_ylabel("Mean Elevation Change (m)", color="black")
+        ax_chg.tick_params(axis="y", labelcolor="black")
         _mark_first_effect(ax_chg, label=False)
         ax_chg.set_xlabel("Time (Years)")
         ax_chg.set_title("Tracked Feature: Erosion / Deposition Over Time")
@@ -229,8 +255,8 @@ class FeatureTracker:
         if has_volume:
             ax_vol = ax_chg.twinx()
             ax_vol.plot(df["Time (Years)"], df["Volume Change (m³)"], label="Volume Change", color="teal", linestyle=":", linewidth=2)
-            ax_vol.set_ylabel("Net Volume Change (m³)", color="teal")
-            ax_vol.tick_params(axis="y", labelcolor="teal")
+            ax_vol.set_ylabel("Net Volume Change (m³)", color="black")
+            ax_vol.tick_params(axis="y", labelcolor="black")
 
         plt.tight_layout()
         plt.savefig(plot_path, dpi=150)
