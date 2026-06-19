@@ -66,6 +66,7 @@ class SimulationResultKeys:
     SLOPE_AREA_PLOT = "slope_area_plot"
     DRAINAGE_NETWORK_PLOT = "drainage_network_plot"
     SOIL_THICKNESS_PLOT = "soil_thickness_plot"
+    CHANGE_EVENTS_PLOT = "change_events_plot"
     OUTPUT_DIR = "output_dir"
     GRID_SIZE = "grid_size"
     DIFF_MAX = "diff_max"

@@ -421,23 +421,36 @@ def plot_change_events_map(snapshots, times, shape, output_path,
         im = ax.imshow(final, cmap="RdBu", vmin=-scale, vmax=scale)
         fig.colorbar(im, ax=ax, label="Cumulative change (m)")
 
+        # Place each label toward the grid interior so markers near the right
+        # edge don't push their text over the colorbar.
+        def label_offset(col, dy):
+            if col > shape[1] * 0.7:           # near right edge -> label to the left
+                return (-8, dy), "right"
+            return (8, dy), "left"
+
         # First change (cyan circle) and biggest change (gold star).
         ax.scatter([first["col"]], [first["row"]], s=240, facecolors="none",
                    edgecolors="#00b8d4", linewidths=2.5, zorder=5)
+        off, ha = label_offset(first["col"], 8)
         ax.annotate("1st change", (first["col"], first["row"]),
-                    textcoords="offset points", xytext=(8, 8),
-                    color="#00b8d4", fontsize=10, fontweight="bold")
+                    textcoords="offset points", xytext=off, ha=ha,
+                    color="#1a1a1a", fontsize=10, fontweight="bold",
+                    bbox=dict(boxstyle="round,pad=0.2", facecolor="white",
+                              edgecolor="none", alpha=0.7))
         ax.scatter([biggest["col"]], [biggest["row"]], s=300, marker="*",
                    facecolors="#ffd400", edgecolors="#1a1a1a", linewidths=1.5, zorder=6)
+        off, ha = label_offset(biggest["col"], -14)
         ax.annotate("max change", (biggest["col"], biggest["row"]),
-                    textcoords="offset points", xytext=(8, -14),
-                    color="#1a1a1a", fontsize=10, fontweight="bold")
+                    textcoords="offset points", xytext=off, ha=ha,
+                    color="#1a1a1a", fontsize=10, fontweight="bold",
+                    bbox=dict(boxstyle="round,pad=0.2", facecolor="white",
+                              edgecolor="none", alpha=0.7))
 
         def verb(ev):
             return "erosion" if ev["value"] < 0 else "deposition"
 
         crs_note = f"   (coords in {crs_label})" if crs_label else ""
-        ax.set_title("First & Biggest Elevation Change")
+        ax.set_title("Onset and Peak of Landscape Change")
         ax.set_xlabel("Easting (columns)")
         ax.set_ylabel("Northing (rows)")
         caption = (

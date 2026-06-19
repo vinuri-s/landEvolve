@@ -352,6 +352,7 @@ class SimulationRunner:
             "slope_area_plot": science_plots["slope_area_plot"],
             "drainage_network_plot": science_plots["drainage_network_plot"],
             "soil_thickness_plot": science_plots["soil_thickness_plot"],
+            "change_events_plot": science_plots["change_events_plot"],
             "diff_max": max_diff,
             "grid_size": f"{grid.shape[0]} × {grid.shape[1]}",
             "diag_abs_max_change": diag["abs_max_change"],

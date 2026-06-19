@@ -181,8 +181,11 @@ def generate_3d_comparison_html(
         fig.update_layout(
             title='',
             autosize=True,
-            margin=dict(l=65, r=50, b=65, t=90),
+            # Trim margins and let the scene fill the whole container so the
+            # surface isn't squeezed into the right side with empty space.
+            margin=dict(l=0, r=0, b=0, t=20),
             scene=dict(
+                domain=dict(x=[0, 1], y=[0, 1]),
                 xaxis_title='Easting (columns)',
                 # Row 0 of the raster is north; Plotly maps rows to y increasing
                 # upward, so reverse it to keep north at the top like the 2D maps.
@@ -190,6 +193,8 @@ def generate_3d_comparison_html(
                 zaxis_title='Elevation / Change (m)',
                 zaxis=dict(range=z_range) if z_range else dict(),
                 aspectratio=dict(x=1, y=1, z=0.5),
+                # Pull the camera in so the surface fills the available space.
+                camera=dict(eye=dict(x=1.1, y=1.1, z=0.8)),
             ),
             updatemenus=[
                 dict(
@@ -214,7 +219,13 @@ def generate_3d_comparison_html(
             ]
         )
 
-        fig.write_html(output_html_path)
+        fig.write_html(
+            output_html_path,
+            full_html=True,
+            config={"responsive": True},
+            default_width="100%",
+            default_height="100%",
+        )
         return scale
 
     except Exception as e:
@@ -295,10 +306,13 @@ def generate_sediment_timeline_html(snapshots, times, shape, output_html_path,
             yaxis=dict(autorange="reversed", scaleanchor="x",
                        constrain="domain", title="Northing (rows)"),
             xaxis=dict(constrain="domain", title="Easting (columns)"),
+            # Play/Pause sit at the bottom-left, on the slider's row, so they
+            # never overlap the title.
             updatemenus=[dict(
                 type="buttons",
                 direction="left",
-                x=0.05, y=1.15,
+                x=0.0, y=-0.02, xanchor="left", yanchor="top",
+                pad=dict(t=5, r=10),
                 buttons=[
                     dict(label="▶ Play", method="animate",
                          args=[None, dict(frame=dict(duration=300, redraw=True),
@@ -310,8 +324,10 @@ def generate_sediment_timeline_html(snapshots, times, shape, output_html_path,
                                             transition=dict(duration=0))]),
                 ],
             )],
+            # Slider shifted right of the buttons so they don't overlap.
             sliders=[dict(
                 active=0,
+                x=0.15, len=0.85,
                 currentvalue=dict(prefix="Time: "),
                 pad=dict(t=50),
                 steps=slider_steps,

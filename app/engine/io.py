@@ -25,9 +25,12 @@ def save_geotiff(filename, data, reference_tif):
         print(f"Error saving GeoTIFF {filename}: {e}")
 
 def plot_topography(data, shape, title, output_path, cmap='terrain', vmin=None, vmax=None):
-    plt.figure(figsize=(10, 6))
-    plt.imshow(data.reshape(shape), cmap=cmap, vmin=vmin, vmax=vmax)
-    plt.colorbar(label='Elevation (m)')
+    fig, ax = plt.subplots(figsize=(10, 6))
+    im = ax.imshow(data.reshape(shape), cmap=cmap, vmin=vmin, vmax=vmax)
+    fig.colorbar(im, ax=ax, label='Elevation (m)')
+    ax.set_xlabel("Easting (columns)", fontsize=12)
+    ax.set_ylabel("Northing (rows)", fontsize=12)
+    plt.tight_layout()
     plt.savefig(output_path)
     plt.close()
 
