@@ -91,6 +91,18 @@ class MapViewWidget:
                                     ],
                                     'tileSize': 256,
                                     'attribution': 'Tiles &copy; Esri'
+                                }},
+                                // Terrarium-encoded DEM so the 3D view shows real
+                                // relief instead of a flat, tilted image.
+                                'terrain-dem': {{
+                                    'type': 'raster-dem',
+                                    'tiles': [
+                                        'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{{z}}/{{x}}/{{y}}.png'
+                                    ],
+                                    'tileSize': 256,
+                                    'encoding': 'terrarium',
+                                    'maxzoom': 15,
+                                    'attribution': 'Elevation &copy; Mapzen / AWS'
                                 }}
                             }},
                             'layers': [{{
@@ -124,9 +136,13 @@ class MapViewWidget:
                     var btn = document.getElementById('toggle-3d-btn');
                     
                     if (is3D) {{
+                        // Enable real terrain relief (modest exaggeration so hills
+                        // look natural rather than spiky).
+                        map.setTerrain({{ 'source': 'terrain-dem', 'exaggeration': 1.3 }});
                         map.easeTo({{pitch: 60, bearing: map.getBearing() || -30, duration: 1000}});
                         btn.innerHTML = '<i class="fas fa-map"></i> 2D View';
                     }} else {{
+                        map.setTerrain(null);
                         map.easeTo({{pitch: 0, bearing: 0, duration: 1000}});
                         btn.innerHTML = '<i class="fas fa-cube"></i> 3D View';
                     }}
