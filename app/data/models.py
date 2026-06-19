@@ -52,7 +52,11 @@ class ComponentParam(Base):
     type = Column(String, nullable=False, default='QLineEdit')
     validation = Column(String, nullable=True)
     default_value = Column(String, nullable=True)
-    
+    # Presentation metadata for the configuration UI (layman-friendly).
+    display_name = Column(String, nullable=True)  # short plain-language name
+    units = Column(String, nullable=True)         # e.g. "m/yr", "fraction 0–1"
+    description = Column(Text, nullable=True)      # one-line tooltip
+
     component = relationship("Component", back_populates="params")
 
 class Lithology(Base):
@@ -61,8 +65,23 @@ class Lithology(Base):
     Used for Heterogeneous lithology simulations where erodibility varies.
     """
     __tablename__ = 'lithology'
-    
+
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
     description = Column(Text)
     erodibility = Column(REAL, nullable=False) # K value for erosion equations
+
+
+class VegetationClass(Base):
+    """
+    Defines a vegetation type and its geomorphic parameter multipliers.
+    Multipliers are applied per-node to SPACE erosion and diffusion parameters.
+    """
+    __tablename__ = 'vegetation_class'
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    K_sed_multiplier = Column(REAL, nullable=False, default=1.0)
+    K_br_multiplier = Column(REAL, nullable=False, default=1.0)
+    linear_diffusivity_multiplier = Column(REAL, nullable=False, default=1.0)
+    runoff_multiplier = Column(REAL, nullable=False, default=1.0)

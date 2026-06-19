@@ -7,8 +7,6 @@ class WindowManager:
     This ensures a consistent window size and position across the application sessions
     and between different windows in the same session.
     """
-    SETTINGS_KEY_GEOMETRY = "Window/Geometry"
-    SETTINGS_KEY_STATE = "Window/State"
 
     @staticmethod
     def save_window_state(window: QWidget, settings_key_prefix: str = "Window"):

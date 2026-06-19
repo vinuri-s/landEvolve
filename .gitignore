@@ -23,11 +23,16 @@ resources/outputs/
 .DS_Store
 .pytest_cache/
 
+# DEM rasters: ignored by default, but the input DEMs under resources/inputs
+# are committed for reproducibility. Keep individual files under GitHub's
+# 100 MB limit (use Git LFS or an external source for anything larger).
 *.tif
-resources/inputs/**/*.tif
+!resources/inputs/**/*.tif
 
-# Sensitivity Analysis Outputs
-test/OAT_sensitivity_test/outputs/
+# SQLite database — regenerated from app/data/seed.py on first run
+app/data/db/*.db
+app/data/db/*.db-shm
+app/data/db/*.db-wal
 
 dist/
 build/

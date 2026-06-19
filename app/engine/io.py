@@ -1,8 +1,7 @@
 import rasterio
 import matplotlib.pyplot as plt
-from matplotlib import colors
+from matplotlib.colors import SymLogNorm, ListedColormap, BoundaryNorm, LightSource
 import numpy as np
-import os
 
 def save_geotiff(filename, data, reference_tif):
     """Save a 2D numpy array as a GeoTIFF using spatial metadata from an input DEM."""
@@ -15,7 +14,6 @@ def save_geotiff(filename, data, reference_tif):
                 "compress": "lzw"
             })
 
-        # Reshape to 2D if necessary (assuming data matches dimensions)
         if len(data.shape) == 1:
             data_2d = data.reshape((profile["height"], profile["width"])).astype("float32")
         else:
@@ -27,55 +25,121 @@ def save_geotiff(filename, data, reference_tif):
         print(f"Error saving GeoTIFF {filename}: {e}")
 
 def plot_topography(data, shape, title, output_path, cmap='terrain', vmin=None, vmax=None):
-    plt.figure(figsize=(10, 6))
-    plt.imshow(data.reshape(shape), cmap=cmap, vmin=vmin, vmax=vmax)
-    plt.colorbar(label='Elevation (m)')
-    plt.title(title)
+    fig, ax = plt.subplots(figsize=(10, 6))
+    im = ax.imshow(data.reshape(shape), cmap=cmap, vmin=vmin, vmax=vmax)
+    fig.colorbar(im, ax=ax, label='Elevation (m)')
+    ax.set_xlabel("Easting (columns)", fontsize=12)
+    ax.set_ylabel("Northing (rows)", fontsize=12)
+    plt.tight_layout()
     plt.savefig(output_path)
     plt.close()
 
-def plot_difference(data, shape, title, output_path):
-    plt.figure(figsize=(12, 8))
-    
-    # Symmetric auto-scaling
-    # Handle NaN values safely
-    valid_data = data[~np.isnan(data)]
-    if valid_data.size > 0:
-        max_abs = np.max(np.abs(valid_data))
-        # Ensure at least some range to avoid errors
-        if max_abs == 0: max_abs = 0.1 
+def plot_difference(data, shape, title, output_path, vmin=None, vmax=None,
+                    scaling="linear", hillshade_elev=None):
+    """Render an erosion/deposition difference map.
+
+    scaling="linear" keeps the original symmetric RdBu scale. scaling="symlog"
+    applies a symmetric-log normalization so small-magnitude erosion stays
+    visible even when deposition (or vice-versa) dominates the range.
+
+    If hillshade_elev (the corresponding terrain) is supplied, the change is
+    drawn semi-transparently over a shaded-relief underlay so it is read in its
+    topographic context.
+    """
+    fig, ax = plt.subplots(figsize=(12, 8))
+
+    if vmin is None or vmax is None:
+        valid_data = data[~np.isnan(data)]
+        if valid_data.size > 0:
+            max_abs = float(np.nanpercentile(np.abs(valid_data), 99))
+            if max_abs == 0:
+                max_abs = 0.1
+        else:
+            max_abs = 1.0
+        vmin = -max_abs
+        vmax = max_abs
     else:
-        max_abs = 1.0
+        max_abs = max(abs(vmin), abs(vmax))
 
-    plt.imshow(data.reshape(shape), cmap='RdBu', vmin=-max_abs, vmax=max_abs)
-    plt.colorbar(label='Elevation Change (m)')
-    plt.title(title)
+    # Optional shaded-relief underlay.
+    draped = hillshade_elev is not None
+    if draped:
+        z = np.asarray(hillshade_elev, dtype=float).reshape(shape)
+        ls = LightSource(azdeg=315, altdeg=45)
+        hs = ls.hillshade(np.nan_to_num(z, nan=np.nanmin(z)), vert_exag=2.0)
+        ax.imshow(hs, cmap="gray")
+
+    overlay_alpha = 0.6 if draped else 1.0
+
+    if scaling == "symlog":
+        # linthresh = region near zero treated linearly; below it small changes
+        # are amplified. Use a small fraction of the range so faint erosion shows.
+        linthresh = max(max_abs / 50.0, 1e-6)
+        norm = SymLogNorm(linthresh=linthresh, vmin=-max_abs, vmax=max_abs, base=10)
+        im = ax.imshow(data.reshape(shape), cmap='RdBu', norm=norm, alpha=overlay_alpha)
+    else:
+        im = ax.imshow(data.reshape(shape), cmap='RdBu', vmin=vmin, vmax=vmax,
+                       alpha=overlay_alpha)
+
+    fig.colorbar(im, ax=ax, label='Elevation Change (m)')
+
+    # No title
+    ax.set_xlabel("Easting (columns)", fontsize=12)
+    ax.set_ylabel("Northing (rows)", fontsize=12)
+
+    plt.tight_layout()
     plt.savefig(output_path)
     plt.close()
 
-def plot_soil_transport(data, shape, output_path):
-    plt.figure(figsize=(12, 8))
-    norm = colors.LogNorm(vmin=max(1e-12, np.nanmin(data)), vmax=np.nanmax(data))
-    plt.imshow(data.reshape(shape), cmap='viridis', norm=norm)
-    plt.colorbar(label='Sediment Flux (m³/m²/s)')
-    plt.title("Soil Transport Map (Sediment Flux)")
-    plt.savefig(output_path)
+    return max_abs
+
+
+def plot_erosion_deposition_mask(data, shape, output_path, threshold=None):
+    """Render a categorical map: erosion vs. no-change vs. deposition.
+
+    Magnitude is ignored, so this answers "where is material leaving vs.
+    arriving" regardless of how lopsided the magnitudes are.
+    """
+    arr = data.reshape(shape).astype(float)
+
+    if threshold is None:
+        valid = arr[~np.isnan(arr)]
+        # Treat changes below ~1% of the typical signal as "no change".
+        if valid.size > 0:
+            threshold = max(float(np.nanpercentile(np.abs(valid), 99)) / 100.0, 1e-9)
+        else:
+            threshold = 1e-9
+
+    # -1 = erosion, 0 = no change, +1 = deposition
+    cat = np.zeros_like(arr)
+    cat[arr < -threshold] = -1
+    cat[arr > threshold] = 1
+    cat[np.isnan(arr)] = np.nan
+
+    fig, ax = plt.subplots(figsize=(12, 8))
+
+    cmap = ListedColormap(["#b2182b", "#f0f0f0", "#2166ac"])  # erosion / none / deposition
+    cmap.set_bad(color="white")
+    norm = BoundaryNorm([-1.5, -0.5, 0.5, 1.5], cmap.N)
+
+    ax.imshow(cat, cmap=cmap, norm=norm)
+
+    erosion_cells = int(np.sum(cat == -1))
+    deposition_cells = int(np.sum(cat == 1))
+
+    from matplotlib.patches import Patch
+    legend = [
+        Patch(facecolor="#b2182b", label=f"Erosion ({erosion_cells} cells)"),
+        Patch(facecolor="#f0f0f0", edgecolor="#cccccc", label="No change"),
+        Patch(facecolor="#2166ac", label=f"Deposition ({deposition_cells} cells)"),
+    ]
+    ax.legend(handles=legend, loc="upper right", framealpha=0.9)
+
+    ax.set_xlabel("Easting (columns)", fontsize=12)
+    ax.set_ylabel("Northing (rows)", fontsize=12)
+
+    plt.tight_layout()
     plt.savefig(output_path)
     plt.close()
 
-def save_overlay_image(data, shape, output_path, cmap='terrain', vmin=None, vmax=None):
-    """Save the data as an image without axes/margins for use as an overlay."""
-    plt.figure(figsize=(10, 10)) # Square or match aspect ratio? For overlay, aspect ratio matters.
-    # But imshow handles aspect ratio. We want no whitespace.
-    
-    # Use standard matplotlib saving but remove axes
-    fig = plt.figure(frameon=False)
-    fig.set_size_inches(10, 10 * (shape[0]/shape[1])) # approximate aspect ratio
-    
-    ax = plt.Axes(fig, [0., 0., 1., 1.])
-    ax.set_axis_off()
-    fig.add_axes(ax)
-    
-    ax.imshow(data.reshape(shape), cmap=cmap, aspect='auto', vmin=vmin, vmax=vmax)
-    fig.savefig(output_path, dpi=100, bbox_inches='tight', pad_inches=0, transparent=True)
-    plt.close(fig)
+    return output_path

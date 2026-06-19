@@ -1,20 +1,19 @@
-import os
-import datetime
 from PyQt6.QtWidgets import (
     QMainWindow, QVBoxLayout, QHBoxLayout, QPushButton, 
-    QWidget, QTabWidget, QMessageBox
+    QWidget, QTabWidget, QMessageBox, QLabel
 )
-from PyQt6.QtCore import QTimer
+from PyQt6.QtCore import QTimer, Qt
+from PyQt6.QtGui import QPixmap
+import os
 from app.ui.window_manager import WindowManager
-from app.ui.constants import (
-    SimulationParamKeys, SimulationStatsKeys, SimulationResultKeys,
-    SimulationResultsWindowConsts, SimulationStatsDialogConsts,
+from app.core.constants import (
+    SimulationResultsWindowConsts, SimulationResultKeys
 )
-from app.logging.simulation_log import SimulationLogger
+from app.core.logging.simulation_log import SimulationLogger
 from app.ui.views.dialogs.simulation_stats_dialog import SimulationStatsDialog
 from app.ui.widgets.progress_tracker import ProgressTrackerWidget
 from app.ui.widgets.visualization_tabs.carousel_2d import Carousel2DWidget
-from app.ui.widgets.visualization_tabs.cesium_window import ThreeDView
+from app.ui.widgets.visualization_tabs.three_d_window import ThreeDView
 
 class SimulationResultsWindow(QMainWindow):
     """
@@ -45,7 +44,8 @@ class SimulationResultsWindow(QMainWindow):
     def start_real_simulation(self):
         self.progress_tracker.start_tracking()
         
-        self.simulation_worker = self.simulation_controller.create_simulation_worker(self.sim_params)
+        from app.ui.workers import SimulationWorker
+        self.simulation_worker = SimulationWorker(self.sim_params, self.simulation_controller)
         self.simulation_worker.progress_updated.connect(self.progress_tracker.handle_progress_message)
         self.simulation_worker.finished.connect(self.on_simulation_finished)
         self.simulation_worker.error_occurred.connect(self.on_simulation_error)
@@ -81,15 +81,83 @@ class SimulationResultsWindow(QMainWindow):
 
         # Tabs
         self.tabs = QTabWidget()
+        # Force all tab headers to have exactly the same width
+        self.tabs.setStyleSheet("""
+            QTabBar::tab {
+                width: 140px;
+                height: 28px;
+                font-size: 12px;
+                font-weight: bold;
+                background-color: #d0d0d0;
+                color: #333333;
+                border: 1px solid #aaaaaa;
+                border-bottom: none;
+                padding: 3px 8px;
+            }
+            QTabBar::tab:selected {
+                background-color: #006400;
+                color: #ffffff;
+                border-color: #004d00;
+                border-bottom: 2px solid #006400;
+            }
+            QTabBar::tab:hover:!selected {
+                background-color: #008000;
+                color: #ffffff;
+            }
+        """)
         main_layout.addWidget(self.tabs)
         
         # --- Tab 1: 2D Visualization (Carousel) ---
-        self.tab_2d = Carousel2DWidget(self.image_paths)
+        self.tab_2d = Carousel2DWidget(self.image_paths, self.simulation_controller)
         self.tabs.addTab(self.tab_2d, SimulationResultsWindowConsts.TAB_2D_VISUALIZATION)
         
         # --- Tab 2: 3D Visualization (Interactive) ---
         self.view_3d = ThreeDView()
         self.tabs.addTab(self.view_3d, SimulationResultsWindowConsts.TAB_3D_VISUALIZATION)
+
+        # --- Tab 3: Sediment Timeline (Interactive Plotly slider) ---
+        self._add_timeline_tab()
+
+        # --- Tab 4: Scientific Analysis plots ---
+        self._add_analysis_tab()
+
+        # --- Tab 5: Feature Tracking (Dynamic) ---
+        tracker_plot = self.image_paths.get(SimulationResultKeys.TRACKER_PLOT)
+        if tracker_plot and os.path.exists(tracker_plot):
+            tracker_widget = QWidget()
+            layout = QVBoxLayout(tracker_widget)
+            
+            # Headline: when the tracked feature is first affected by the
+            # evolving landscape (geomorphic change, uplift excluded).
+            fe = self.image_paths.get(SimulationResultKeys.TRACKER_FIRST_EFFECT)
+            if fe:
+                if fe.get("detected"):
+                    fe_text = (f"⏱ First effect on feature: ~{fe['time']:g} years "
+                               f"(reached ≥ {fe['threshold']:g} m of change)")
+                    fe_color = "#1b5e20"
+                else:
+                    fe_text = (f"No significant effect: feature changed by at most "
+                               f"{fe.get('max_observed', 0):g} m (threshold {fe['threshold']:g} m)")
+                    fe_color = "#777"
+                fe_lbl = QLabel(fe_text)
+                fe_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                fe_lbl.setStyleSheet(f"QLabel {{ font-size: 15px; font-weight: bold; color: {fe_color}; padding: 6px; }}")
+                layout.addWidget(fe_lbl)
+
+            lbl = QLabel()
+            pixmap = QPixmap(tracker_plot)
+            # Scale to fit nicely in the tab
+            lbl.setPixmap(pixmap.scaled(800, 600, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            layout.addWidget(lbl)
+
+            csv_path = self.image_paths.get(SimulationResultKeys.TRACKER_CSV)
+            if csv_path:
+                info_lbl = QLabel(f"Data saved to:\\n{csv_path}")
+                info_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                layout.addWidget(info_lbl)
+                
+            self.tabs.addTab(tracker_widget, SimulationResultsWindowConsts.TAB_FEATURE_TRACKING)
 
         # Bottom Button Area
         button_layout = QHBoxLayout()
@@ -108,6 +176,46 @@ class SimulationResultsWindow(QMainWindow):
         
         # Set default view using QTimer to ensure layout is ready
         QTimer.singleShot(0, self.tab_2d.show_final)
+
+    def _add_timeline_tab(self):
+        """Adds the interactive sediment-flow timeline (Plotly slider) tab."""
+        from PyQt6.QtWebEngineWidgets import QWebEngineView
+        from PyQt6.QtCore import QUrl
+
+        timeline_html = self.image_paths.get(SimulationResultKeys.TIMELINE_HTML)
+
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        if timeline_html and os.path.exists(timeline_html):
+            web_view = QWebEngineView()
+            web_view.setUrl(QUrl.fromLocalFile(timeline_html))
+            layout.addWidget(web_view)
+        else:
+            lbl = QLabel(SimulationResultsWindowConsts.LBL_TIMELINE_NOT_AVAILABLE)
+            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            layout.addWidget(lbl)
+
+        self.tabs.addTab(container, SimulationResultsWindowConsts.TAB_TIMELINE)
+
+    def _add_analysis_tab(self):
+        """Adds the scientific-analysis gallery tab."""
+        from app.ui.widgets.visualization_tabs.analysis_gallery import AnalysisGalleryWidget
+
+        plots = [
+            ("Erosion / Deposition Map", self.image_paths.get(SimulationResultKeys.MASK_PLOT)),
+            ("Onset and Peak of Landscape Change", self.image_paths.get(SimulationResultKeys.CHANGE_EVENTS_PLOT)),
+            ("Drainage Network", self.image_paths.get(SimulationResultKeys.DRAINAGE_NETWORK_PLOT)),
+            ("Soil / Alluvium Thickness", self.image_paths.get(SimulationResultKeys.SOIL_THICKNESS_PLOT)),
+            ("River Long Profile", self.image_paths.get(SimulationResultKeys.LONG_PROFILE_PLOT)),
+            ("Slope–Area Relationship", self.image_paths.get(SimulationResultKeys.SLOPE_AREA_PLOT)),
+            ("Sediment Budget Over Time", self.image_paths.get(SimulationResultKeys.FLUX_PLOT)),
+            ("Hypsometric Curve", self.image_paths.get(SimulationResultKeys.HYPSOMETRY_PLOT)),
+        ]
+
+        gallery = AnalysisGalleryWidget(plots)
+        self.tabs.addTab(gallery, SimulationResultsWindowConsts.TAB_ANALYSIS)
 
     def show_stats_dialog(self):
         """Calculates stats and shows the dialog."""

@@ -4,9 +4,9 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtGui import QFont
 from PyQt6.QtCore import Qt
-from app.ui.constants import SimulationStatsKeys, SimulationStatsDialogConsts
+from app.core.constants import SimulationStatsKeys, SimulationStatsDialogConsts
 import datetime
-from app.logging.simulation_log import SimulationLogger
+from app.core.logging.simulation_log import SimulationLogger
 
 class SimulationStatsDialog(QDialog):
     """

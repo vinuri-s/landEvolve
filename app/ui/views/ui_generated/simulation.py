@@ -1,7 +1,7 @@
-from PyQt6 import QtCore, QtGui, QtWidgets
+from PyQt6 import QtCore, QtWidgets
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 
-class Ui_SimulationSetup(object):
+class Ui_SimulationSetup(object):  
     def setupUi(self, SimulationSetup):
         SimulationSetup.setObjectName("SimulationSetup")
         SimulationSetup.setWindowTitle("Simulation Setup")
@@ -50,6 +50,34 @@ class Ui_SimulationSetup(object):
         self.descriptionTextEdit.setMaximumHeight(120)
         location_form.addRow(self.descriptionLabel, self.descriptionTextEdit)
         
+        self.trackFeatureCheckBox = QtWidgets.QCheckBox("Track Interested Landscape Feature")
+        location_form.addRow(self.trackFeatureCheckBox)
+        
+        self.featureShapefileWidget = QtWidgets.QWidget()
+        feature_shp_layout = QtWidgets.QHBoxLayout(self.featureShapefileWidget)
+        feature_shp_layout.setContentsMargins(0, 0, 0, 0)
+        self.featureShapefileLineEdit = QtWidgets.QLineEdit()
+        self.featureShapefileLineEdit.setPlaceholderText("Upload shapefile (.shp)")
+        self.featureShapefileLineEdit.setReadOnly(True)
+        self.featureShapefileBtn = QtWidgets.QPushButton("Browse...")
+        feature_shp_layout.addWidget(self.featureShapefileLineEdit)
+        feature_shp_layout.addWidget(self.featureShapefileBtn)
+        
+        self.featureShapefileLabel = QtWidgets.QLabel("Feature Shapefile:")
+        location_form.addRow(self.featureShapefileLabel, self.featureShapefileWidget)
+
+        # First-effect detection threshold (metres of geomorphic change at which
+        # the tracked feature is considered "first affected").
+        self.firstEffectThresholdLineEdit = QtWidgets.QLineEdit()
+        self.firstEffectThresholdLineEdit.setText("0.01")
+        self.firstEffectThresholdLineEdit.setPlaceholderText("e.g. 0.01")
+        self.firstEffectThresholdLineEdit.setToolTip(
+            "Change (in metres) the tracked feature must reach for the app to report\n"
+            "its 'first effect' time. Tectonic uplift is excluded from this measure."
+        )
+        self.firstEffectThresholdLabel = QtWidgets.QLabel("First-Effect Threshold (m):")
+        location_form.addRow(self.firstEffectThresholdLabel, self.firstEffectThresholdLineEdit)
+
         self.componentsGroup = QtWidgets.QGroupBox("Simulation Components")
         left_layout.addWidget(self.componentsGroup, 1)
         
@@ -94,8 +122,20 @@ class Ui_SimulationSetup(object):
         right_layout.addWidget(self.earthGroup)
         
         earth_layout = QtWidgets.QVBoxLayout(self.earthGroup)
+        # Stretch factor 1 so the map absorbs all extra vertical space; the
+        # toggle and DEM info line then hug directly beneath it.
         self.webView = QWebEngineView()
-        earth_layout.addWidget(self.webView)
+        earth_layout.addWidget(self.webView, 1)
+
+        self.showDemBoundaryToggle = QtWidgets.QCheckBox("Show DEM Boundary (Yellow)")
+        earth_layout.addWidget(self.showDemBoundaryToggle, 0)
+
+        self.demInfoLabel = QtWidgets.QLabel("")
+        self.demInfoLabel.setWordWrap(True)
+        self.demInfoLabel.setTextFormat(QtCore.Qt.TextFormat.RichText)
+        self.demInfoLabel.setStyleSheet("color: #d8d8d8; font-size: 11px; padding: 1px 2px;")
+        self.demInfoLabel.hide()
+        earth_layout.addWidget(self.demInfoLabel, 0)
         
         self.splitter.addWidget(right_container)
         self.splitter.setSizes([300, 500])

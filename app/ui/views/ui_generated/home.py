@@ -26,17 +26,19 @@ class Ui_Home(object):
         
         self.descriptionLabel = QtWidgets.QLabel(
             "<h2>About LandEvolve</h2>"
-            "<p>LandEvolve is a research-oriented landscape evolution modelling tool developed on top of the Python-based Landlab library. "
-            "It allows researchers to simulate, analyze, and visualize Earth surface processes, with a focus on scenario-based forecasting "
-            "and long-term terrain change analysis.</p>"
-            "<p>Key features include:</p>"
+            "<p>LandEvolve is a desktop landscape evolution model built on the Landlab framework. "
+            "It runs physics-based simulations on real elevation data (DEMs) to show how terrain reshapes "
+            "over decades to millennia under river erosion, hillslope soil creep, climate, vegetation, "
+            "rock type, and tectonic uplift.</p>"
+            "<p>What you can do:</p>"
             "<ul>"
-            "<li>Advanced terrain modeling and analysis</li>"
-            "<li>Multiple simulation components and scenarios</li>"
-            "<li>Interactive visualization tools</li>"
-            "<li>Export capabilities for research data</li>"
+            "<li>Assemble a simulation from interchangeable process components</li>"
+            "<li>Drive erosion with precipitation, vegetation, lithology, and uplift scenarios</li>"
+            "<li>Explore results as 2D maps, an interactive 3D surface, and a scrubbable sediment timeline</li>"
+            "<li>Analyze drainage, slope&ndash;area, hypsometry, soil thickness, and sediment budgets</li>"
+            "<li>Track a chosen landscape feature and export GeoTIFFs for further research</li>"
             "</ul>"
-            "<p>Start your landscape evolution journey by creating a new simulation or exploring existing models.</p>"
+            "<p>Click <b>Start Simulation</b> to configure and run your first model.</p>"
         )
         self.descriptionLabel.setWordWrap(True)
         self.descriptionLabel.setAlignment(QtCore.Qt.AlignmentFlag.AlignTop)

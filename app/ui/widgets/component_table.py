@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import QTableWidget, QTableWidgetItem, QWidget, QHBoxLayout, QPushButton
 from typing import List, Dict, Callable
-from app.ui.constants import ComponentDataKeys
+from app.core.constants import ComponentDataKeys
 
 class ComponentTableManager:
     """

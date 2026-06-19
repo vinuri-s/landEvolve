@@ -13,6 +13,10 @@ class SimulationWorker(QThread):
     
     def __init__(self, sim_params, controller):
         super().__init__()
+        # CRITICAL: macOS limits background thread stacks to 512KB. 
+        # C-Extensions like GDAL/PROJ require more stack memory and will throw a Bus Error.
+        # We increase the stack size to 8MB (standard main thread size) to prevent this.
+        self.setStackSize(8 * 1024 * 1024) 
         self.sim_params = sim_params
         self.controller = controller
     

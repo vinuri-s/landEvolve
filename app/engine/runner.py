@@ -1,157 +1,372 @@
-import os
 import numpy as np
-import matplotlib.pyplot as plt
+
 from app.engine.raster_model import RasterModel
 from app.engine.components import (
-    FlowAccumulatorComponent, 
-    SpaceComponent, 
-    SpaceLargeScaleEroderComponent, 
-    DepthDependentDiffuserComponent
+    FlowAccumulatorComponent,
+    SpaceComponent,
+    SpaceLargeScaleEroderComponent,
+    DepthDependentDiffuserComponent,
+    VegetationComponent,
+    LithoLayersComponent,
+    PrecipitationComponent,
+    TectonicsComponent,
 )
-from app.engine.io import save_geotiff, plot_topography, plot_difference, plot_soil_transport, save_overlay_image
-from app.config import Config
+from app.engine.io import (
+    save_geotiff,
+    plot_topography,
+    plot_difference,
+    plot_erosion_deposition_mask,
+)
+from app.engine.visualization import diagnose_space_regime, generate_sediment_timeline_html
+from app.engine.science_plots import (
+    refresh_drainage,
+    plot_hypsometry,
+    plot_sediment_flux,
+    plot_river_long_profile,
+    plot_slope_area,
+    plot_drainage_network,
+    plot_soil_thickness,
+    plot_change_events_map,
+)
+from app.core.config import Config
+from app.core.logging.manager import LogManager
+
 
 class SimulationRunner:
-    """
-    The main engine driver. It sets up the grid, loads components, 
-    and runs the simulation loop step-by-step.
-    """
+
     def __init__(self, sim_params, progress_callback=None):
         self.params = sim_params
         self.progress_callback = progress_callback
-        # Create a unique folder for this simulation run
-        self.simulation_name = f"simulation_{sim_params.get('simulation_number', 0)}"
-        self.output_dir = Config.OUTPUTS_DIR / self.simulation_name
+
+        self.sim_id = sim_params.get('simulation_number', 0)
+        self.output_dir = Config.OUTPUTS_DIR / f"simulation_{self.sim_id}"
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        
-    def log(self, percent, message):
-        print(f"[{percent}%] {message}")
+
+        # Persist the run narrative to engine.log, tagged with the simulation id
+        # so a single run's lines are greppable even across concurrent runs.
+        self._logger = LogManager.get_logger("engine")
+
+    def log(self, p, msg):
+        line = f"[sim {self.sim_id}] [{p}%] {msg}"
+        print(line)
+        self._logger.info(line)
         if self.progress_callback:
-            self.progress_callback(percent, message)
+            self.progress_callback(p, msg)
+
+    def _name(self, comp):
+        return getattr(comp, "name", None) or getattr(comp, "__name__", None)
+
+    def _build(self, name, grid, params):
+
+        if name == "VegetationComponent":
+            # Vegetation class definitions are injected into sim_params by the
+            # service layer; the engine stays database-isolated.
+            veg_classes = self.params.get("vegetation_classes", {})
+            return VegetationComponent(grid, vegetation_classes=veg_classes, **params)
+        if name == "PrecipitationComponent":
+            return PrecipitationComponent(grid, **params)
+        if name == "TectonicsComponent":
+            return TectonicsComponent(grid, **params)
+        if name == "FlowAccumulatorComponent":
+            return FlowAccumulatorComponent(grid, **params)
+        if name == "SpaceComponent":
+            return SpaceComponent(grid, **params)
+        if name == "SpaceLargeScaleEroderComponent":
+            return SpaceLargeScaleEroderComponent(grid, **params)
+        if name == "DepthDependentDiffuserComponent":
+            return DepthDependentDiffuserComponent(grid, **params)
+        if name == "LithoLayersComponent":
+            return LithoLayersComponent(grid, **params)
+
+        return None
 
     def run(self):
-        input_tif = self.params['input_tiff_path']
-        total_time = self.params['simulation_period']
-        dt = self.params['time_step']
-        selected_components = self.params['selected_components']
 
-        # Geology check
-        geology_file = None
-        for comp_config in selected_components:
-            params = comp_config.get('params', {})
-            if params.get('lithology_type') == 'Heterogeneous' and params.get('geology_file'):
-                geology_file = params.get('geology_file')
-                break
+        tif = self.params["input_tiff_path"]
+        total_time = self.params["simulation_period"]
+        dt = self.params["time_step"]
 
-        # 1. Initialize Grid
-        self.log(5, "Loading DEM and initializing grid...")
-        raster_model = RasterModel(geo_tiff_file=input_tif, geology_file=geology_file)
-        grid = raster_model.grid
-        initial_z = grid.at_node['topographic__elevation'].copy()
+        geology = None
+        for c in self.params["selected_components"]:
+            if c.get("params", {}).get("geology_file"):
+                geology = c["params"]["geology_file"]
 
-        # Watershed Boundary
-        elevation = grid.at_node['topographic__elevation']
-        no_data_value = -9999.0
-        masked_elev = np.ma.masked_equal(elevation, no_data_value)
-        outlet_id = np.argmin(masked_elev)
-        grid.set_watershed_boundary_condition_outlet_id(outlet_id, elevation, no_data_value)
-        
-        # 2. Components
-        self.log(15, "Initializing components...")
+        self.log(5, "Loading DEM...")
+        rm = RasterModel(geo_tiff_file=tif, geology_file=geology)
+        grid = rm.grid
+
+        # NoData cells (loaded as NaN by RasterModel) are the void surrounding an
+        # irregular catchment — often the majority of a clipped LiDAR tile. They
+        # must be excluded from the domain: left in, they sit as core nodes with
+        # garbage elevation and all flow/sediment routes into them, producing the
+        # runaway "deposition" spike. Mark them closed and drain the catchment
+        # through its single lowest edge outlet.
+        z = grid.at_node["topographic__elevation"]
+        self._nodata_mask = np.isnan(z)
+        # Replace NaN with a finite sentinel so it never enters the solvers; the
+        # mask is re-applied to NaN for plotting after the run.
+        z[self._nodata_mask] = -9999.0
+        grid.set_watershed_boundary_condition(
+            z,
+            nodata_value=-9999.0,
+            return_outlet_id=True,
+            remove_disconnected=True,  # drop catchment cells isolated by clipping
+        )
+
+        initial = grid.at_node["topographic__elevation"].copy()
+        initial[self._nodata_mask] = np.nan  # keep the void masked in plots
+
+        self.log(15, "Building components...")
+
+        precip_conf, veg_conf, flow_conf, hill_conf, ero_conf, lith_conf, tect_conf, other_conf = [], [], [], [], [], [], [], []
+
+        for c in self.params["selected_components"]:
+            name = self._name(c["component"])
+            if name == "PrecipitationComponent":
+                precip_conf.append(c)
+            elif name == "TectonicsComponent":
+                tect_conf.append(c)
+            elif name == "VegetationComponent":
+                veg_conf.append(c)
+            elif name == "FlowAccumulatorComponent":
+                flow_conf.append(c)
+            elif name == "DepthDependentDiffuserComponent":
+                hill_conf.append(c)
+            elif name in ("SpaceComponent", "SpaceLargeScaleEroderComponent"):
+                ero_conf.append(c)
+            elif name == "LithoLayersComponent":
+                lith_conf.append(c)
+            else:
+                other_conf.append(c)
+
+        # When precipitation drives runoff, FlowAccumulator must not overwrite
+        # `water__unit_flux_in` with its own scalar runoff_rate — drop it so the
+        # accumulator reads the precipitation-set field instead.
+        if precip_conf:
+            for c in flow_conf:
+                c.get("params", {}).pop("runoff_rate", None)
+
+        # Build order: Precipitation before Vegetation so the runoff base exists
+        # when Vegetation captures it; Litho before Space so K_sp exists at init.
+        build_confs = precip_conf + veg_conf + flow_conf + lith_conf + hill_conf + ero_conf + tect_conf + other_conf
+
+        built = {}
+        for c in build_confs:
+            name = self._name(c["component"])
+            p = c.get("params", {}).copy()
+
+            if "erodibility_map" in self.params and name in ("SpaceComponent", "SpaceLargeScaleEroderComponent"):
+                p["erodibility_map"] = self.params["erodibility_map"]
+
+            if name == "PrecipitationComponent":
+                p["total_time"] = total_time  # needed for the Trend mode ramp
+
+            inst = self._build(name, grid, p)
+            if inst is not None:
+                built.setdefault(name, []).append(inst)
+
+        # Run order: Precipitation first (sets runoff) → Vegetation (modulates it)
+        # → FlowAccumulator (routes it). LithoLayers AFTER Space so K_sp is
+        # updated immediately after each erosion event, not one step before it.
+        run_order = ["PrecipitationComponent", "VegetationComponent", "FlowAccumulatorComponent",
+                     "DepthDependentDiffuserComponent",
+                     "SpaceComponent", "SpaceLargeScaleEroderComponent",
+                     "LithoLayersComponent",
+                     "TectonicsComponent"]
         components = []
-        for comp_config in selected_components:
-            name = comp_config['component'].name # Assuming 'component' key holds an object with a name attribute, or use comp_config['name'] if changed
-            # In the original code it was comp_config['component'].name. 
-            # I must ensure the passed params structure matches.
-            # Assuming params is passed from controller correctly.
-            
-            p = comp_config.get('params', {})
-            # Inject erodibility_map if available in top-level params
-            if 'erodibility_map' in self.params:
-                p['erodibility_map'] = self.params['erodibility_map']
-            if name == 'FlowAccumulatorComponent':
-                components.append(FlowAccumulatorComponent(grid, **p))
-            elif name == 'SpaceComponent':
-                components.append(SpaceComponent(grid, **p))
-            elif name == 'SpaceLargeScaleEroderComponent':
-                components.append(SpaceLargeScaleEroderComponent(grid, **p))
-            elif name == 'DepthDependentDiffuserComponent':
-                components.append(DepthDependentDiffuserComponent(grid, **p))
+        for name in run_order:
+            components.extend(built.get(name, []))
+        # append anything else that doesn't fit a named category
+        for name, insts in built.items():
+            if name not in run_order:
+                components.extend(insts)
 
-        # 3. Pre-sim checks
-        self.log(20, "Pre-simulation checks...")
-        required = ['topographic__elevation', 'water__unit_flux_in', 'soil__depth', 'bedrock__elevation']
-        for field in required:
-            if field not in grid.at_node:
-                if field == 'soil__depth': grid.add_ones(field, at='node', dtype=float)
-                elif field == 'bedrock__elevation':
-                    s = grid.at_node['topographic__elevation']
-                    d = grid.at_node.get('soil__depth', np.ones(grid.number_of_nodes))
-                    grid.add_field(field, s - d, at='node')
-                else: grid.add_zeros(field, at='node')
-
-        # 4. Main Simulation Loop
-        # We divide the total simulation time into smaller time steps (dt).
-        num_steps = int(total_time / dt)
-        current_time = 0.0
+        steps = int(total_time / dt)
+        t = 0.0
         
-        try:
-            for step in range(num_steps):
-                current_time += dt
-                
-                # Update progress bar (running from 20% to 80%)
-                progress = 20 + int((step / num_steps) * 60)
-                if step % max(1, num_steps // 20) == 0:
-                    self.log(progress, f"Step {step+1}/{num_steps} ({current_time:.1f} yrs)")
-
-                # Execute each active geological process for this time step
-                for comp in components:
-                    comp.run(dt)
-
-        except Exception as e:
-            self.log(0, f"Error: {e}")
-            raise
-
-        # 5. Output
-        self.log(85, "Processing results...")
-        final_elev = grid.at_node['topographic__elevation']
-        diff = final_elev - initial_z
-
-        # Paths
-        initial_png = self.output_dir / "initial_topo.png"
-        final_png = self.output_dir / "final_topo.png"
-        change_png = self.output_dir / "topo_change.png"
-        transport_png = self.output_dir / "soil_transport.png"
+        # Setup Feature Tracker
+        from app.engine.feature_tracker import FeatureTracker
+        import os
         
-        plot_topography(initial_z, grid.shape, "Initial Topography", str(initial_png), cmap='terrain')
-        plot_topography(final_elev, grid.shape, "Final Topography", str(final_png), cmap='viridis')
-        plot_difference(diff, grid.shape, "Topographic Change", str(change_png))
-
-        # Save clean overlay
-        overlay_png = self.output_dir / "final_overlay.png"
-        save_overlay_image(final_elev, grid.shape, str(overlay_png), cmap='viridis')
+        track_feature = self.params.get("track_feature", False)
+        feature_shp = self.params.get("feature_shapefile")
         
-        if 'sediment__flux' in grid.at_node:
-             plot_soil_transport(grid.at_node['sediment__flux'], grid.shape, str(transport_png))
+        tracker = None
+        if track_feature and feature_shp and os.path.exists(feature_shp):
+            self.log(18, "Initializing Feature Tracker...")
+            tracker = FeatureTracker(feature_shp, tif)
+            if tracker.mask is not None:
+                tracker.record_step(0.0, grid.at_node["topographic__elevation"])
+            else:
+                tracker = None
+
+        # Capture cumulative-change snapshots for the sediment-flow timeline.
+        # Aim for ~30 evenly spaced frames regardless of step count. Also capture
+        # cumulative uplift per snapshot so tectonic forcing can be removed from
+        # the sediment timeline / budget (which are about erosion, not uplift).
+        timeline_snapshots = [initial - initial]  # all-zero baseline at t=0
+        timeline_uplift = [initial - initial]     # uplift accumulated by t=0 (zero)
+        timeline_times = [0.0]
+        snapshot_every = max(1, steps // 30)
+
+        for i in range(steps):
+
+            t += dt
+
+            for comp in components:
+                comp.run(dt)
+
+            if tracker:
+                tracker.record_step(
+                    t,
+                    grid.at_node["topographic__elevation"],
+                    getattr(grid, "_cumulative_uplift", None),
+                )
+
+            if (i + 1) % snapshot_every == 0 or i == steps - 1:
+                timeline_snapshots.append(
+                    grid.at_node["topographic__elevation"] - initial
+                )
+                upl = getattr(grid, "_cumulative_uplift", None)
+                timeline_uplift.append(upl.copy() if upl is not None else (initial - initial))
+                timeline_times.append(t)
+
+            if i % max(1, steps // 20) == 0:
+                self.log(int(20 + 60 * i / steps), f"Step {i}/{steps}")
+
+        final = grid.at_node["topographic__elevation"].copy()
+        final[self._nodata_mask] = np.nan  # re-mask the void for plots/rasters
+        diff = final - initial
+
+        # When tectonics ran, total change = uplift + erosion/deposition. Isolate
+        # the geomorphic signal (final - initial - cumulative uplift) so the
+        # erosion/deposition maps aren't swamped by uniform uplift.
+        cumulative_uplift = getattr(grid, "_cumulative_uplift", None)
+        geomorphic_diff = (diff - cumulative_uplift) if cumulative_uplift is not None else None
+        # The mask and difference maps are about erosion/deposition, so base them
+        # on the geomorphic change when tectonics is active.
+        signal_diff = geomorphic_diff if geomorphic_diff is not None else diff
+
+        self.log(85, "Saving outputs...")
+
+        plot_topography(initial, grid.shape, "Initial", str(self.output_dir / "init.png"))
+        plot_topography(final, grid.shape, "Final", str(self.output_dir / "final.png"))
+        max_diff = plot_difference(diff, grid.shape, "Change", str(self.output_dir / "diff.png"),
+                                   hillshade_elev=final)
+
+        # Erosion/deposition categorical mask (magnitude-independent).
+        mask_png = str(self.output_dir / "mask.png")
+        plot_erosion_deposition_mask(signal_diff, grid.shape, mask_png)
+
+        save_geotiff(str(self.output_dir / "final.tif"), final, tif)
+        save_geotiff(str(self.output_dir / "diff.tif"), diff, tif)
+
+        # Uplift-removed difference map + rasters (only when tectonics ran).
+        geomorphic_diff_png = None
+        if geomorphic_diff is not None:
+            geomorphic_diff_png = str(self.output_dir / "diff_geomorphic.png")
+            plot_difference(geomorphic_diff, grid.shape, "Erosion (uplift removed)",
+                            geomorphic_diff_png, hillshade_elev=final)
+            save_geotiff(str(self.output_dir / "diff_geomorphic.tif"), geomorphic_diff, tif)
+            # Cumulative uplift raster, so the 3D view can subtract it on demand.
+            save_geotiff(str(self.output_dir / "uplift.tif"), cumulative_uplift, tif)
+
+        # Sediment timeline and budget are about erosion/deposition, so strip the
+        # tectonic uplift from each snapshot when tectonics ran.
+        if cumulative_uplift is not None:
+            sediment_snapshots = [s - u for s, u in zip(timeline_snapshots, timeline_uplift)]
         else:
-            transport_png = None
+            sediment_snapshots = timeline_snapshots
 
-        save_geotiff(str(self.output_dir / "final_elevation.tif"), final_elev, input_tif)
-        save_geotiff(str(self.output_dir / "topographic_change.tif"), diff, input_tif)
+        # Interactive sediment-flow timeline (scrubbable Plotly slider).
+        self.log(90, "Building sediment timeline...")
+        timeline_html = str(self.output_dir / "sediment_timeline.html")
+        timeline_result = generate_sediment_timeline_html(
+            sediment_snapshots, timeline_times, grid.shape, timeline_html
+        )
+        if timeline_result is False:
+            timeline_html = None
 
-        self.log(100, "Done")
-        
-        return {
-            "output_dir": str(self.output_dir),
-            "input_tif": input_tif,
-            "initial_plot": str(initial_png),
-            "final_plot": str(final_png),
-            "overlay_plot": str(overlay_png),
-            "change_plot": str(change_png),
-            "soil_transport_plot": str(transport_png) if transport_png else None,
-            "grid_size": str(grid.shape)
+        # ---- Scientific / geomorphic analysis plots ----
+        self.log(92, "Generating analysis plots...")
+        cell_area = float(grid.dx) * float(grid.dy)
+
+        # Re-route flow on the final topography so drainage-based plots reflect
+        # the final landscape, not the loop's transient routing state.
+        refresh_drainage(grid)
+
+        science_plots = {
+            "hypsometry_plot": plot_hypsometry(
+                initial, final, str(self.output_dir / "hypsometry.png")),
+            "flux_plot": plot_sediment_flux(
+                sediment_snapshots, timeline_times, cell_area,
+                str(self.output_dir / "flux.png")),
+            "long_profile_plot": plot_river_long_profile(
+                grid, initial, str(self.output_dir / "long_profile.png"),
+                uplift=cumulative_uplift),
+            "slope_area_plot": plot_slope_area(
+                grid, str(self.output_dir / "slope_area.png")),
+            "drainage_network_plot": plot_drainage_network(
+                grid, str(self.output_dir / "drainage_network.png")),
+            "soil_thickness_plot": plot_soil_thickness(
+                grid, str(self.output_dir / "soil_thickness.png")),
+            "change_events_plot": plot_change_events_map(
+                sediment_snapshots, timeline_times, grid.shape,
+                str(self.output_dir / "change_events.png"),
+                input_tiff=tif,
+                change_threshold=float(self.params.get("first_effect_threshold", 0.01))),
         }
 
+        diag = diagnose_space_regime(diff)
+
+        tracker_csv = None
+        tracker_plot = None
+        tracker_first_effect = None
+        if tracker:
+            self.log(95, "Exporting feature tracking data...")
+            threshold = float(self.params.get("first_effect_threshold", 0.01))
+            tracker_csv, tracker_plot, tracker_first_effect = tracker.export(
+                str(self.output_dir), first_effect_threshold=threshold,
+                cell_area=float(grid.dx) * float(grid.dy),
+            )
+            if tracker_first_effect and tracker_first_effect.get("detected"):
+                self.log(96, f"Feature first affected at ~{tracker_first_effect['time']:g} years "
+                             f"(≥ {tracker_first_effect['threshold']:g} m change)")
+            elif tracker_first_effect:
+                self.log(96, f"Feature never changed by ≥ {tracker_first_effect['threshold']:g} m "
+                             f"(max observed {tracker_first_effect['max_observed']:g} m)")
+
+        self.log(100, "Done")
+
+        return {
+            "output_dir": str(self.output_dir),
+            "initial_plot": str(self.output_dir / "init.png"),
+            "final_plot": str(self.output_dir / "final.png"),
+            "change_plot": str(self.output_dir / "diff.png"),
+            "geomorphic_change_plot": geomorphic_diff_png,
+            "mask_plot": mask_png,
+            "timeline_html": timeline_html,
+            "hypsometry_plot": science_plots["hypsometry_plot"],
+            "flux_plot": science_plots["flux_plot"],
+            "long_profile_plot": science_plots["long_profile_plot"],
+            "slope_area_plot": science_plots["slope_area_plot"],
+            "drainage_network_plot": science_plots["drainage_network_plot"],
+            "soil_thickness_plot": science_plots["soil_thickness_plot"],
+            "change_events_plot": science_plots["change_events_plot"],
+            "diff_max": max_diff,
+            "grid_size": f"{grid.shape[0]} × {grid.shape[1]}",
+            "diag_abs_max_change": diag["abs_max_change"],
+            "diag_deposition_cells": diag["deposition_cells"],
+            "diag_erosion_cells": diag["erosion_cells"],
+            "diag_max_deposition": diag["max_deposition"],
+            "diag_max_erosion": diag["max_erosion"],
+            "diag_net_change": diag["net_change"],
+            "diag_regime_label": diag["regime_label"],
+            "tracker_csv": tracker_csv,
+            "tracker_plot": tracker_plot,
+            "tracker_first_effect": tracker_first_effect,
+        }
+
+
 def run_simulation(sim_params, progress_callback=None):
-    runner = SimulationRunner(sim_params, progress_callback)
-    return runner.run()
+    return SimulationRunner(sim_params, progress_callback).run()

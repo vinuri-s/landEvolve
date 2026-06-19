@@ -46,19 +46,28 @@ def build_app():
         "--hidden-import=landlab.grid.raster_set_status",
         "--hidden-import=landlab.grid.raster_mappers",
         "--hidden-import=landlab.grid.raster_aspect",
-        "--hidden-import=app.logging",
-        "--hidden-import=app.config",
+        "--hidden-import=app.core.logging",
+        "--hidden-import=app.core.config",
         "--hidden-import=app.ui.validators.simulation_validator",
         "--hidden-import=app.engine.runner",
     ]
-    
+
     # Data to include (Source : Destination in Bundle)
-    # Using separators specific to OS (though PyInstaller handles ; on Windows, : on *nix)
+    # Using separators specific to OS (PyInstaller uses ; on Windows, : on *nix)
+    #
+    # Only READ-ONLY assets the app loads at runtime are bundled:
+    #   - resources/inputs  : the sample/input DEMs (Config.RESOURCES_DIR reads
+    #                         these from the bundle)
+    #   - resources/about.jpg : home-screen image
+    #   - app/data/db/app_data.db : seeded SQLite DB, copied to a writable
+    #                         location on first launch (see Config.init_directories)
+    # NOT bundled: resources/outputs (writable, runtime-generated), the empty
+    # app/resources dir, dev docs, and the transient SQLite -wal/-shm files.
     sep = os.pathsep
     add_data = [
-        f"--add-data=app/resources{sep}app/resources", 
-        f"--add-data=resources{sep}resources",
-        f"--add-data=app/data/db{sep}app/data/db", # Bundle the SQLite architecture internally
+        f"--add-data=resources/inputs{sep}resources/inputs",
+        f"--add-data=resources/about.jpg{sep}resources",
+        f"--add-data=app/data/db/app_data.db{sep}app/data/db",
     ]
 
     args = [

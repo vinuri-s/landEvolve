@@ -2,8 +2,7 @@ import psutil
 import datetime
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QProgressBar
 from PyQt6.QtCore import Qt, QTimer, QElapsedTimer
-from app.ui.constants import ProgressTrackerWidgetConsts, SimulationStatsKeys, SimulationStatsDialogConsts
-from app.logging.simulation_log import SimulationLogger
+from app.core.constants import ProgressTrackerWidgetConsts, SimulationStatsKeys
 
 class ProgressTrackerWidget(QWidget):
     """

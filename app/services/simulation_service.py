@@ -1,11 +1,12 @@
 import os
-from app.config import Config
+from app.core.config import Config
 from app.engine.runner import run_simulation
 from app.data.database import db_manager
 from app.data.repositories.lithology_repository import LithologyRepository
 from app.data.repositories.component_repository import ComponentRepository
+from app.services.vegetation_service import VegetationService
 
-from app.logging.manager import LogManager
+from app.core.logging.manager import LogManager
 logger = LogManager.get_logger("backend")
 
 class SimulationService:
@@ -36,16 +37,21 @@ class SimulationService:
         2. Merges user parameters with system defaults.
         3. Calls the engine runner.
         """
-        # Fetch erodibility map and DEFAULTS from DB
+        # Fetch erodibility map, component DEFAULTS, and vegetation classes from DB
         erodibility_map = {}
         defaults_map = {}
+        vegetation_classes = {}
         session = db_manager.get_session()
         try:
             lith_repo = LithologyRepository(session)
             erodibility_map = lith_repo.get_erodibility_map()
-            
+
             comp_repo = ComponentRepository(session)
             defaults_map = comp_repo.get_all_defaults()
+
+            # Vegetation definitions injected into params so the engine,
+            # which must stay database-isolated, never touches the DB itself.
+            vegetation_classes = VegetationService(session).get_classes_map()
         except Exception as e:
             logger.error(f"Failed to fetch data from DB: {e}")
             erodibility_map = {}
@@ -53,6 +59,7 @@ class SimulationService:
             session.close()
 
         sim_params['erodibility_map'] = erodibility_map
+        sim_params['vegetation_classes'] = vegetation_classes
         
         # Merge defaults into selected components
         if 'selected_components' in sim_params:
@@ -82,3 +89,104 @@ class SimulationService:
                      
         logger.info(f"Resolved simulation parameters: {sim_params}")
         return run_simulation(sim_params, callback)
+
+    def get_geotiff_bounds(self, tiff_path):
+        """
+        Extracts the bounding box (west, south, east, north) from a GeoTIFF.
+        Returns a dictionary. If extraction fails or bounds are invalid (not lat/lon),
+        returns a default bounding box in San Francisco (for testing/demo) or Null Island.
+        """
+        default_bounds = { # San Francisco area default
+            "west": -122.45,
+            "south": 37.75,
+            "east": -122.35,
+            "north": 37.85
+        }
+        
+        try:
+            import rasterio
+            from rasterio.warp import transform_bounds
+            
+            if not os.path.exists(tiff_path):
+                return default_bounds
+
+            with rasterio.open(tiff_path) as src:
+                bounds = src.bounds
+                if src.crs:
+                    try:
+                        west, south, east, north = transform_bounds(src.crs, {'init': 'epsg:4326'}, *bounds)
+                    except Exception:
+                         # Transformation failed, maybe already 4326 or invalid
+                         west, south, east, north = bounds
+                else:
+                    west, south, east, north = bounds
+                
+                # Validation: Lat must be -90 to 90, Lon -180 to 180
+                if (west < -180 or west > 180 or east < -180 or east > 180 or
+                    south < -90 or south > 90 or north < -90 or north > 90):
+                    # Invalid lat/lon, return default
+                    logger.warning(f"Bounds {west},{south},{east},{north} invalid WGS84 coordinates. Using default.")
+                    return default_bounds
+                
+                return {
+                    "west": west,
+                    "south": south,
+                    "east": east,
+                    "north": north
+                }
+        except Exception as e:
+            logger.error(f"Error reading bounds: {e}")
+            return default_bounds
+
+    def generate_3d_model(self, input_tiff, final_tiff_path, html_output, vmin=None, vmax=None, force_diff_mode=False, remove_uplift=False):
+        from app.engine.visualization import generate_3d_comparison_html
+        return generate_3d_comparison_html(input_tiff, final_tiff_path, html_output, vmin=vmin, vmax=vmax, force_diff_mode=force_diff_mode, remove_uplift=remove_uplift)
+
+    def regenerate_2d_difference_map(self, diff_tif_path, output_png_path, vmin=None, vmax=None, scaling="linear"):
+        from app.engine.visualization import regenerate_2d_difference_map
+        return regenerate_2d_difference_map(diff_tif_path, output_png_path, vmin=vmin, vmax=vmax, scaling=scaling)
+
+    def get_geotiff_info(self, tiff_path):
+        """
+        Reads summary metadata + elevation statistics from a DEM GeoTIFF so the
+        UI can preview it before running. Returns a dict, or None if unreadable.
+        Keeps rasterio/numpy out of the UI layer.
+        """
+        if not tiff_path or not os.path.exists(tiff_path):
+            return None
+        try:
+            import rasterio
+            import numpy as np
+
+            with rasterio.open(tiff_path) as src:
+                data = src.read(1).astype("float64")
+                if src.nodata is not None:
+                    data[data == src.nodata] = np.nan
+
+                valid = data[~np.isnan(data)]
+                res_x, res_y = src.res
+
+                # Prefer a compact "EPSG:xxxx" code. Some DEMs only embed a full
+                # WKT projection string; resolve it to its EPSG code, else fall
+                # back to the human-readable CRS name (never the raw WKT blob).
+                crs = "Unknown"
+                if src.crs:
+                    epsg = src.crs.to_epsg()
+                    if epsg:
+                        crs = f"EPSG:{epsg}"
+                    else:
+                        crs = src.crs.to_dict().get("proj") or src.crs.to_string()
+
+                return {
+                    "width": src.width,
+                    "height": src.height,
+                    "resolution": round(float(res_x), 4),
+                    "crs": crs,
+                    "min_elev": round(float(np.min(valid)), 2) if valid.size else None,
+                    "max_elev": round(float(np.max(valid)), 2) if valid.size else None,
+                    "mean_elev": round(float(np.mean(valid)), 2) if valid.size else None,
+                    "nodata": src.nodata,
+                }
+        except Exception as e:
+            logger.error(f"Error reading GeoTIFF info: {e}")
+            return None
