@@ -26,6 +26,7 @@ from app.engine.science_plots import (
     plot_slope_area,
     plot_drainage_network,
     plot_soil_thickness,
+    plot_change_events_map,
 )
 from app.core.config import Config
 from app.core.logging.manager import LogManager
@@ -309,6 +310,11 @@ class SimulationRunner:
                 grid, str(self.output_dir / "drainage_network.png")),
             "soil_thickness_plot": plot_soil_thickness(
                 grid, str(self.output_dir / "soil_thickness.png")),
+            "change_events_plot": plot_change_events_map(
+                sediment_snapshots, timeline_times, grid.shape,
+                str(self.output_dir / "change_events.png"),
+                input_tiff=tif,
+                change_threshold=float(self.params.get("first_effect_threshold", 0.01))),
         }
 
         diag = diagnose_space_regime(diff)

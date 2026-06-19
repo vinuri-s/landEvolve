@@ -329,6 +329,134 @@ def plot_drainage_network(grid, output_path):
         return None
 
 
+def _detect_change_events(snapshots, times, shape, threshold):
+    """Find the first and biggest geomorphic-change events in the snapshot stack.
+
+    snapshots: list of Δz arrays (elevation - initial), one per time. The first
+               is the all-zero baseline.
+    Returns ``(first, biggest)`` dicts (each: time, row, col, value) in full-grid
+    pixel space, or ``(None, None)`` if nothing crosses the threshold.
+    """
+    if not snapshots or len(snapshots) < 2:
+        return None, None
+
+    stack = np.stack([np.asarray(s, dtype=float).reshape(shape) for s in snapshots])
+    absstack = np.abs(np.nan_to_num(stack, nan=0.0))
+    threshold = max(float(threshold), 0.0)
+
+    first = None
+    for f in range(1, len(snapshots)):
+        crossed = absstack[f] >= threshold if threshold > 0 else absstack[f] > 0
+        if np.any(crossed):
+            masked = np.where(crossed, absstack[f], -np.inf)
+            r, c = np.unravel_index(int(np.argmax(masked)), masked.shape)
+            v_now, v_prev = absstack[f, r, c], absstack[f - 1, r, c]
+            if threshold > 0 and v_now != v_prev:
+                frac = (threshold - v_prev) / (v_now - v_prev)
+                cross_t = times[f - 1] + frac * (times[f] - times[f - 1])
+            else:
+                cross_t = times[f]
+            first = {"time": float(max(cross_t, 0.0)), "row": int(r), "col": int(c),
+                     "value": float(stack[f, r, c])}
+            break
+
+    if first is None:
+        return None, None
+
+    final_abs = absstack[-1]
+    r, c = np.unravel_index(int(np.argmax(final_abs)), final_abs.shape)
+    begin_t = times[-1]
+    for f in range(1, len(snapshots)):
+        if absstack[f, r, c] >= threshold:
+            begin_t = times[f]
+            break
+    biggest = {"time": float(begin_t), "row": int(r), "col": int(c),
+               "value": float(stack[-1, r, c])}
+    return first, biggest
+
+
+def plot_change_events_map(snapshots, times, shape, output_path,
+                           input_tiff=None, change_threshold=0.01):
+    """Static map of cumulative erosion/deposition with the *first* and *biggest*
+    elevation-change events marked. Annotates each with when it happened, the
+    change magnitude, and its location (easting/northing if the input GeoTIFF is
+    georeferenced, otherwise grid row/col)."""
+    try:
+        first, biggest = _detect_change_events(snapshots, times, shape, change_threshold)
+        if first is None:
+            print("Change-events map skipped: no change crossed the threshold.")
+            return None
+
+        final = np.asarray(snapshots[-1], dtype=float).reshape(shape)
+
+        # Resolve pixel (row, col) -> world (easting, northing) + CRS label.
+        to_world, crs_label = None, None
+        if input_tiff and __import__("os").path.exists(input_tiff):
+            try:
+                import rasterio
+                with rasterio.open(input_tiff) as src:
+                    transform, crs = src.transform, src.crs
+                if transform is not None and not transform.is_identity:
+                    if crs is not None:
+                        epsg = crs.to_epsg()
+                        crs_label = f"EPSG:{epsg}" if epsg else (crs.to_string() or None)
+
+                    def to_world(row, col):
+                        e, n = transform * (col + 0.5, row + 0.5)
+                        return float(e), float(n)
+            except Exception:
+                to_world, crs_label = None, None
+
+        def location(ev):
+            if to_world is not None:
+                e, n = to_world(ev["row"], ev["col"])
+                return f"E {e:,.0f}, N {n:,.0f}"
+            return f"row {ev['row']}, col {ev['col']}"
+
+        scale = float(np.nanpercentile(np.abs(final), 99))
+        if np.isnan(scale) or scale == 0:
+            scale = 1.0
+
+        fig, ax = plt.subplots(figsize=(12, 8))
+        im = ax.imshow(final, cmap="RdBu", vmin=-scale, vmax=scale)
+        fig.colorbar(im, ax=ax, label="Cumulative change (m)")
+
+        # First change (cyan circle) and biggest change (gold star).
+        ax.scatter([first["col"]], [first["row"]], s=240, facecolors="none",
+                   edgecolors="#00b8d4", linewidths=2.5, zorder=5)
+        ax.annotate("1st change", (first["col"], first["row"]),
+                    textcoords="offset points", xytext=(8, 8),
+                    color="#00b8d4", fontsize=10, fontweight="bold")
+        ax.scatter([biggest["col"]], [biggest["row"]], s=300, marker="*",
+                   facecolors="#ffd400", edgecolors="#1a1a1a", linewidths=1.5, zorder=6)
+        ax.annotate("max change", (biggest["col"], biggest["row"]),
+                    textcoords="offset points", xytext=(8, -14),
+                    color="#1a1a1a", fontsize=10, fontweight="bold")
+
+        def verb(ev):
+            return "erosion" if ev["value"] < 0 else "deposition"
+
+        crs_note = f"   (coords in {crs_label})" if crs_label else ""
+        ax.set_title("First & Biggest Elevation Change")
+        ax.set_xlabel("Easting (columns)")
+        ax.set_ylabel("Northing (rows)")
+        caption = (
+            f"First change: t ≈ {first['time']:.0f} yr, "
+            f"Δ {first['value']:+.2f} m ({verb(first)}) @ {location(first)}\n"
+            f"Biggest change: began ≈ {biggest['time']:.0f} yr, "
+            f"Δ {biggest['value']:+.2f} m ({verb(biggest)}) @ {location(biggest)}"
+            f"{crs_note}"
+        )
+        fig.text(0.5, 0.01, caption, ha="center", va="bottom", fontsize=10)
+        fig.subplots_adjust(bottom=0.16)
+        plt.savefig(output_path)
+        plt.close()
+        return output_path
+    except Exception as e:
+        print(f"Change-events map failed: {e}")
+        return None
+
+
 def plot_soil_thickness(grid, output_path):
     """Map of soil / alluvium thickness (soil__depth) — shows where sediment is
     stored as cover vs. where bedrock is exposed. Only available when a
