@@ -1,0 +1,41 @@
+# Python bytecode caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+qt_env/
+venv/
+env/
+ENV/
+
+# Project outputs you mentioned
+resources/outputs/
+
+# Mypy cache
+.mypy_cache/
+
+# IDE/editor
+.vscode/
+.idea/
+
+# Common extras
+.DS_Store
+.pytest_cache/
+
+# DEM rasters: ignored by default, but the input DEMs under resources/inputs
+# are committed for reproducibility. Keep individual files under GitHub's
+# 100 MB limit (use Git LFS or an external source for anything larger).
+*.tif
+!resources/inputs/**/*.tif
+
+# The seeded app_data.db IS committed (bundled into the build). Only the
+# transient SQLite WAL sidecars are ignored.
+app/data/db/*.db-shm
+app/data/db/*.db-wal
+
+dist/
+build/
+logs/backend.log
+logs/ui.log
+logs/engine.log

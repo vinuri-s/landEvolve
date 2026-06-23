@@ -1,0 +1,3 @@
+# DEMs are committed as normal binary files (no Git LFS), so clones and CI
+# builds don't depend on the LFS bandwidth quota.
+*.tif binary
