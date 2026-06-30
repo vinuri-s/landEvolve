@@ -14,15 +14,6 @@ class SimulationDefaults:
     TIME_STEP = 10
 
 
-class LocationDataKeys:
-    """
-    String identifiers related to geographical location models.
-    Used for safely retrieving dynamic attributes, such as relationships loaded via SQLAlchemy.
-    """
-    # Attribute name representing the list of geotiff files associated with a location
-    GEOTIFFS = "geotiffs"
-
-
 class ComponentDataKeys:
     """
     Dictionary keys used for passing around configured simulation components

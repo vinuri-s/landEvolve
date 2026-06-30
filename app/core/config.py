@@ -27,23 +27,6 @@ class Config:
     DATABASE_URL = f"sqlite:///{str(DB_FILE).replace(os.sep, '/')}"
 
     @classmethod
-    def resolve_resource(cls, path):
-        """Resolve a stored resource path to an absolute one.
-
-        DB-stored DEM paths are relative to the project/bundle root, e.g.
-        'resources/inputs/whiriapa/whiriapa_1m.tif'. In a frozen build the
-        working directory is wherever the .exe was launched, so a bare relative
-        path can't be found — it must be joined to the bundled root (_MEIPASS).
-        Absolute paths (e.g. a user-picked shapefile) are returned unchanged.
-        """
-        if not path:
-            return path
-        p = Path(path)
-        if p.is_absolute():
-            return str(p)
-        return str(cls._BUNDLED_ROOT / p)
-
-    @classmethod
     def init_directories(cls):
         """Creates necessary directories for writable data."""
         cls.DB_FILE.parent.mkdir(parents=True, exist_ok=True)

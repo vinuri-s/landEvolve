@@ -8,26 +8,27 @@ from app.ui.views.simulation_window.map_view import MapViewWidget
 from app.ui.widgets.component_table import ComponentTableManager
 from app.ui.window_manager import WindowManager
 from app.ui.validators.simulation_validator import SimulationValidator
-from app.core.constants import SimulationDefaults, LocationDataKeys, ComponentDataKeys
+from app.core.constants import SimulationDefaults, ComponentDataKeys
 
 class SimulationWindow(QMainWindow):
     """
     The main configuration screen where users set up the simulation.
     Features:
-    - Location selection (with map preview)
+    - Input DEM selection (browsed from the user's filesystem, with map preview)
     - Component selection (Erosion, Diffusion, etc.)
     - Simulation parameters (Time steps, period)
     """
-    
+
     def __init__(self):
         super().__init__()
-        
+
         self.ui = Ui_SimulationSetup()
         self.ui.setupUi(self)
 
         self.controller = SimulationController()
-        self.selected_location = None
-        
+        # Absolute path to the GeoTIFF DEM the user browsed for (None until chosen).
+        self.input_tiff_path = None
+
         self.map_widget = MapViewWidget(self.ui.webView)
         self.table_manager = ComponentTableManager(
             self.ui.compTableWidget, 
@@ -44,8 +45,7 @@ class SimulationWindow(QMainWindow):
 
     def setup_connections(self):
         self.ui.addComponentBtn.clicked.connect(self.add_component)
-        self.ui.locationComboBox.currentIndexChanged.connect(self.on_location_changed)
-        self.ui.resolutionComboBox.currentIndexChanged.connect(self.on_resolution_changed)
+        self.ui.inputDemBtn.clicked.connect(self._on_browse_input_dem)
         self.ui.viewSimulationBtn.clicked.connect(self.on_view_simulation_clicked)
         self.ui.showDemBoundaryToggle.toggled.connect(self._on_toggle_dem_boundary)
         self.ui.webView.loadFinished.connect(self._on_map_load_finished)
@@ -72,9 +72,9 @@ class SimulationWindow(QMainWindow):
     def _on_map_load_finished(self, ok):
         """Re-applies overlays once the asynchronous MapLibre HTML has fully initialized."""
         if ok:
-            if self.ui.showDemBoundaryToggle.isChecked():
+            if self.input_tiff_path and self.ui.showDemBoundaryToggle.isChecked():
                 self._on_toggle_dem_boundary(True)
-                
+
             file_path = self.ui.featureShapefileLineEdit.text()
             if self.ui.trackFeatureCheckBox.isChecked() and file_path:
                 try:
@@ -88,30 +88,14 @@ class SimulationWindow(QMainWindow):
     def load_initial_data(self):
         self.ui.simulationPeriodLineEdit.setText(str(SimulationDefaults.PERIOD))
         self.ui.timeStepLineEdit.setText(str(SimulationDefaults.TIME_STEP))
-        
+
         # Hide the feature shapefile uploader initially
         self._toggle_feature_tracking(False)
 
-        locations = self.controller.get_locations()
-        for loc in locations:
-            self.ui.locationComboBox.addItem(loc.name, loc)
+        self.ui.showDemBoundaryToggle.setChecked(False)
+        self.map_widget.show_placeholder("Select an input DEM to preview it here")
 
-        if locations:
-            self.selected_location = locations[0]
-            self.ui.locationComboBox.setCurrentIndex(0)
-            self.on_location_changed()
-            self.ui.showDemBoundaryToggle.setChecked(False)
-            
-    def on_location_changed(self):
-        selected_location = self.ui.locationComboBox.currentData()
-        if selected_location:
-            self.load_location_data(selected_location)
-                
-    def on_resolution_changed(self):
-        if self.ui.showDemBoundaryToggle.isChecked():
-            self._on_toggle_dem_boundary(True)
-            
-    @log_action("Opened Add Component Window")     
+    @log_action("Opened Add Component Window")
     def add_component(self):
         self.add_component_ui = AddComponentDlg()
         self.add_component_ui.component_added.connect(self.on_component_added)
@@ -144,48 +128,56 @@ class SimulationWindow(QMainWindow):
         dlg.exec()
 
 
-    def load_location_data(self, selected_location):
-        self.selected_location = selected_location
-        if self.selected_location:
-            # Block signals while clearing/adding to prevent false triggers
-            self.ui.resolutionComboBox.blockSignals(True)
-            self.ui.resolutionComboBox.clear()
-        
-            if hasattr(self.selected_location, LocationDataKeys.GEOTIFFS) and getattr(self.selected_location, LocationDataKeys.GEOTIFFS):
-                for geotiff in getattr(self.selected_location, LocationDataKeys.GEOTIFFS):
-                    self.ui.resolutionComboBox.addItem(geotiff.resolution, geotiff)
-                    
-            self.ui.resolutionComboBox.blockSignals(False)
-            
-            self.map_widget.clear()
-            if self.selected_location.latitude and self.selected_location.longitude:
-                self.map_widget.load_map(
-                    self.selected_location.latitude,
-                    self.selected_location.longitude
-                )
-            else:
-                self.map_widget.show_placeholder("Location coordinates not available")
+    def _on_browse_input_dem(self):
+        """Lets the user pick a GeoTIFF DEM from their own filesystem, then
+        previews it: centres the map on the DEM, reads its resolution (metres)
+        into the details, and draws its boundary."""
+        from PyQt6.QtWidgets import QFileDialog
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select Input DEM",
+            "",
+            "GeoTIFF Files (*.tif *.tiff)"
+        )
+        if not file_path:
+            return
 
-        self.ui.descriptionTextEdit.setText(self.selected_location.description or "No description available.")
+        self.input_tiff_path = file_path
+        self.ui.inputDemLineEdit.setText(file_path)
+        self._load_input_preview()
+
+    def _load_input_preview(self):
+        """Renders the selected DEM: details panel + map preview centred on it."""
+        if not self.input_tiff_path:
+            return
+
+        # Populate the resolution/details panel straight away (no map needed).
+        self._show_dem_info(self.input_tiff_path)
+
+        # Centre the map on the DEM's footprint. Overlays (boundary) are applied
+        # in _on_map_load_finished once the fresh map HTML has initialised.
+        try:
+            bounds = self.controller.get_geotiff_bounds(self.input_tiff_path)
+            center_lat = (bounds["south"] + bounds["north"]) / 2
+            center_lon = (bounds["west"] + bounds["east"]) / 2
+            self.map_widget.load_map(center_lat, center_lon)
+        except Exception as e:
+            from app.core.logging.manager import LogManager
+            LogManager.get_logger("ui").error(f"Failed to preview input DEM: {e}")
+            self.map_widget.show_placeholder("Could not preview the selected DEM")
 
     def _on_toggle_dem_boundary(self, checked):
         if not checked:
             self.map_widget.remove_overlay('dem-boundary')
-            self.ui.demInfoLabel.hide()
-            self.ui.demInfoLabel.clear()
             return
 
-        geotiff = self.ui.resolutionComboBox.currentData()
-        if not geotiff:
+        if not self.input_tiff_path:
             return
 
         try:
-            from app.core.config import Config
-            tiff_path = Config.resolve_resource(geotiff.tiff_file_path)
-            geojson_str = self.controller.get_geotiff_boundary_geojson(tiff_path)
+            geojson_str = self.controller.get_geotiff_boundary_geojson(self.input_tiff_path)
             if geojson_str:
-                self.map_widget.set_overlay('dem-boundary', geojson_str, line_color='yellow', fill_opacity=0.0)
-            self._show_dem_info(tiff_path)
+                self.map_widget.set_overlay('dem-boundary', geojson_str, line_color='yellow', fill_opacity=0.0, fit_bounds=True)
         except Exception as e:
             from app.core.logging.manager import LogManager
             LogManager.get_logger("ui").error(f"Failed to generate DEM boundary: {e}")
@@ -202,12 +194,13 @@ class SimulationWindow(QMainWindow):
         if info.get("min_elev") is not None:
             elev = f"{info['min_elev']}–{info['max_elev']} m"
 
-        # Compact single line so it stays readable without eating vertical space.
+        # Compact single line, but each value is labelled so the user knows what
+        # it is (e.g. "Resolution: 1.0 m" rather than a bare "1.0 m").
         self.ui.demInfoLabel.setText(
-            f"{info['width']}×{info['height']} px "
-            f"&nbsp;·&nbsp; {info['resolution']} m "
-            f"&nbsp;·&nbsp; {info['crs']} "
-            f"&nbsp;·&nbsp; elev {elev}"
+            f"Size: {info['width']}×{info['height']} px "
+            f"&nbsp;·&nbsp; Resolution: {info['resolution']} m "
+            f"&nbsp;·&nbsp; CRS: {info['crs']} "
+            f"&nbsp;·&nbsp; Elevation: {elev}"
         )
         self.ui.demInfoLabel.setToolTip(
             f"Size: {info['width']} × {info['height']} px\n"
@@ -270,7 +263,7 @@ class SimulationWindow(QMainWindow):
         """Builds the final payload dictionary to pass to the Simulation Engine."""
         return SimulationValidator.validate_and_collect(
             parent_window=self,
-            selected_geotiff=self.ui.resolutionComboBox.currentData(),
+            input_tiff_path=self.input_tiff_path,
             period_text=self.ui.simulationPeriodLineEdit.text(),
             time_step_text=self.ui.timeStepLineEdit.text(),
             simulation_number=self.controller.get_next_simulation_number(),

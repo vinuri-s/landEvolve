@@ -1,6 +1,7 @@
+import os
+
 from PyQt6.QtWidgets import QMessageBox
 from app.core.constants import SimulationParamKeys, ComponentDataKeys
-from app.core.config import Config
 
 class SimulationValidator:
     """
@@ -10,24 +11,29 @@ class SimulationValidator:
     """
     
     @staticmethod
-    def validate_and_collect(parent_window, 
-                           selected_geotiff, 
-                           period_text: str, 
-                           time_step_text: str, 
+    def validate_and_collect(parent_window,
+                           input_tiff_path,
+                           period_text: str,
+                           time_step_text: str,
                            simulation_number: int,
                            components_list: list,
                            track_feature: bool = False,
                            feature_shapefile: str = "",
                            first_effect_threshold_text: str = "0.01") -> dict:
-        
+
         sim_obj = {}
-        
-        # 1. Validate Geotiff resolution selection
-        if not selected_geotiff:
-            QMessageBox.warning(parent_window, "Missing Data", "Please select a resolution")
+
+        # 1. Validate the input DEM the user browsed for
+        if not input_tiff_path:
+            QMessageBox.warning(parent_window, "Missing Data", "Please select an input DEM file.")
             return None
-            
-        sim_obj[SimulationParamKeys.INPUT_TIFF_PATH] = Config.resolve_resource(selected_geotiff.tiff_file_path)
+
+        if not os.path.exists(input_tiff_path):
+            QMessageBox.warning(parent_window, "Invalid Input",
+                                "The selected input DEM file could not be found. Please choose it again.")
+            return None
+
+        sim_obj[SimulationParamKeys.INPUT_TIFF_PATH] = input_tiff_path
         
         # 2. Validate Time Parameters
         try:
