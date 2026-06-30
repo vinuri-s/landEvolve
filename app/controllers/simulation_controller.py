@@ -1,4 +1,3 @@
-from app.services.location_service import LocationService
 from app.services.simulation_service import SimulationService
 from app.services.shapefile_service import ShapefileService
 
@@ -8,17 +7,7 @@ class SimulationController:
     Connects the View (UI) to the Services (Business Logic) so the UI doesn't need to know about databases.
     """
     def __init__(self):
-        self.location_service = LocationService()
         self.sim_service = SimulationService()
-
-    def get_locations(self):
-        return self.location_service.get_all_locations()
-        
-    def get_location(self, location_id):
-        return self.location_service.get_location(location_id)
-        
-    def get_resolutions(self, location_id):
-        return self.location_service.get_resolutions(location_id)
 
     def run_simulation(self, sim_params, callback):
         return self.sim_service.run_simulation(sim_params, callback)

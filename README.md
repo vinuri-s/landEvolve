@@ -79,7 +79,7 @@ They are decoupled but communicate through shared Landlab grid fields, not direc
 ### 2. User Interface (`app/ui`)
 A modern, responsive PyQt6 interface.
 *   **`HomeWindow`**: The landing dashboard.
-*   **`SimulationWindow`**: The main setup screen for configuring simulation parameters, selecting components, and choosing locations. Includes a satellite **Location Preview** map that can overlay the DEM boundary and show its metadata (size, resolution, CRS, elevation range).
+*   **`SimulationWindow`**: The main setup screen for configuring simulation parameters, selecting components, and browsing for an input DEM file from the user's own filesystem. A satellite **Location Preview** map (centred on the selected DEM) can overlay its boundary, and a labelled details line beneath the map shows the DEM's metadata — size, **resolution (m)**, CRS, and elevation range.
 *   **`SimulationResultsWindow`**: Displays simulation progress and final results.
     *   **2D Visualization**: Carousel view of Initial, Final, and Difference maps.
     *   **3D Visualization**: Interactive 3D terrain viewer.
@@ -90,8 +90,7 @@ A modern, responsive PyQt6 interface.
 
 ### 3. Services (`app/services`)
 Business logic layer acting as a bridge between UI and Data/Engine.
-*   **`SimulationService`**: Prepares simulation data, merges user parameters with database defaults, and triggers the engine.
-*   **`LocationService`**: Retrieves available simulation locations and resolution options.
+*   **`SimulationService`**: Prepares simulation data, merges user parameters with database defaults, reads GeoTIFF metadata (bounds, resolution) for the input DEM the user browsed for, and triggers the engine.
 *   **`ComponentService`**: Retrieves component definitions (Landlab-based and custom) and their user-configurable parameters.
 *   **`ShapefileService`**: Parses geographic shapefiles into GeoJSON for the map UI, and builds DEM-boundary GeoJSON.
 *   **`LithologyService`**: Provides rock-type (lithology) definitions and erodibility values.
@@ -100,8 +99,8 @@ Business logic layer acting as a bridge between UI and Data/Engine.
 ### 4. Data Layer (`app/data`)
 Manages data persistence.
 *   **`Database`** (instance `db_manager`): Handles SQLite connection and session management.
-*   **Models**: `Location`, `GeoTiff`, `Component`/`ComponentParam`, `Lithology`, and `VegetationClass`. Each `ComponentParam` carries presentation metadata (`display_name`, `units`, `description`) so the configuration dialog shows a layman-friendly name and units beside the technical key, with the description as a tooltip.
-*   **Repositories**: Data access for `Location`/`GeoTiff`, `Component`, `Lithology`, and `VegetationClass`.
+*   **Models**: `Component`/`ComponentParam`, `Lithology`, and `VegetationClass`. (Input DEMs are **not** stored in the database — the user browses for a GeoTIFF on their own filesystem at run time.) Each `ComponentParam` carries presentation metadata (`display_name`, `units`, `description`) so the configuration dialog shows a layman-friendly name and units beside the technical key, with the description as a tooltip.
+*   **Repositories**: Data access for `Component`, `Lithology`, and `VegetationClass`.
 
 ### 5. Geospatial Logic, Data Processing & Engine Workflow
 LandEvolve operates on a strict, decoupled pipeline that handles complex geospatial transformations from user input down to scientific simulation and finally to visual output.
@@ -199,12 +198,12 @@ pip install -r requirements.txt
 python main.py
 ```
 
-> On first launch the app **creates and seeds its SQLite database automatically**: `Database.create_tables()` builds the schema and `app/data/seed.py` populates the reference data (locations, DEMs, components, lithologies, vegetation classes) if the tables are empty. A pre-seeded `app/data/db/app_data.db` is **committed to the repo** (so the build can bundle it and CI needs no seeding step); only the transient SQLite `-wal`/`-shm` sidecars are git-ignored. Seeding remains idempotent — your edits and runs are never overwritten, and the seed source in `app/data/seed.py` stays the source of truth.
+> On first launch the app **creates and seeds its SQLite database automatically**: `Database.create_tables()` builds the schema and `app/data/seed.py` populates the reference data (components, lithologies, vegetation classes) if the tables are empty. Input DEMs are not seeded — they are browsed from the user's filesystem at run time. A pre-seeded `app/data/db/app_data.db` is **committed to the repo** (so the build can bundle it and CI needs no seeding step); only the transient SQLite `-wal`/`-shm` sidecars are git-ignored. Seeding remains idempotent — your edits and runs are never overwritten, and the seed source in `app/data/seed.py` stays the source of truth.
 
 ## ▶️ Usage
 
-1. **Pick a location & resolution** in *Location Setup*. The satellite *Location Preview* can overlay the DEM boundary and show its metadata (size, resolution, CRS, elevation range).
-2. **Set the run length**: *Simulation Period* (total time) and *Time Step* (`dt`).
+1. **Browse for an input DEM** (`Browse...`) in *Input Setup*. Once selected, the satellite *Location Preview* centres on the DEM and a labelled details line beneath the map shows its metadata — size, **resolution (m)**, CRS, and elevation range. The boundary toggle overlays the DEM's extent on the map.
+2. **Set the run length**: *Total Duration* (total time) and *Time Step* (`dt`).
 3. *(Optional)* Enable **Track Interested Landscape Feature** and supply a polygon shapefile to monitor a specific area over time. Optionally set the **First-Effect Threshold (m)** (default `0.01`) — the amount of geomorphic change at which the feature is reported as "first affected".
 4. **Add components** (*Add Component*) and configure their parameters — e.g. `FlowAccumulatorComponent`, a SPACE eroder, `DepthDependentDiffuserComponent`, `PrecipitationComponent`, `VegetationComponent`, `LithoLayersComponent`. Precipitation requires a Flow Accumulator to take effect.
 5. **Run Simulation**. Progress is shown live; the UI stays responsive (runs on a background thread).
@@ -215,7 +214,7 @@ python main.py
 If you care about a *specific* place in the DEM — a fan, terrace, archaeological site, road, channel reach — you can have LandEvolve monitor just that area through the run and tell you **when the evolving landscape first reaches it**.
 
 1. **Prepare a polygon shapefile** (`.shp`) outlining the area of interest. Any CRS is fine — it's automatically reprojected to match the DEM; the polygon is rasterized into a boolean mask so only pixels strictly inside it are monitored. (Provide the full shapefile set — `.shp`, `.shx`, `.dbf`, and ideally `.prj` — in the same folder.)
-2. In *Location Setup*, tick **Track Interested Landscape Feature**. A **Feature Shapefile** browse field appears — select your `.shp`. The polygon is drawn on the preview map so you can confirm placement.
+2. In *Input Setup*, tick **Track Interested Landscape Feature**. A **Feature Shapefile** browse field appears — select your `.shp`. The polygon is drawn on the preview map so you can confirm placement.
 3. *(Optional)* Set the **First-Effect Threshold (m)** — how much geomorphic change counts as the feature being "first affected" (default `0.01 m`).
 4. Configure components and **Run Simulation** as usual.
 5. Open the **Feature Tracking** tab in the results. You get:
@@ -245,11 +244,10 @@ python build_executable.py
 
 > [!NOTE]
 > The build uses `build_executable.py` (the equivalent `LandEvolve.spec` is kept in sync for `pyinstaller LandEvolve.spec`). Only **read-only runtime assets** are bundled:
-> - `resources/inputs/` — the sample/input DEMs (read from the bundle via `Config.RESOURCES_DIR`)
 > - `resources/about.jpg` — the home-screen image
 > - `app/data/db/app_data.db` — the seeded SQLite database, copied to a writable location on first launch
 >
-> Deliberately **not** bundled: `resources/outputs/` (writable, generated per run beside the executable), the empty `app/resources/` directory, dev docs, and the transient SQLite `-wal`/`-shm` files. This keeps the bundle lean and avoids shipping run artifacts.
+> Input DEMs are browsed from the user's own filesystem at run time, so they are **not** bundled. Also deliberately **not** bundled: `resources/outputs/` (writable, generated per run beside the executable), the empty `app/resources/` directory, dev docs, and the transient SQLite `-wal`/`-shm` files. This keeps the bundle lean and avoids shipping run artifacts.
 >
 > If you regenerate the seeded `app_data.db`, checkpoint any pending WAL writes first (open and cleanly close the app once) so the bundled `.db` is complete without its `-wal` sidecar.
 

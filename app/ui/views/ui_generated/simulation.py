@@ -20,36 +20,34 @@ class Ui_SimulationSetup(object):
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(12)
         
-        self.locationGroup = QtWidgets.QGroupBox("Location Setup")
+        self.locationGroup = QtWidgets.QGroupBox("Input Setup")
         left_layout.addWidget(self.locationGroup)
-        
+
         location_form = QtWidgets.QFormLayout(self.locationGroup)
         location_form.setFieldGrowthPolicy(QtWidgets.QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
         location_form.setLabelAlignment(QtCore.Qt.AlignmentFlag.AlignRight)
-        
-        self.locationLabel = QtWidgets.QLabel("Location:")
-        self.locationComboBox = QtWidgets.QComboBox()
-        location_form.addRow(self.locationLabel, self.locationComboBox)
-        
-        self.resolutionLabel = QtWidgets.QLabel("Resolution:")
-        self.resolutionComboBox = QtWidgets.QComboBox()
-        location_form.addRow(self.resolutionLabel, self.resolutionComboBox)
-        
-        self.periodLabel = QtWidgets.QLabel("Simulation Period:")
+
+        # Input DEM: browsed from the user's own filesystem (no longer a DB list).
+        self.inputDemLabel = QtWidgets.QLabel("Input DEM:")
+        self.inputDemWidget = QtWidgets.QWidget()
+        input_dem_layout = QtWidgets.QHBoxLayout(self.inputDemWidget)
+        input_dem_layout.setContentsMargins(0, 0, 0, 0)
+        self.inputDemLineEdit = QtWidgets.QLineEdit()
+        self.inputDemLineEdit.setPlaceholderText("Select a GeoTIFF DEM (.tif)")
+        self.inputDemLineEdit.setReadOnly(True)
+        self.inputDemBtn = QtWidgets.QPushButton("Browse...")
+        input_dem_layout.addWidget(self.inputDemLineEdit)
+        input_dem_layout.addWidget(self.inputDemBtn)
+        location_form.addRow(self.inputDemLabel, self.inputDemWidget)
+
+        self.periodLabel = QtWidgets.QLabel("Total Duration:")
         self.simulationPeriodLineEdit = QtWidgets.QLineEdit()
         location_form.addRow(self.periodLabel, self.simulationPeriodLineEdit)
-        
+
         self.timeStepLabel = QtWidgets.QLabel("Time Step:")
         self.timeStepLineEdit = QtWidgets.QLineEdit()
         location_form.addRow(self.timeStepLabel, self.timeStepLineEdit)
-        
-        self.descriptionLabel = QtWidgets.QLabel("Description:")
-        self.descriptionTextEdit = QtWidgets.QTextEdit()
-        self.descriptionTextEdit.setReadOnly(True)
-        self.descriptionTextEdit.setMinimumHeight(80)
-        self.descriptionTextEdit.setMaximumHeight(120)
-        location_form.addRow(self.descriptionLabel, self.descriptionTextEdit)
-        
+
         self.trackFeatureCheckBox = QtWidgets.QCheckBox("Track Interested Landscape Feature")
         location_form.addRow(self.trackFeatureCheckBox)
         

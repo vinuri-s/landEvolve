@@ -2,31 +2,9 @@ from sqlalchemy import Column, Integer, String, ForeignKey, Text, REAL
 from sqlalchemy.orm import relationship
 from app.data.database import Base
 
-class Location(Base):
-    """
-    Represents a geographical location (e.g., 'Whiriapa', 'Kaitorete').
-    A location can have multiple associated DEMs (GeoTiffs).
-    """
-    __tablename__ = 'location'
-    
-    id = Column(Integer, primary_key=True)
-    name = Column(String, nullable=False)
-    latitude = Column(REAL)  # Decimal degrees
-    longitude = Column(REAL) # Decimal degrees
-    description = Column(Text)
-    
-    # Relationship to GeoTiff files available for this location
-    geotiffs = relationship("GeoTiff", back_populates="location")
-
-class GeoTiff(Base):
-    __tablename__ = 'geotiff'
-    
-    id = Column(Integer, primary_key=True)
-    location_id = Column(Integer, ForeignKey('location.id'), nullable=False)
-    tiff_file_path = Column(String, nullable=False)
-    resolution = Column(String)
-    
-    location = relationship("Location", back_populates="geotiffs")
+# NOTE: DEM inputs are no longer stored in the database. The user browses for a
+# GeoTIFF on their own system in the Simulation Setup screen, so the former
+# `Location` and `GeoTiff` tables have been removed.
 
 class Component(Base):
     """

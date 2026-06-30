@@ -2,36 +2,17 @@
 Idempotent database seeding.
 
 Schema is created by `Database.create_tables()`; this module fills the
-reference tables with the data the app needs to run (locations, DEMs,
-components + parameters, lithologies, vegetation classes). Each table is only
+reference tables with the data the app needs to run (components + parameters,
+lithologies, vegetation classes). DEM inputs are not stored here — the user
+browses for them at run time. Each table is only
 seeded when empty, so user edits and reruns are never overwritten.
 
 This keeps the seed data in version control as reviewable source, so the
 SQLite binary itself does not need to be committed.
 """
 from app.data.models import (
-    Location, GeoTiff, Component, ComponentParam, Lithology, VegetationClass,
+    Component, ComponentParam, Lithology, VegetationClass,
 )
-
-LOCATIONS = [
-    {'id': 8, 'name': 'Whiria Pa', 'latitude': -35.49182983769452, 'longitude': 173.4114087803103, 'description': 'Maori Sacred Place'},
-    {'id': 14, 'name': 'Oruaka Pa', 'latitude': -43.82240988, 'longitude': 172.7117944, 'description': 'Pa site in wairewa catchment'},
-    {'id': 16, 'name': 'Pakanae', 'latitude': -35.4988549, 'longitude': 173.442047, 'description': 'Maori Ancestral Land'},
-    {'id': 17, 'name': 'Sunbury Ring 4', 'latitude': -37.553448, 'longitude': 144.703146, 'description': 'Aboriginal land'},
-    {'id': 18, 'name': 'Okiwi Bay', 'latitude': -42.21700635452575, 'longitude': 173.860751, 'description': None},
-    {'id': 19, 'name': 'Half Moon Bay', 'latitude': -42.25005481669162, 'longitude': 173.81860299999997, 'description': 'Boulder for landslide'},
-    {'id': 20, 'name': 'Peketa Pa', 'latitude': -42.4347467, 'longitude': 173.5877726, 'description': None},
-]
-
-GEOTIFFS = [
-    {'id': 1, 'location_id': 8, 'tiff_file_path': 'resources/inputs/whiriapa/whiriapa_1m.tif', 'resolution': '1m'},
-    {'id': 7, 'location_id': 14, 'tiff_file_path': 'resources/inputs/oruaka_pa/oruaka_pa.tif', 'resolution': '1 m'},
-    {'id': 9, 'location_id': 16, 'tiff_file_path': 'resources/inputs/pakanae/pakanae.tif', 'resolution': '1 m'},
-    {'id': 10, 'location_id': 17, 'tiff_file_path': 'resources/inputs/sunbury/sunbury.tif', 'resolution': '1m'},
-    {'id': 11, 'location_id': 18, 'tiff_file_path': 'resources/inputs/okiwi/okiwi.tif', 'resolution': '1 m'},
-    {'id': 12, 'location_id': 19, 'tiff_file_path': 'resources/inputs/half_moon_bay/landslide_filled_1m.tif', 'resolution': '1 m'},
-    {'id': 13, 'location_id': 20, 'tiff_file_path': 'resources/inputs/peketa_pa/peketa_pa.tif', 'resolution': '1 m'},
-]
 
 COMPONENTS = [
     {'id': 6, 'name': 'FlowAccumulatorComponent', 'description': 'Routes water across the terrain: computes flow directions, drainage area and river discharge from the runoff field. Required for the erosion components to do anything.'},
@@ -114,11 +95,6 @@ VEGETATION_CLASSES = [
 def seed_database(session):
     """Populate empty reference tables. Safe to call on every startup."""
     seeded = False
-
-    if session.query(Location).count() == 0:
-        session.add_all(Location(**r) for r in LOCATIONS)
-        session.add_all(GeoTiff(**r) for r in GEOTIFFS)
-        seeded = True
 
     if session.query(Component).count() == 0:
         session.add_all(Component(id=r["id"], name=r["name"], description=r["description"]) for r in COMPONENTS)
