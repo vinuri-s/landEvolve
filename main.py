@@ -2,8 +2,21 @@ import sys
 import os
 import matplotlib
 matplotlib.use('Agg')
-# Suppress QtWebEngine DirectComposition warnings by hiding error logs
-os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = "--log-level=3"
+# QtWebEngine (Chromium) flags applied before QApplication starts.
+#   --log-level=3            : silence DirectComposition warnings.
+# The remaining flags force software rendering so the embedded browser still
+# paints on locked-down machines (university/VDI/remote desktop) where the GPU
+# process is blocked or sandboxed. Without these, every QWebEngineView — the map
+# and the plotly 3D / sediment-timeline plots — renders blank even though the
+# HTML is generated correctly and opens fine in a normal browser.
+#   --ignore-gpu-blocklist   : don't refuse the GPU just because it's blocklisted.
+#   --enable-unsafe-swiftshader : allow SwiftShader (software) WebGL, which
+#                                 plotly 3D and MapLibre need.
+#   --disable-gpu-sandbox    : the GPU sandbox is the usual thing locked down.
+os.environ.setdefault(
+    "QTWEBENGINE_CHROMIUM_FLAGS",
+    "--log-level=3 --ignore-gpu-blocklist --enable-unsafe-swiftshader --disable-gpu-sandbox",
+)
 from PyQt6.QtWidgets import QApplication
 from app.ui.views.home_window import HomeWindow
 from app.ui.themes import ThemeManager
