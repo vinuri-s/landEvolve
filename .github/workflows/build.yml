@@ -42,22 +42,33 @@ jobs:
       - name: Build executable
         run: python build_executable.py
 
-      # Upload the build folder directly — GitHub zips it into one downloadable
-      # artifact (no separate zip step, no double-zipping). `if: always()` so the
+      # Upload the runnable product. On Windows that is the onedir folder
+      # (dist/LandEvolve); on macOS it is the .app bundle (dist/LandEvolve.app) —
+      # the loose onedir folder has no Info.plist and segfaults Qt at startup.
+      # GitHub zips the path into one downloadable artifact. `if: always()` so the
       # build still uploads even if a later step has a problem.
       - name: Upload build artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: LandEvolve-${{ matrix.label }}
-          path: dist/LandEvolve
+          path: ${{ matrix.label == 'macos' && 'dist/LandEvolve.app' || 'dist/LandEvolve' }}
           if-no-files-found: warn
           retention-days: 14
 
       # On a version tag (e.g. v1.0.0): zip the build and attach it to a Release.
-      - name: Zip for release
-        if: startsWith(github.ref, 'refs/tags/')
-        run: python -c "import shutil; shutil.make_archive('LandEvolve-${{ matrix.label }}', 'zip', 'dist', 'LandEvolve')"
+      # Windows: shutil.make_archive zips the onedir folder (no symlinks, fine).
+      - name: Zip for release (Windows)
+        if: startsWith(github.ref, 'refs/tags/') && matrix.label == 'windows'
+        run: python -c "import shutil; shutil.make_archive('LandEvolve-windows', 'zip', 'dist', 'LandEvolve')"
+
+      # macOS: use `ditto`, not shutil/zip — a .app bundle contains symlinks
+      # (Qt frameworks' Versions/Current, etc.) that Python's zipfile flattens,
+      # corrupting the bundle. `ditto -c -k --keepParent` preserves them and the
+      # bundle structure so the .app actually launches after download.
+      - name: Zip for release (macOS)
+        if: startsWith(github.ref, 'refs/tags/') && matrix.label == 'macos'
+        run: ditto -c -k --keepParent dist/LandEvolve.app LandEvolve-macos.zip
 
       - name: Attach to Release
         if: startsWith(github.ref, 'refs/tags/')
