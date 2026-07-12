@@ -1,8 +1,8 @@
 import os
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QSizePolicy, QDoubleSpinBox, QCheckBox
-from PyQt6.QtGui import QPixmap
 from PyQt6.QtCore import Qt
 from app.core.constants import SimulationResultKeys, Carousel2DWidgetConsts
+from app.ui.widgets.zoomable_image_view import ZoomableImageView
 
 class Carousel2DWidget(QWidget):
     """
@@ -15,7 +15,6 @@ class Carousel2DWidget(QWidget):
         self.image_paths = image_paths
         self.controller = controller
         
-        self.current_pixmap = None
         self.current_2d_key = None
         self.current_2d_title = None
         self.current_active_btn = None
@@ -31,12 +30,13 @@ class Carousel2DWidget(QWidget):
         self.lbl_title.setStyleSheet("font-size: 16px; font-weight: bold; margin-bottom: 10px;")
         layout.addWidget(self.lbl_title)
         
-        # Image Display Area
-        self.lbl_image = QLabel()
-        self.lbl_image.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.lbl_image.setText(Carousel2DWidgetConsts.LBL_LOADING) # Set initial text
-        self.lbl_image.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding) # Moved setSizePolicy
-        self.lbl_image.setMinimumSize(400, 300) # Moved setMinimumSize
+        # Image Display Area -- fits the panel by default; Ctrl+wheel zooms in
+        # to native resolution and click-drag pans, so a viewer isn't stuck
+        # only ever seeing the plot downsampled to the panel size.
+        self.lbl_image = ZoomableImageView()
+        self.lbl_image.set_placeholder(Carousel2DWidgetConsts.LBL_LOADING)
+        self.lbl_image.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.lbl_image.setMinimumSize(400, 300)
         layout.addWidget(self.lbl_image)
         
         # Toggle Controls
@@ -159,9 +159,8 @@ class Carousel2DWidget(QWidget):
             result = self.controller.regenerate_2d_difference_map(diff_tif, diff_png, vmin=vmin, vmax=vmax, scaling=scaling)
             if result is not False:
                 # Reload the image to show updated scale
-                self.current_pixmap = QPixmap(diff_png)
-                self._refresh_image_scaling()
-                
+                self.lbl_image.load(diff_png)
+
                 # Update spinbox if it was an auto-reset and we got a valid number back
                 if vmin is None and vmax is None and isinstance(result, (int, float)):
                     self.spin_scale.blockSignals(True)
@@ -183,31 +182,12 @@ class Carousel2DWidget(QWidget):
             
         # Find path
         image_path = self.image_paths.get(result_key) # Changed path to image_path, key to result_key
-        if image_path and os.path.exists(image_path):
-            self.current_pixmap = QPixmap(image_path)
-            self._refresh_image_scaling() # Kept original method name
-        else:
-            self.lbl_image.setText(f"{Carousel2DWidgetConsts.LBL_NOT_FOUND}{image_path}") # Used constant and image_path
-            self.current_pixmap = None # Removed duplicate line
-            
+        if not self.lbl_image.load(image_path):
+            self.lbl_image.set_placeholder(f"{Carousel2DWidgetConsts.LBL_NOT_FOUND}{image_path}")
+
         self.current_2d_key = result_key # Changed key to result_key
         self.current_2d_title = title
         self.current_active_btn = active_btn
-        
-    def _refresh_image_scaling(self):
-        """Scales the current pixmap to gracefully fit the Qt layout rect."""
-        if hasattr(self, 'current_pixmap') and self.current_pixmap and hasattr(self, 'lbl_image'):
-            # Ensure label has a valid size, if not (e.g. 0,0), use minimum size or skip
-            target_size = self.lbl_image.size()
-            if not target_size.isValid() or target_size.width() <= 10 or target_size.height() <= 10:
-                 return # Too small to render usefully wait for resize
-                 
-            scaled = self.current_pixmap.scaled(
-                target_size, 
-                Qt.AspectRatioMode.KeepAspectRatio, 
-                Qt.TransformationMode.SmoothTransformation
-            )
-            self.lbl_image.setPixmap(scaled)
 
     def show_input(self):
         self._update_2d_display(SimulationResultKeys.INITIAL_PLOT, Carousel2DWidgetConsts.BTN_INPUT, self.btn_input)
@@ -217,8 +197,3 @@ class Carousel2DWidget(QWidget):
 
     def show_diff(self):
         self._update_2d_display(self._active_diff_key(), Carousel2DWidgetConsts.BTN_DIFF, self.btn_diff)
-
-    def resizeEvent(self, event):
-        """Qt lifecycle hook intercept. Redraws the image when the user resizes the window."""
-        super().resizeEvent(event)
-        self._refresh_image_scaling()

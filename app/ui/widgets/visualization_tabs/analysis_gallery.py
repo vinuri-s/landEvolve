@@ -2,8 +2,8 @@ import os
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QComboBox, QSizePolicy
 )
-from PyQt6.QtGui import QPixmap
 from PyQt6.QtCore import Qt
+from app.ui.widgets.zoomable_image_view import ZoomableImageView
 
 
 class AnalysisGalleryWidget(QWidget):
@@ -16,7 +16,6 @@ class AnalysisGalleryWidget(QWidget):
         super().__init__(parent)
         self.items = [(t, p) for (t, p) in plots if p and os.path.exists(p)]
         self.index = 0
-        self.current_pixmap = None
         self._build()
 
     def _build(self):
@@ -53,9 +52,10 @@ class AnalysisGalleryWidget(QWidget):
         self.lbl_title.setStyleSheet("font-size: 15px; font-weight: bold; margin: 6px;")
         layout.addWidget(self.lbl_title)
 
-        # Image
-        self.lbl_image = QLabel()
-        self.lbl_image.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        # Image -- fits the panel by default; Ctrl+wheel zooms in to native
+        # resolution and click-drag pans, so a viewer isn't stuck only ever
+        # seeing the plot downsampled to the panel size.
+        self.lbl_image = ZoomableImageView()
         self.lbl_image.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.lbl_image.setMinimumSize(400, 300)
         layout.addWidget(self.lbl_image, stretch=1)
@@ -65,8 +65,7 @@ class AnalysisGalleryWidget(QWidget):
     def _load_current(self):
         title, path = self.items[self.index]
         self.lbl_title.setText(f"{title}  ({self.index + 1}/{len(self.items)})")
-        self.current_pixmap = QPixmap(path)
-        self._refresh_scaling()
+        self.lbl_image.load(path)
 
         # Keep selector in sync without re-triggering jump
         self.selector.blockSignals(True)
@@ -75,19 +74,6 @@ class AnalysisGalleryWidget(QWidget):
 
         self.btn_prev.setEnabled(self.index > 0)
         self.btn_next.setEnabled(self.index < len(self.items) - 1)
-
-    def _refresh_scaling(self):
-        if not self.current_pixmap:
-            return
-        size = self.lbl_image.size()
-        if not size.isValid() or size.width() <= 10 or size.height() <= 10:
-            return
-        self.lbl_image.setPixmap(
-            self.current_pixmap.scaled(
-                size, Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation
-            )
-        )
 
     def show_prev(self):
         if self.index > 0:
@@ -103,8 +89,3 @@ class AnalysisGalleryWidget(QWidget):
         if 0 <= idx < len(self.items):
             self.index = idx
             self._load_current()
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        if self.items:
-            self._refresh_scaling()
