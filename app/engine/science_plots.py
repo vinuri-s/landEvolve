@@ -121,17 +121,32 @@ def refresh_drainage(grid):
     receiver network reflect the final landscape, independent of whatever
     transient state the simulation loop left behind.
 
-    Mirrors the simulation loop's routing: FlowDirectorSteepest plus a Barnes
-    priority-flood pass (LakeMapperBarnes) that reroutes flow across internal
-    depressions, so the drainage-based plots aren't distorted by pits even when
-    the input DEM wasn't hydrologically filled. The depression fill is written to
-    a scratch surface, never to `topographic__elevation`.
+    Prefers PriorityFloodFlowRouter (richdem-backed, non-recursive) when
+    available; falls back to FlowDirectorSteepest + LakeMapperBarnes
+    otherwise. NOTE: that fallback path's depression rerouting
+    (`reaccumulate_flow=True`) recurses through Landlab's Braun & Willett
+    stack-building algorithm with no depth guard, and can crash the whole
+    process (native stack overflow, not a catchable Python exception) on a
+    large/complex drainage network -- the `except Exception` below can't
+    protect against that, which is exactly why PriorityFloodFlowRouter is
+    tried first. The depression fill is written to a scratch surface, never
+    to `topographic__elevation`, either way.
     Returns True on success, False if routing isn't applicable.
     """
     try:
-        from landlab.components import FlowAccumulator, LakeMapperBarnes
         if "topographic__elevation" not in grid.at_node:
             return False
+
+        try:
+            from landlab.components import PriorityFloodFlowRouter
+            PriorityFloodFlowRouter(
+                grid, flow_metric="D4", depression_handler="fill",
+            ).run_one_step()
+            return True
+        except ImportError:
+            pass  # richdem not installed (ModuleNotFoundError) -- fall back below.
+
+        from landlab.components import FlowAccumulator, LakeMapperBarnes
         FlowAccumulator(grid, flow_director="FlowDirectorSteepest").run_one_step()
         if "_depression_fill__surface" not in grid.at_node:
             grid.add_zeros("_depression_fill__surface", at="node")
