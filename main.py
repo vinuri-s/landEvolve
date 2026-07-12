@@ -29,6 +29,44 @@ os.environ.setdefault(
     "QTWEBENGINE_CHROMIUM_FLAGS",
     "--log-level=3 --ignore-gpu-blocklist --enable-unsafe-swiftshader --disable-gpu-sandbox",
 )
+
+# ---------------------------------------------------------------------------
+# Windows / conda DLL-shadowing workaround.
+# Conda injects <env>\Library\bin into the DLL search path, and DLLs in there
+# (shipped by GDAL/PROJ/etc.) can shadow same-named dependencies of the Qt6
+# DLLs bundled with pip's PyQt6, producing:
+#   ImportError: DLL load failed while importing QtCore:
+#   The specified procedure could not be found.
+# Pre-loading the Qt DLLs with an isolated search path (their own folder plus
+# System32 only) resolves their dependencies correctly; every later import of
+# PyQt6 then binds to these already-loaded copies by name. Harmless when run
+# outside conda or on non-Windows platforms.
+# This MUST run before the first PyQt6 import anywhere in the process.
+if sys.platform == "win32":
+    import ctypes
+    import PyQt6
+
+    _qt_bin = os.path.join(os.path.dirname(PyQt6.__file__), "Qt6", "bin")
+    # LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR (0x100) | LOAD_LIBRARY_SEARCH_SYSTEM32 (0x800)
+    _WINMODE = 0x00000100 | 0x00000800
+    for _dll in (
+        "Qt6Core.dll",
+        "Qt6Gui.dll",
+        "Qt6Widgets.dll",
+        "Qt6Network.dll",
+        "Qt6WebChannel.dll",
+        "Qt6WebEngineCore.dll",
+        "Qt6WebEngineWidgets.dll",
+    ):
+        _path = os.path.join(_qt_bin, _dll)
+        if os.path.exists(_path):
+            try:
+                ctypes.WinDLL(_path, winmode=_WINMODE)
+            except OSError:
+                # Fall through: the normal import will surface a clearer error.
+                pass
+# ---------------------------------------------------------------------------
+
 from PyQt6.QtWidgets import QApplication
 from app.ui.views.home_window import HomeWindow
 from app.ui.themes import ThemeManager
