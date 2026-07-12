@@ -59,7 +59,10 @@ def plot_hypsometry(initial, final, output_path):
         ax.set_ylim(0, 1)
         ax.legend()
         ax.grid(alpha=0.3)
-        plt.tight_layout()
+        # subplots_adjust instead of tight_layout(): tight_layout computes tick
+        # spacing via a matrix inversion (numpy.linalg.inv) that hard-crashes
+        # the process on some Windows/BLAS setups -- fixed margins avoid it.
+        fig.subplots_adjust(left=0.12, right=0.95, top=0.90, bottom=0.10)
         plt.savefig(output_path)
         plt.close()
         return output_path
@@ -97,7 +100,8 @@ def plot_sediment_flux(snapshots, times, cell_area, output_path, uplift_removed=
                 + (" — tectonic uplift removed" if uplift_removed else ""))
         ax.legend()
         ax.grid(alpha=0.3)
-        plt.tight_layout()
+        # subplots_adjust instead of tight_layout() -- see plot_hypsometry.
+        fig.subplots_adjust(left=0.10, right=0.95, top=0.88, bottom=0.12)
         plt.savefig(output_path)
         plt.close()
         return output_path
@@ -245,7 +249,8 @@ def plot_river_long_profile(grid, initial_elev, output_path, number_of_watershed
         ax2.legend(loc="lower right")
         ax2.grid(alpha=0.3)
 
-        plt.tight_layout()
+        # subplots_adjust instead of tight_layout() -- see plot_hypsometry.
+        fig.subplots_adjust(left=0.10, right=0.95, top=0.92, bottom=0.10, hspace=0.3)
         plt.savefig(output_path)
         plt.close()
         return output_path
@@ -318,7 +323,8 @@ def plot_slope_area(grid, output_path, channel_threshold=None):
                 "Channel slope vs drainage area — erosion regime / steady state")
         ax.grid(alpha=0.3, which="both")
         ax.legend(framealpha=0.9, markerscale=2)
-        plt.tight_layout()
+        # subplots_adjust instead of tight_layout() -- see plot_hypsometry.
+        fig.subplots_adjust(left=0.12, right=0.95, top=0.90, bottom=0.12)
         plt.savefig(output_path)
         plt.close()
         return output_path
@@ -355,7 +361,8 @@ def plot_drainage_network(grid, output_path):
                 "log₁₀(drainage area) — where flow concentrates into rivers")
         ax.set_xlabel("Easting (columns)")
         ax.set_ylabel("Northing (rows)")
-        plt.tight_layout()
+        # subplots_adjust instead of tight_layout() -- see plot_hypsometry.
+        fig.subplots_adjust(left=0.08, right=0.95, top=0.90, bottom=0.10)
         plt.savefig(output_path)
         plt.close()
         return output_path
@@ -536,7 +543,8 @@ def plot_soil_thickness(grid, output_path):
                 "Mobile sediment stored above bedrock (m)")
         ax.set_xlabel("Easting (columns)")
         ax.set_ylabel("Northing (rows)")
-        plt.tight_layout()
+        # subplots_adjust instead of tight_layout() -- see plot_hypsometry.
+        fig.subplots_adjust(left=0.08, right=0.95, top=0.90, bottom=0.10)
         plt.savefig(output_path)
         plt.close()
         return output_path

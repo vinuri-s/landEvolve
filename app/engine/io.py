@@ -45,7 +45,12 @@ def plot_topography(data, shape, title, output_path, cmap='terrain', vmin=None, 
     _titled(ax, f"{title} Terrain", "Ground-surface elevation (m)")
     ax.set_xlabel("Easting (columns)", fontsize=12)
     ax.set_ylabel("Northing (rows)", fontsize=12)
-    plt.tight_layout()
+    # subplots_adjust instead of tight_layout(): tight_layout computes tick
+    # spacing via a matrix inversion (numpy.linalg.inv through matplotlib's
+    # transform machinery) that hard-crashes the process on some Windows/BLAS
+    # setups (observed: "Windows fatal exception: code 0xc06d007f") -- fixed
+    # margins are numerically inert and sidestep that code path entirely.
+    fig.subplots_adjust(left=0.1, right=0.95, top=0.90, bottom=0.12)
     plt.savefig(output_path)
     plt.close()
     del plot_data
@@ -111,7 +116,8 @@ def plot_difference(data, shape, title, output_path, vmin=None, vmax=None,
     ax.set_xlabel("Easting (columns)", fontsize=12)
     ax.set_ylabel("Northing (rows)", fontsize=12)
 
-    plt.tight_layout()
+    # subplots_adjust instead of tight_layout() -- see plot_topography.
+    fig.subplots_adjust(left=0.1, right=0.95, top=0.90, bottom=0.12)
     plt.savefig(output_path)
     plt.close()
 
@@ -173,7 +179,8 @@ def plot_erosion_deposition_mask(data, shape, output_path, threshold=None, uplif
     ax.set_xlabel("Easting (columns)", fontsize=12)
     ax.set_ylabel("Northing (rows)", fontsize=12)
 
-    plt.tight_layout()
+    # subplots_adjust instead of tight_layout() -- see plot_topography.
+    fig.subplots_adjust(left=0.1, right=0.95, top=0.90, bottom=0.12)
     plt.savefig(output_path)
     plt.close()
 
