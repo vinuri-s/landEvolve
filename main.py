@@ -1,5 +1,6 @@
 import sys
 import os
+import faulthandler
 import matplotlib
 matplotlib.use('Agg')
 # QtWebEngine (Chromium) flags applied before QApplication starts.
@@ -25,10 +26,30 @@ from app.data.database import db_manager
 
 from app.core.logging import LogManager
 
+# Module-level so the open file object outlives main()'s local scope for the
+# whole process lifetime instead of being eligible for garbage collection.
+_crash_log_file = None
+
 def main():
     """Start the application, initialize theme, and show the main window."""
     LogManager.setup()
     Config.init_directories()
+
+    # A native crash (segfault / access violation in a C extension such as
+    # GDAL, rasterio, or matplotlib's Agg backend) kills the whole process
+    # instantly -- no Python exception, no traceback, every window just
+    # vanishes. That bypasses normal exception handling, so there's nothing
+    # for a try/except to catch. faulthandler installs a low-level signal
+    # handler that writes the Python frame (on every thread, including the
+    # simulation's background QThread) that was executing at the moment of
+    # the fault to this file just before the process dies -- diagnosable
+    # without Event Viewer or admin rights. dump_traceback_later is a
+    # heartbeat that periodically dumps all thread stacks too, so a genuine
+    # hang (not a crash) leaves the same kind of evidence behind.
+    global _crash_log_file
+    _crash_log_file = open(Config.LOGS_DIR / "crash.log", "w", buffering=1)
+    faulthandler.enable(file=_crash_log_file)
+    faulthandler.dump_traceback_later(300, repeat=True, file=_crash_log_file)
 
     # Initialize database: create the schema, then seed the reference data
     # (locations, DEMs, components, lithologies, vegetation classes) if the
