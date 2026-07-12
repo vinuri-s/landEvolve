@@ -145,6 +145,8 @@ class SimulationRunner:
         self.log(5, "Loading DEM...")
         rm = RasterModel(geo_tiff_file=tif, geology_file=geology)
         grid = rm.grid
+        self.log(6, f"Grid size: {grid.shape[0]} rows x {grid.shape[1]} cols "
+                    f"({grid.number_of_nodes:,} cells)")
 
         # NoData cells (loaded as NaN by RasterModel) are the void surrounding an
         # irregular catchment — often the majority of a clipped LiDAR tile. They
@@ -317,29 +319,37 @@ class SimulationRunner:
 
         self.log(85, "Saving outputs...")
 
+        self.log(85, "Plotting initial terrain...")
         plot_topography(initial, grid.shape, "Initial", str(self.output_dir / "init.png"))
+        self.log(86, "Plotting final terrain...")
         plot_topography(final, grid.shape, "Final", str(self.output_dir / "final.png"))
         diff_sub = ("final − initial (total surface change, incl. uplift)"
                     if cumulative_uplift is not None
                     else "final − initial (surface change)")
+        self.log(87, "Plotting difference map...")
         max_diff = plot_difference(diff, grid.shape, "Difference Map", str(self.output_dir / "diff.png"),
                                    hillshade_elev=final, subtitle=diff_sub)
 
         # Erosion/deposition categorical mask (magnitude-independent).
+        self.log(88, "Plotting erosion/deposition mask...")
         mask_png = str(self.output_dir / "mask.png")
         plot_erosion_deposition_mask(signal_diff, grid.shape, mask_png,
                                      uplift_removed=cumulative_uplift is not None)
 
+        self.log(89, "Writing final.tif...")
         save_geotiff(str(self.output_dir / "final.tif"), final, tif)
+        self.log(89, "Writing diff.tif...")
         save_geotiff(str(self.output_dir / "diff.tif"), diff, tif)
 
         # Uplift-removed difference map + rasters (only when tectonics ran).
         geomorphic_diff_png = None
         if geomorphic_diff is not None:
+            self.log(89, "Plotting geomorphic change map...")
             geomorphic_diff_png = str(self.output_dir / "diff_geomorphic.png")
             plot_difference(geomorphic_diff, grid.shape, "Geomorphic Change",
                             geomorphic_diff_png, hillshade_elev=final,
                             subtitle="final − initial − cumulative uplift (erosion/deposition only)")
+            self.log(89, "Writing diff_geomorphic.tif and uplift.tif...")
             save_geotiff(str(self.output_dir / "diff_geomorphic.tif"), geomorphic_diff, tif)
             # Cumulative uplift raster, so the 3D view can subtract it on demand.
             save_geotiff(str(self.output_dir / "uplift.tif"), cumulative_uplift, tif)
@@ -366,30 +376,46 @@ class SimulationRunner:
 
         # Re-route flow on the final topography so drainage-based plots reflect
         # the final landscape, not the loop's transient routing state.
+        self.log(92, "Re-routing flow on final topography...")
         refresh_drainage(grid)
 
+        self.log(93, "Plotting hypsometry...")
+        hypsometry_plot = plot_hypsometry(
+            initial, final, str(self.output_dir / "hypsometry.png"))
+        self.log(93, "Plotting sediment flux...")
+        flux_plot = plot_sediment_flux(
+            sediment_snapshots, timeline_times, cell_area,
+            str(self.output_dir / "flux.png"),
+            uplift_removed=cumulative_uplift is not None)
+        self.log(94, "Plotting river long profile...")
+        long_profile_plot = plot_river_long_profile(
+            grid, initial, str(self.output_dir / "long_profile.png"),
+            uplift=cumulative_uplift)
+        self.log(95, "Plotting slope-area...")
+        slope_area_plot = plot_slope_area(
+            grid, str(self.output_dir / "slope_area.png"))
+        self.log(96, "Plotting drainage network...")
+        drainage_network_plot = plot_drainage_network(
+            grid, str(self.output_dir / "drainage_network.png"))
+        self.log(97, "Plotting soil thickness...")
+        soil_thickness_plot = plot_soil_thickness(
+            grid, str(self.output_dir / "soil_thickness.png"))
+        self.log(98, "Plotting change-events map...")
+        change_events_plot = plot_change_events_map(
+            sediment_snapshots, timeline_times, grid.shape,
+            str(self.output_dir / "change_events.png"),
+            input_tiff=tif,
+            change_threshold=float(self.params.get("first_effect_threshold", 0.01)),
+            uplift_removed=cumulative_uplift is not None)
+
         science_plots = {
-            "hypsometry_plot": plot_hypsometry(
-                initial, final, str(self.output_dir / "hypsometry.png")),
-            "flux_plot": plot_sediment_flux(
-                sediment_snapshots, timeline_times, cell_area,
-                str(self.output_dir / "flux.png"),
-                uplift_removed=cumulative_uplift is not None),
-            "long_profile_plot": plot_river_long_profile(
-                grid, initial, str(self.output_dir / "long_profile.png"),
-                uplift=cumulative_uplift),
-            "slope_area_plot": plot_slope_area(
-                grid, str(self.output_dir / "slope_area.png")),
-            "drainage_network_plot": plot_drainage_network(
-                grid, str(self.output_dir / "drainage_network.png")),
-            "soil_thickness_plot": plot_soil_thickness(
-                grid, str(self.output_dir / "soil_thickness.png")),
-            "change_events_plot": plot_change_events_map(
-                sediment_snapshots, timeline_times, grid.shape,
-                str(self.output_dir / "change_events.png"),
-                input_tiff=tif,
-                change_threshold=float(self.params.get("first_effect_threshold", 0.01)),
-                uplift_removed=cumulative_uplift is not None),
+            "hypsometry_plot": hypsometry_plot,
+            "flux_plot": flux_plot,
+            "long_profile_plot": long_profile_plot,
+            "slope_area_plot": slope_area_plot,
+            "drainage_network_plot": drainage_network_plot,
+            "soil_thickness_plot": soil_thickness_plot,
+            "change_events_plot": change_events_plot,
         }
 
         diag = diagnose_space_regime(diff)
