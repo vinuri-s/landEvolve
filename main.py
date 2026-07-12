@@ -1,5 +1,16 @@
 import sys
 import os
+
+# richdem (PriorityFloodFlowRouter) bundles its own C++/OpenMP runtime, which
+# can collide with numpy's own OpenMP/BLAS runtime when both are loaded into
+# the same process -- on Windows this often crashes hard (observed:
+# "Windows fatal exception: code 0xc06d007f" inside numpy's native code, at
+# whatever point numpy's BLAS/transform machinery next runs) rather than
+# printing the usual "OMP: Error #15" warning. This is the standard, official
+# workaround: tell the OpenMP runtime to tolerate multiple copies instead of
+# aborting. Must be set before numpy/matplotlib/richdem are imported anywhere.
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+
 import faulthandler
 import matplotlib
 matplotlib.use('Agg')
