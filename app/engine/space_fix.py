@@ -30,7 +30,10 @@ flow network, since each node's qs_in depends on every upstream node already
 having been processed, so it can't be vectorized with ordinary numpy array
 ops):
 
-1. The exact `==` replaced with a proper tolerance comparison (see above).
+1. The exact `==` replaced with a direct check on the log's argument right
+   before evaluating it (rather than a fixed tolerance on the inputs guessed
+   in advance) -- see the near-singularity handling in the "normal" branch
+   below for why.
 2. `q` (discharge) floored at a tiny epsilon before any division by it --
    `depo_rate = v*qs_out/q` is a literal 0/0 -> NaN if a node has exactly
    zero discharge, which can happen at some boundary/edge configurations.
@@ -58,14 +61,18 @@ try:
 except ImportError:
     _HAVE_NUMBA = False
 
-# Relative/absolute tolerance for the near-singularity check. The two
-# formula branches are two continuous expressions of the same underlying
-# solution and agree closely near the singular point (that's the nature of
-# a removable singularity), so being generous about when to prefer the
-# numerically stable branch costs essentially no accuracy while avoiding
-# the catastrophic-cancellation blowup entirely.
-_REL_TOL = 1e-4
-_ABS_TOL = 1e-10
+# Floor for the log's argument in the "normal" branch (see the near-
+# singularity handling below): a first version of this fix pre-screened
+# inputs with a fixed relative tolerance on (depo_rate - sed_erosion_term),
+# guessed from a theoretical catastrophic-cancellation analysis. That proved
+# too tight in practice (observed: a 53.8 m single-step jump at a 13-degree
+# slope -- no physical explanation, and far outside what the guessed
+# tolerance flagged). Checking the log's actual argument directly, right
+# before evaluating it, is the more robust criterion: it catches the real
+# danger regardless of what magnitude of input difference happens to trigger
+# precision loss for a given set of values, instead of a single fixed
+# tolerance guessed in advance.
+_LOG_ARG_FLOOR = 1e-6
 
 # Floor for discharge before dividing by it, and cap for the exp() argument
 # (a very safe margin under the ~709 IEEE-double overflow point).
@@ -188,44 +195,57 @@ def _build_fixed_sequential_ero_depo():
                     branch_code = 2
                 H_loc += (depo_rate / (1 - phi) - sed_erosion_loc / (1 - phi)) * dt
             else:
-                capacity = K_sed[node_id] * Q_to_the_m[node_id] * slope_loc
-                diff = depo_rate - capacity
-                near_singular = abs(diff) <= (
-                    _ABS_TOL + _REL_TOL * max(abs(depo_rate), abs(capacity))
-                )
-                if near_singular:
+                # ratio is the formula's true singular quantity (depo_rate ==
+                # sed_erosion_loc, i.e. ratio == 1) -- note this is NOT
+                # necessarily the same as Landlab's own `depo_rate ==
+                # K_sed*Q^m*slope` equality check: those only coincide when
+                # sp_crit_sed == 0. Basing the safety check on the formula's
+                # actual denominator (sed_erosion_loc) is correct in general.
+                ratio = depo_rate / sed_erosion_loc
+                A = ratio - 1.0
+
+                exp_arg1 = (
+                    depo_rate / (1 - phi) - (sed_erosion_loc / (1 - phi))
+                ) * (dt / H_star)
+                exp_arg2 = H_loc / H_star
+                capped = False
+                if exp_arg1 > _EXP_ARG_CAP:
+                    exp_arg1 = _EXP_ARG_CAP
+                    capped = True
+                if exp_arg2 > _EXP_ARG_CAP:
+                    exp_arg2 = _EXP_ARG_CAP
+                    capped = True
+
+                # Rather than guessing in advance how close A must be to zero
+                # before catastrophic cancellation becomes dangerous (a fixed
+                # tolerance on the inputs proved too tight for at least one
+                # real case: a 53.8 m single-step jump at a 13 degree slope,
+                # nowhere near what a fixed 1e-4 tolerance on A would have
+                # flagged), directly evaluate the actual quantity that's
+                # dangerous -- the log's argument -- and check *that* for
+                # being suspiciously close to zero or negative. This targets
+                # the real numerical danger regardless of what magnitude of A
+                # happens to trigger precision loss for these specific input
+                # values.
+                use_safe = abs(A) < 1e-300  # guard literal 1/0 before it happens
+                log_arg = 0.0
+                if not use_safe:
+                    B = math.exp(exp_arg1)
+                    C = A * math.exp(exp_arg2) + 1.0
+                    log_arg = (1.0 / A) * (B * C - 1.0)
+                    use_safe = log_arg <= _LOG_ARG_FLOOR
+
+                if use_safe:
                     counts[0] += 1
                     branch_code = 3
-                    # Numerically safe branch (Landlab's "blowup" case).
+                    # Numerically safe branch (Landlab's "blowup" case) --
+                    # the correct closed-form limit as ratio -> 1.
                     arg = ((sed_erosion_loc / (1 - phi)) / H_star) * dt
-                    exp_arg = H_loc / H_star
-                    if exp_arg > _EXP_ARG_CAP:
-                        exp_arg = _EXP_ARG_CAP
-                        counts[3] += 1
-                    H_loc = H_loc * math.log(arg + math.exp(exp_arg))
+                    H_loc = H_loc * math.log(arg + math.exp(exp_arg2))
                 else:
-                    ratio = (depo_rate / (1 - phi)) / (sed_erosion_loc / (1 - phi))
-                    exp_arg1 = (
-                        depo_rate / (1 - phi) - (sed_erosion_loc / (1 - phi))
-                    ) * (dt / H_star)
-                    exp_arg2 = H_loc / H_star
-                    capped = False
-                    if exp_arg1 > _EXP_ARG_CAP:
-                        exp_arg1 = _EXP_ARG_CAP
-                        capped = True
-                    if exp_arg2 > _EXP_ARG_CAP:
-                        exp_arg2 = _EXP_ARG_CAP
-                        capped = True
                     if capped:
                         counts[3] += 1
-                    H_loc = H_star * math.log(
-                        (1.0 / (ratio - 1.0))
-                        * (
-                            math.exp(exp_arg1)
-                            * ((ratio - 1.0) * math.exp(exp_arg2) + 1.0)
-                            - 1.0
-                        )
-                    )
+                    H_loc = H_star * math.log(log_arg)
                 if math.isinf(H_loc) or math.isnan(H_loc):
                     counts[1] += 1
                     H_loc = (
