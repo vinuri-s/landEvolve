@@ -78,6 +78,32 @@ _EXP_ARG_CAP = 500.0
 # diag_counts[3] = times the exp-overflow guard actually clamped a value
 diag_counts = np.zeros(4, dtype=np.int64)
 
+# Branch-tracking for nodes with an unusually large single-step |ΔH|: which
+# code path produced it, so we can tell a legitimate depression-fill (the
+# plain linear branch, triggered by slope <= 0 -- Landlab's own documented
+# mechanism for filling a real local sink with actual deposition) apart from
+# a still-unidentified numerical bug in the exp/log branches. Branch codes:
+#   0 = linear, because H_loc > thickness_lim
+#   1 = linear, because slope_loc <= 0            (genuine local depression)
+#   2 = linear, because sed_erosion_loc == 0
+#   3 = near-singular exp/log branch (the fix already applied)
+#   4 = normal exp/log branch (not near-singular)
+_DIAG_SAMPLE_THRESHOLD = 1.0  # metres; only record notably large steps
+_DIAG_SAMPLE_CAP = 200
+diag_sample_count = np.zeros(1, dtype=np.int64)
+diag_sample_node = np.zeros(_DIAG_SAMPLE_CAP, dtype=np.int64)
+diag_sample_branch = np.zeros(_DIAG_SAMPLE_CAP, dtype=np.int64)
+diag_sample_delta = np.zeros(_DIAG_SAMPLE_CAP, dtype=np.float64)
+diag_sample_slope = np.zeros(_DIAG_SAMPLE_CAP, dtype=np.float64)
+
+_BRANCH_NAMES = {
+    0: "linear (thickness_lim)",
+    1: "linear (slope<=0, likely real depression fill)",
+    2: "linear (sed_erosion==0)",
+    3: "near_singular (our fix)",
+    4: "normal exp/log",
+}
+
 
 def get_and_reset_diag_counts():
     global diag_counts
@@ -89,6 +115,26 @@ def get_and_reset_diag_counts():
         "q_floored": int(counts[2]),
         "exp_capped": int(counts[3]),
     }
+
+
+def get_and_reset_diag_samples(grid_ncols):
+    """Return the recorded large-|ΔH| samples from the last step, decoded to
+    (row, col, branch name, ΔH, slope), then reset the buffer."""
+    global diag_sample_count
+    n = int(diag_sample_count[0])
+    n = min(n, _DIAG_SAMPLE_CAP)
+    samples = []
+    for i in range(n):
+        node = int(diag_sample_node[i])
+        samples.append({
+            "row": node // grid_ncols,
+            "col": node % grid_ncols,
+            "branch": _BRANCH_NAMES.get(int(diag_sample_branch[i]), "unknown"),
+            "delta_H": float(diag_sample_delta[i]),
+            "slope": float(diag_sample_slope[i]),
+        })
+    diag_sample_count[0] = 0
+    return samples
 
 
 def _build_fixed_sequential_ero_depo():
@@ -107,6 +153,7 @@ def _build_fixed_sequential_ero_depo():
         ero_sed_effective, depo_effective,
         v, phi, F_f, H_star, dt, thickness_lim,
         counts,
+        sample_count, sample_node, sample_branch, sample_delta, sample_slope,
     ):
         vol_SSY_riv = 0.0
 
@@ -130,8 +177,15 @@ def _build_fixed_sequential_ero_depo():
             slope_loc = slope[node_id]
             sed_erosion_loc = sed_erosion_term[node_id]
             bed_erosion_loc = bed_erosion_term[node_id]
+            branch_code = 4
 
             if H_loc > thickness_lim or slope_loc <= 0 or sed_erosion_loc == 0:
+                if H_loc > thickness_lim:
+                    branch_code = 0
+                elif slope_loc <= 0:
+                    branch_code = 1
+                else:
+                    branch_code = 2
                 H_loc += (depo_rate / (1 - phi) - sed_erosion_loc / (1 - phi)) * dt
             else:
                 capacity = K_sed[node_id] * Q_to_the_m[node_id] * slope_loc
@@ -141,6 +195,7 @@ def _build_fixed_sequential_ero_depo():
                 )
                 if near_singular:
                     counts[0] += 1
+                    branch_code = 3
                     # Numerically safe branch (Landlab's "blowup" case).
                     arg = ((sed_erosion_loc / (1 - phi)) / H_star) * dt
                     exp_arg = H_loc / H_star
@@ -199,6 +254,15 @@ def _build_fixed_sequential_ero_depo():
             depo_effective[node_id] = max(depo_effective[node_id], Hd / dt)
             ero_sed_effective[node_id] = depo_effective[node_id] - Hd / dt
 
+            if abs(Hd) > _DIAG_SAMPLE_THRESHOLD:
+                slot = sample_count[0]
+                if slot < sample_node.shape[0]:
+                    sample_node[slot] = node_id
+                    sample_branch[slot] = branch_code
+                    sample_delta[slot] = Hd
+                    sample_slope[slot] = slope_loc
+                    sample_count[0] = slot + 1
+
         return vol_SSY_riv
 
     def _sequential_ero_depo_fixed(
@@ -210,8 +274,8 @@ def _build_fixed_sequential_ero_depo():
     ):
         # Thin wrapper matching Landlab's exact expected signature (this is
         # what actually replaces landlab's _sequential_ero_depo); forwards
-        # the module-level diag_counts array to the njit core as a real
-        # argument so numba treats it as writable.
+        # the module-level diagnostic arrays to the njit core as real
+        # arguments so numba treats them as writable.
         return _sequential_ero_depo_core(
             stack_flip_ud_sel, flow_receivers, cell_area, q, qs, qs_in,
             Es, Er, Q_to_the_m, slope, H, br,
@@ -219,6 +283,8 @@ def _build_fixed_sequential_ero_depo():
             ero_sed_effective, depo_effective,
             v, phi, F_f, H_star, dt, thickness_lim,
             diag_counts,
+            diag_sample_count, diag_sample_node, diag_sample_branch,
+            diag_sample_delta, diag_sample_slope,
         )
 
     return _sequential_ero_depo_fixed

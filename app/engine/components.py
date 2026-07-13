@@ -426,14 +426,27 @@ def _clamp_space_outliers(grid, z_before, br_before, H_before):
     return n_bad
 
 
-def _log_space_fix_diagnostics():
+def _log_space_fix_diagnostics(grid_ncols):
     """Print how often each corrected pathway in space_fix.py's numba
     replacement actually fired this step (only when non-zero, to avoid log
-    spam) -- real telemetry instead of guessing whether the fix is engaging."""
-    from app.engine.space_fix import get_and_reset_diag_counts
+    spam) -- real telemetry instead of guessing whether the fix is engaging.
+
+    Also reports which code branch produced any notably large (>1 m) single-
+    step change: branch 1 (slope<=0) is Landlab's own documented mechanism
+    for filling a real local depression with actual deposition -- a
+    legitimate model prediction, not a bug. Branches 3/4 (the exp/log
+    formulas) producing a large jump would instead point at a still-
+    unidentified numerical issue worth investigating further.
+    """
+    from app.engine.space_fix import get_and_reset_diag_counts, get_and_reset_diag_samples
     counts = get_and_reset_diag_counts()
     if any(counts.values()):
         print(f"SPACE fix diagnostics: {counts}")
+
+    samples = get_and_reset_diag_samples(grid_ncols)
+    for s in samples:
+        print(f"SPACE large-Δstep: (row {s['row']}, col {s['col']}) "
+              f"ΔH={s['delta_H']:.3g}m slope={s['slope']:.4g} via [{s['branch']}]")
 
 
 # =========================================================
@@ -636,7 +649,7 @@ class SpaceComponent(BaseSpaceComponent):
 
         self.space.run_one_step(dt)
 
-        _log_space_fix_diagnostics()
+        _log_space_fix_diagnostics(self.grid.shape[1])
         _clamp_space_outliers(self.grid, z_before, br_before, H_before)
 
 
@@ -669,7 +682,7 @@ class SpaceLargeScaleEroderComponent(BaseSpaceComponent):
 
         self.space.run_one_step(dt)
 
-        _log_space_fix_diagnostics()
+        _log_space_fix_diagnostics(self.grid.shape[1])
         _clamp_space_outliers(self.grid, z_before, br_before, H_before)
 
 
