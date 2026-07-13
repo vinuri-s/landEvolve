@@ -410,10 +410,30 @@ def _clamp_space_outliers(grid, z_before, br_before, H_before):
         if field in grid.at_node:
             grid.at_node[field][bad_nodes] = 0.0
 
+    # Report actual (row, col) + magnitude for a few flagged nodes -- concrete
+    # evidence for diagnosing this further, instead of only a bare count.
+    bad_deltas = delta[bad_local]
+    order = np.argsort(-np.abs(bad_deltas))[:min(n_bad, 5)]
+    ncols = grid.shape[1]
+    locations = ", ".join(
+        f"(row {bad_nodes[i] // ncols}, col {bad_nodes[i] % ncols}, "
+        f"Δz={bad_deltas[i]:.3g}m)"
+        for i in order
+    )
     print(f"SPACE outlier guard: reverted {n_bad} node(s) with non-physical "
           "elevation change this step (known Landlab SPACE numerical edge "
-          "case, see landlab/landlab#1901).")
+          f"case, see landlab/landlab#1901). Worst: {locations}")
     return n_bad
+
+
+def _log_space_fix_diagnostics():
+    """Print how often each corrected pathway in space_fix.py's numba
+    replacement actually fired this step (only when non-zero, to avoid log
+    spam) -- real telemetry instead of guessing whether the fix is engaging."""
+    from app.engine.space_fix import get_and_reset_diag_counts
+    counts = get_and_reset_diag_counts()
+    if any(counts.values()):
+        print(f"SPACE fix diagnostics: {counts}")
 
 
 # =========================================================
@@ -616,6 +636,7 @@ class SpaceComponent(BaseSpaceComponent):
 
         self.space.run_one_step(dt)
 
+        _log_space_fix_diagnostics()
         _clamp_space_outliers(self.grid, z_before, br_before, H_before)
 
 
@@ -648,6 +669,7 @@ class SpaceLargeScaleEroderComponent(BaseSpaceComponent):
 
         self.space.run_one_step(dt)
 
+        _log_space_fix_diagnostics()
         _clamp_space_outliers(self.grid, z_before, br_before, H_before)
 
 
