@@ -1,4 +1,3 @@
-import gc
 import rasterio
 import matplotlib.pyplot as plt
 from matplotlib.colors import SymLogNorm, ListedColormap, BoundaryNorm, LightSource
@@ -34,27 +33,15 @@ def save_geotiff(filename, data, reference_tif):
         print(f"Error saving GeoTIFF {filename}: {e}")
 
 def plot_topography(data, shape, title, output_path, cmap='terrain', vmin=None, vmax=None):
-    # float32 for the plotting copy only (the caller's array, and anything
-    # saved via save_geotiff, stays full-precision float64) -- halves the
-    # memory this holds without changing a single displayed color, since
-    # elevation values need nowhere near float64's precision to color-map.
-    plot_data = data.reshape(shape).astype(np.float32, copy=False)
     fig, ax = plt.subplots(figsize=(10, 6))
-    im = ax.imshow(plot_data, cmap=cmap, vmin=vmin, vmax=vmax)
+    im = ax.imshow(data.reshape(shape), cmap=cmap, vmin=vmin, vmax=vmax)
     fig.colorbar(im, ax=ax, label='Elevation (m)')
     _titled(ax, f"{title} Terrain", "Ground-surface elevation (m)")
     ax.set_xlabel("Easting (columns)", fontsize=12)
     ax.set_ylabel("Northing (rows)", fontsize=12)
-    # subplots_adjust instead of tight_layout(): tight_layout computes tick
-    # spacing via a matrix inversion (numpy.linalg.inv through matplotlib's
-    # transform machinery) that hard-crashes the process on some Windows/BLAS
-    # setups (observed: "Windows fatal exception: code 0xc06d007f") -- fixed
-    # margins are numerically inert and sidestep that code path entirely.
-    fig.subplots_adjust(left=0.1, right=0.95, top=0.90, bottom=0.12)
+    plt.tight_layout()
     plt.savefig(output_path)
     plt.close()
-    del plot_data
-    gc.collect()
 
 def plot_difference(data, shape, title, output_path, vmin=None, vmax=None,
                     scaling="linear", hillshade_elev=None, subtitle=None):
@@ -70,11 +57,8 @@ def plot_difference(data, shape, title, output_path, vmin=None, vmax=None,
     """
     fig, ax = plt.subplots(figsize=(12, 8))
 
-    # float32 plotting copy only -- see plot_topography for why this is safe.
-    plot_data = data.reshape(shape).astype(np.float32, copy=False)
-
     if vmin is None or vmax is None:
-        valid_data = plot_data[~np.isnan(plot_data)]
+        valid_data = data[~np.isnan(data)]
         if valid_data.size > 0:
             max_abs = float(np.nanpercentile(np.abs(valid_data), 99))
             if max_abs == 0:
@@ -89,14 +73,10 @@ def plot_difference(data, shape, title, output_path, vmin=None, vmax=None,
     # Optional shaded-relief underlay.
     draped = hillshade_elev is not None
     if draped:
-        z = np.asarray(hillshade_elev, dtype=np.float32).reshape(shape)
+        z = np.asarray(hillshade_elev, dtype=float).reshape(shape)
         ls = LightSource(azdeg=315, altdeg=45)
         hs = ls.hillshade(np.nan_to_num(z, nan=np.nanmin(z)), vert_exag=2.0)
         ax.imshow(hs, cmap="gray")
-        # Free the hillshade temporaries (np.gradient internally allocates
-        # several more full-size arrays) before the second imshow below.
-        del z, hs
-        gc.collect()
 
     overlay_alpha = 0.6 if draped else 1.0
 
@@ -105,9 +85,9 @@ def plot_difference(data, shape, title, output_path, vmin=None, vmax=None,
         # are amplified. Use a small fraction of the range so faint erosion shows.
         linthresh = max(max_abs / 50.0, 1e-6)
         norm = SymLogNorm(linthresh=linthresh, vmin=-max_abs, vmax=max_abs, base=10)
-        im = ax.imshow(plot_data, cmap='RdBu', norm=norm, alpha=overlay_alpha)
+        im = ax.imshow(data.reshape(shape), cmap='RdBu', norm=norm, alpha=overlay_alpha)
     else:
-        im = ax.imshow(plot_data, cmap='RdBu', vmin=vmin, vmax=vmax,
+        im = ax.imshow(data.reshape(shape), cmap='RdBu', vmin=vmin, vmax=vmax,
                        alpha=overlay_alpha)
 
     fig.colorbar(im, ax=ax, label='Elevation Change (m)')
@@ -116,13 +96,9 @@ def plot_difference(data, shape, title, output_path, vmin=None, vmax=None,
     ax.set_xlabel("Easting (columns)", fontsize=12)
     ax.set_ylabel("Northing (rows)", fontsize=12)
 
-    # subplots_adjust instead of tight_layout() -- see plot_topography.
-    fig.subplots_adjust(left=0.1, right=0.95, top=0.90, bottom=0.12)
+    plt.tight_layout()
     plt.savefig(output_path)
     plt.close()
-
-    del plot_data
-    gc.collect()
 
     return max_abs
 
@@ -133,8 +109,7 @@ def plot_erosion_deposition_mask(data, shape, output_path, threshold=None, uplif
     Magnitude is ignored, so this answers "where is material leaving vs.
     arriving" regardless of how lopsided the magnitudes are.
     """
-    # float32 plotting copy only -- see plot_topography for why this is safe.
-    arr = data.reshape(shape).astype(np.float32)
+    arr = data.reshape(shape).astype(float)
 
     if threshold is None:
         valid = arr[~np.isnan(arr)]
@@ -179,12 +154,8 @@ def plot_erosion_deposition_mask(data, shape, output_path, threshold=None, uplif
     ax.set_xlabel("Easting (columns)", fontsize=12)
     ax.set_ylabel("Northing (rows)", fontsize=12)
 
-    # subplots_adjust instead of tight_layout() -- see plot_topography.
-    fig.subplots_adjust(left=0.1, right=0.95, top=0.90, bottom=0.12)
+    plt.tight_layout()
     plt.savefig(output_path)
     plt.close()
-
-    del arr, cat
-    gc.collect()
 
     return output_path

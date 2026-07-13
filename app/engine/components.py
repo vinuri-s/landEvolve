@@ -675,4 +675,33 @@ class DepthDependentDiffuserComponent(SimulationComponent):
         if hasattr(self.grid, '_veg_D_mult'):
             mean_mult = float(np.mean(self.grid._veg_D_mult))
             self.diff._K = self._base_kd * mean_mult
-        self.diff.run_one_step(dt)
+        else:
+            self.diff._K = self._base_kd
+
+        # DepthDependentDiffuser.soilflux() is a plain explicit forward-Euler
+        # update (elevation += dhdt * dt) with no stability check of its own.
+        # Explicit diffusion is only stable when dt <= dx^2 / (4*D); at fine
+        # grid resolutions (e.g. sub-metre LiDAR DEMs) a user-chosen dt of
+        # years-to-decades can be many times over that limit, which makes the
+        # elevation field oscillate and diverge -- this in turn produces an
+        # increasingly pathological, pit-riddled drainage network each step
+        # (and can destabilize downstream flow-routing/erosion components
+        # too). Substepping internally keeps this component numerically
+        # stable regardless of what dt or grid resolution the user picks, so
+        # nothing else needs to change.
+        K = float(self.diff._K)
+        if K > 0:
+            cell_size = min(float(self.grid.dx), float(self.grid.dy))
+            dt_max = (cell_size ** 2) / (4.0 * K)
+            n_substeps = max(1, int(np.ceil(dt / dt_max)))
+            if n_substeps > 10000:
+                print(f"DepthDependentDiffuserComponent: stability would require "
+                      f"{n_substeps} substeps for dt={dt}; capping at 10000 "
+                      "(diffusivity may be unrealistically high for this grid resolution).")
+                n_substeps = 10000
+        else:
+            n_substeps = 1
+
+        sub_dt = dt / n_substeps
+        for _ in range(n_substeps):
+            self.diff.run_one_step(sub_dt)

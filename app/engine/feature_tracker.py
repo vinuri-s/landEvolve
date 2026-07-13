@@ -258,10 +258,7 @@ class FeatureTracker:
             ax_vol.set_ylabel("Net Volume Change (m³)", color="black")
             ax_vol.tick_params(axis="y", labelcolor="black")
 
-        # subplots_adjust instead of tight_layout(): tight_layout computes tick
-        # spacing via a matrix inversion (numpy.linalg.inv) that hard-crashes
-        # the process on some Windows/BLAS setups -- fixed margins avoid it.
-        fig.subplots_adjust(left=0.1, right=0.88, top=0.94, bottom=0.08, hspace=0.35)
+        plt.tight_layout()
         plt.savefig(plot_path, dpi=150)
         plt.close()
 
