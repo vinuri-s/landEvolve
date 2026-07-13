@@ -14,6 +14,15 @@ from landlab.components import (
     LithoLayers,
 )
 
+from app.engine.space_fix import patch_space_large_scale_eroder
+
+# Root-cause fix for a confirmed Landlab bug (see space_fix.py for the full
+# explanation): replaces the compiled inner loop's exact-equality edge case
+# with a corrected, numba-compiled equivalent. Safe no-op if numba isn't
+# installed -- the _clamp_space_outliers() guard below still protects
+# against it either way.
+patch_space_large_scale_eroder()
+
 
 # =========================================================
 # BASE

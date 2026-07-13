@@ -10,6 +10,17 @@ plotly>=5.0.0
 geopandas==1.1.2
 fiona==1.10.1
 
+# JIT-compiles the corrected SpaceLargeScaleEroder inner loop (see
+# app/engine/space_fix.py) that fixes a confirmed Landlab numerical bug
+# (landlab/landlab#1901 neighbourhood) -- a floating-point exact-equality
+# check that should be a tolerance check, which can otherwise produce
+# non-physical elevation spikes on gently-sloping terrain. Prebuilt wheels
+# on PyPI for all platforms (no C++ compiler needed, unlike richdem). Not
+# strictly required -- if missing, the engine falls back to Landlab's
+# original code, still protected by the statistical outlier guard in
+# components.py, just without the root-cause fix.
+numba
+
 # Optional. Enables PriorityFloodFlowRouter, a non-recursive flow-routing
 # path that avoids a native stack-overflow crash the classic
 # FlowAccumulator + LakeMapperBarnes combo can hit on large/complex grids
