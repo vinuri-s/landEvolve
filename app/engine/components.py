@@ -20,8 +20,17 @@ from app.engine.space_fix import patch_space_large_scale_eroder
 # explanation): replaces the compiled inner loop's exact-equality edge case
 # with a corrected, numba-compiled equivalent. Safe no-op if numba isn't
 # installed -- the _clamp_space_outliers() guard below still protects
-# against it either way.
-patch_space_large_scale_eroder()
+# against it either way. Logged explicitly (not silent) so a run's console
+# output/log always shows which path was actually active -- this was
+# previously silent, which made it impossible to tell from a run's log
+# whether the fix was really in effect or the guard was doing all the work.
+if patch_space_large_scale_eroder():
+    print("SPACE fix: numba-corrected _sequential_ero_depo active "
+          "(root-cause fix for landlab/landlab#1901-family bug).")
+else:
+    print("SPACE fix: numba not installed -- using Landlab's original "
+          "_sequential_ero_depo, protected only by the statistical outlier "
+          "guard (_clamp_space_outliers). Install numba for the root-cause fix.")
 
 
 # =========================================================
