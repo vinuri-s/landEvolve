@@ -326,6 +326,78 @@ def _apply_litho_veg_to_space(comp):
     comp.space._K_sed = K_sed
 
 
+def _clamp_space_outliers(grid, z_before, br_before, H_before):
+    """Guard against a known Landlab SPACE bug (both ``Space`` and
+    ``SpaceLargeScaleEroder``): the soil-depth update picks between two
+    branches of a closed-form solution using an *exact* floating-point
+    equality check (``depo_rate == K_sed * Q**m_sp * slope``) meant to catch
+    a genuine mathematical singularity in the "no blowup" branch. On a node
+    that is merely extremely close to (not bit-identical to) that singular
+    point -- which happens routinely on gently-sloping, near-graded terrain,
+    where a node's deposition rate naturally sits close to its erosion
+    capacity -- the check misses, the singular branch runs anyway, and it
+    divides by a near-zero number. That produces an enormous but *finite*
+    elevation change (observed: up to ~1.7e11 m in one step), isolated to a
+    tiny handful of nodes, while the rest of the domain is fine. This is an
+    upstream Landlab bug (confirmed still present in the current landlab
+    GitHub master, and in the same family as their own open, unfixed issue
+    landlab/landlab#1901) -- not something in this codebase, and not
+    something we can safely patch (the hot path is compiled Cython).
+
+    There's no way to recover the "correct" value Landlab should have
+    produced without re-deriving its entire downstream sediment-propagation
+    cascade, so this suppresses the corrupted step at the affected node(s)
+    instead: revert topography, bedrock, and soil depth to their pre-step
+    values there (keeping the three fields mutually consistent, since SPACE
+    recomputes elevation as bedrock + soil every step) and zero the
+    diagnostic flux fields so reported erosion/deposition don't show a
+    phantom spike either.
+
+    Outlier detection is a robust, self-calibrating threshold: this bug's
+    spikes are many orders of magnitude beyond any legitimate elevation
+    change, so comparing against a large multiple of this step's own 99.9th
+    percentile change reliably catches only genuine artifacts, never real
+    (even if unusually fast) erosion or deposition.
+
+    Returns the number of nodes reverted.
+    """
+    z = grid.at_node["topographic__elevation"]
+    br = grid.at_node["bedrock__elevation"]
+    H = grid.at_node["soil__depth"]
+
+    core = grid.core_nodes
+    delta = z[core] - z_before[core]
+    abs_delta = np.abs(delta)
+
+    finite = abs_delta[np.isfinite(abs_delta)]
+    if finite.size == 0:
+        return 0
+
+    p999 = np.percentile(finite, 99.9)
+    # Absolute floor (1 m/step) so a near-all-zero step doesn't make the
+    # threshold collapse to ~0 and start flagging ordinary small changes.
+    threshold = max(p999 * 1000.0, 1.0)
+
+    bad_local = (~np.isfinite(delta)) | (abs_delta > threshold)
+    n_bad = int(np.sum(bad_local))
+    if n_bad == 0:
+        return 0
+
+    bad_nodes = core[bad_local]
+    z[bad_nodes] = z_before[bad_nodes]
+    br[bad_nodes] = br_before[bad_nodes]
+    H[bad_nodes] = H_before[bad_nodes]
+
+    for field in ("sediment__erosion_flux", "sediment__deposition_flux", "bedrock__erosion_flux"):
+        if field in grid.at_node:
+            grid.at_node[field][bad_nodes] = 0.0
+
+    print(f"SPACE outlier guard: reverted {n_bad} node(s) with non-physical "
+          "elevation change this step (known Landlab SPACE numerical edge "
+          "case, see landlab/landlab#1901).")
+    return n_bad
+
+
 # =========================================================
 # VEGETATION
 # =========================================================
@@ -519,7 +591,14 @@ class SpaceComponent(BaseSpaceComponent):
     def run(self, dt):
         self._clip_soil()
         _apply_litho_veg_to_space(self)
+
+        z_before = self.grid.at_node["topographic__elevation"].copy()
+        br_before = self.grid.at_node["bedrock__elevation"].copy()
+        H_before = self.grid.at_node["soil__depth"].copy()
+
         self.space.run_one_step(dt)
+
+        _clamp_space_outliers(self.grid, z_before, br_before, H_before)
 
 
 # =========================================================
@@ -544,7 +623,14 @@ class SpaceLargeScaleEroderComponent(BaseSpaceComponent):
     def run(self, dt):
         self._clip_soil()
         _apply_litho_veg_to_space(self)
+
+        z_before = self.grid.at_node["topographic__elevation"].copy()
+        br_before = self.grid.at_node["bedrock__elevation"].copy()
+        H_before = self.grid.at_node["soil__depth"].copy()
+
         self.space.run_one_step(dt)
+
+        _clamp_space_outliers(self.grid, z_before, br_before, H_before)
 
 
 # =========================================================
