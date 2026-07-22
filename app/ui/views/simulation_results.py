@@ -210,6 +210,7 @@ class SimulationResultsWindow(QMainWindow):
             ("Soil / Alluvium Thickness", self.image_paths.get(SimulationResultKeys.SOIL_THICKNESS_PLOT)),
             ("River Long Profile", self.image_paths.get(SimulationResultKeys.LONG_PROFILE_PLOT)),
             ("Slope–Area Relationship", self.image_paths.get(SimulationResultKeys.SLOPE_AREA_PLOT)),
+            ("Chi Analysis", self.image_paths.get(SimulationResultKeys.CHI_ANALYSIS_PLOT)),
             ("Sediment Budget Over Time", self.image_paths.get(SimulationResultKeys.FLUX_PLOT)),
             ("Hypsometric Curve", self.image_paths.get(SimulationResultKeys.HYPSOMETRY_PLOT)),
         ]

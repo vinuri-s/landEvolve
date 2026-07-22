@@ -27,6 +27,7 @@ from app.engine.science_plots import (
     plot_drainage_network,
     plot_soil_thickness,
     plot_change_events_map,
+    plot_chi_analysis,
 )
 from app.core.config import Config
 from app.core.logging.manager import LogManager
@@ -413,6 +414,9 @@ class SimulationRunner:
         self.log(96, "Plotting drainage network...")
         drainage_network_plot = plot_drainage_network(
             grid, str(self.output_dir / "drainage_network.png"))
+        self.log(96, "Running chi analysis...")
+        chi_analysis_plot = plot_chi_analysis(
+            grid, str(self.output_dir / "chi_analysis.png"))
         self.log(97, "Plotting soil thickness...")
         soil_thickness_plot = plot_soil_thickness(
             grid, str(self.output_dir / "soil_thickness.png"))
@@ -430,6 +434,7 @@ class SimulationRunner:
             "long_profile_plot": long_profile_plot,
             "slope_area_plot": slope_area_plot,
             "drainage_network_plot": drainage_network_plot,
+            "chi_analysis_plot": chi_analysis_plot,
             "soil_thickness_plot": soil_thickness_plot,
             "change_events_plot": change_events_plot,
         }
@@ -468,6 +473,7 @@ class SimulationRunner:
             "long_profile_plot": science_plots["long_profile_plot"],
             "slope_area_plot": science_plots["slope_area_plot"],
             "drainage_network_plot": science_plots["drainage_network_plot"],
+            "chi_analysis_plot": science_plots["chi_analysis_plot"],
             "soil_thickness_plot": science_plots["soil_thickness_plot"],
             "change_events_plot": science_plots["change_events_plot"],
             "diff_max": max_diff,

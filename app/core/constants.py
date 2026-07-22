@@ -56,6 +56,7 @@ class SimulationResultKeys:
     LONG_PROFILE_PLOT = "long_profile_plot"
     SLOPE_AREA_PLOT = "slope_area_plot"
     DRAINAGE_NETWORK_PLOT = "drainage_network_plot"
+    CHI_ANALYSIS_PLOT = "chi_analysis_plot"
     SOIL_THICKNESS_PLOT = "soil_thickness_plot"
     CHANGE_EVENTS_PLOT = "change_events_plot"
     OUTPUT_DIR = "output_dir"

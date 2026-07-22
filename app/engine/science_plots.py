@@ -507,6 +507,134 @@ def plot_change_events_map(snapshots, times, shape, output_path,
         return None
 
 
+def plot_chi_analysis(grid, output_path, channel_threshold=None,
+                       reference_concavity=0.5, number_of_watersheds=1):
+    """Chi (χ) analysis — the standard landscape-reconstruction / inversion
+    diagnostic: it re-parameterizes downstream distance by upstream drainage
+    area so that a channel at steady state under uniform uplift and
+    erodibility plots as a straight line. Departures from that line reveal
+    the history the present-day topography encodes:
+
+    * **χ map**            — spatial pattern of the χ coordinate; asymmetric
+                              χ across a divide signals an actively migrating
+                              drainage divide (Willett et al., 2014).
+    * **k_sn map**          — normalized channel steepness index, the
+                              standard proxy for the spatial pattern of
+                              relative rock-uplift rate (Wobus et al., 2006;
+                              Kirby & Whipple, 2012) — the quantity a chi-
+                              based uplift-history reconstruction is built
+                              from.
+    * **χ–elevation plot**  — trunk-channel profile in χ-space; slope breaks
+                              (knickpoints) that survive the χ transform mark
+                              a change in uplift rate or erodibility through
+                              time, not just a transient local knickpoint
+                              (Perron & Royden, 2013).
+
+    Uses Landlab's ``ChiFinder``/``SteepnessFinder`` (min_drainage_area sets
+    the channel/hillslope cutoff, using the same adaptive-percentile
+    threshold as ``plot_slope_area`` so the two diagnostics agree on what
+    counts as a channel)."""
+    try:
+        from landlab.components import ChiFinder, SteepnessFinder, ChannelProfiler
+
+        if not _has_flow_fields(grid):
+            print("Chi analysis skipped: no drainage network (FlowAccumulator not run).")
+            return None
+
+        area = np.asarray(grid.at_node["drainage_area"], dtype=float)
+        core = grid.core_nodes
+        a = area[core]
+        a = a[a > 0]
+        if a.size < 10:
+            return None
+
+        if channel_threshold is None:
+            channel_threshold = float(np.percentile(a, 50))
+
+        cf = ChiFinder(grid, min_drainage_area=channel_threshold,
+                       reference_concavity=reference_concavity, clobber=True)
+        cf.calculate_chi()
+        chi = np.asarray(grid.at_node["channel__chi_index"], dtype=float)
+
+        sf = SteepnessFinder(grid, min_drainage_area=channel_threshold,
+                             reference_concavity=reference_concavity)
+        sf.calculate_steepnesses()
+        ksn = np.asarray(grid.at_node["channel__steepness_index"], dtype=float)
+
+        boundary = (grid.status_at_node != grid.BC_NODE_IS_CORE).reshape(grid.shape)
+
+        def masked_map(field):
+            m = field.reshape(grid.shape).copy()
+            m[boundary] = np.nan
+            m[m == 0] = np.nan  # off-channel nodes (below min_drainage_area)
+            return m
+
+        chi_map = masked_map(chi)
+        ksn_map = masked_map(ksn)
+
+        # Trunk-channel chi-elevation profile, gathered the same way as
+        # plot_river_long_profile (ChannelProfiler segments -> ordered arrays).
+        profiler = ChannelProfiler(grid, number_of_watersheds=number_of_watersheds,
+                                   main_channel_only=True,
+                                   minimum_channel_threshold=channel_threshold)
+        profiler.run_one_step()
+        elev = grid.at_node["topographic__elevation"]
+        chi_vals, z_vals = [], []
+        for outlet, segments in profiler.data_structure.items():
+            for seg_id, seg in segments.items():
+                ids = seg["ids"]
+                chi_vals.append(chi[ids])
+                z_vals.append(elev[ids])
+
+        fig = plt.figure(figsize=(12, 10))
+        gs = fig.add_gridspec(2, 2, height_ratios=[1.1, 1])
+        ax_chi, ax_ksn, ax_prof = (
+            fig.add_subplot(gs[0, 0]), fig.add_subplot(gs[0, 1]), fig.add_subplot(gs[1, :])
+        )
+
+        cmap_chi = plt.get_cmap("viridis").copy()
+        cmap_chi.set_bad(color="white")
+        im1 = ax_chi.imshow(chi_map, cmap=cmap_chi)
+        fig.colorbar(im1, ax=ax_chi, label="χ (m)", fraction=0.046)
+        _titled(ax_chi, "χ Map", "Drainage-area-normalized distance")
+        ax_chi.set_xlabel("Easting (columns)")
+        ax_chi.set_ylabel("Northing (rows)")
+
+        cmap_ksn = plt.get_cmap("magma").copy()
+        cmap_ksn.set_bad(color="white")
+        vmax = float(np.nanpercentile(ksn_map, 98)) if np.any(~np.isnan(ksn_map)) else 1.0
+        im2 = ax_ksn.imshow(ksn_map, cmap=cmap_ksn, vmin=0, vmax=vmax if vmax > 0 else 1.0)
+        fig.colorbar(im2, ax=ax_ksn, label="k_sn", fraction=0.046)
+        _titled(ax_ksn, "Normalized Steepness Index (k_sn)",
+                "Proxy for relative rock-uplift-rate pattern")
+        ax_ksn.set_xlabel("Easting (columns)")
+        ax_ksn.set_ylabel("Northing (rows)")
+
+        if chi_vals:
+            chi_c = np.concatenate(chi_vals)
+            z_c = np.concatenate(z_vals)
+            order = np.argsort(chi_c)
+            ax_prof.plot(chi_c[order], z_c[order], color="#b2182b", lw=2)
+            ax_prof.set_xlabel("χ (m)")
+            ax_prof.set_ylabel("Elevation (m)")
+            _titled(ax_prof, "χ–Elevation Profile (main channel)",
+                    "Slope breaks that survive the χ transform mark a change in "
+                    "uplift rate or erodibility through time")
+            ax_prof.grid(alpha=0.3)
+        else:
+            ax_prof.text(0.5, 0.5, "No trunk channel resolved above threshold",
+                         ha="center", va="center", transform=ax_prof.transAxes)
+            ax_prof.axis("off")
+
+        plt.tight_layout()
+        plt.savefig(output_path)
+        plt.close()
+        return output_path
+    except Exception as e:
+        print(f"Chi analysis failed: {e}")
+        return None
+
+
 def plot_soil_thickness(grid, output_path):
     """Map of soil / alluvium thickness (soil__depth) — shows where sediment is
     stored as cover vs. where bedrock is exposed. Only available when a
