@@ -140,12 +140,10 @@ The results window groups outputs into tabs. Each plot below lists **what it sho
 *   **Erosion / Deposition Map (mask)** — *Where* material left vs. arrived, ignoring magnitude. A 3-category map (erosion / no-change / deposition) thresholded near zero — answers "where does deposition go" even when magnitudes are lopsided.
 *   **Drainage Network** — *Where the rivers are.* A `log₁₀(drainage_area)` map: bright threads where flow concentrates, dark hillslopes between. Built from the routed drainage area (boundary nodes blanked).
 *   **Soil / Alluvium Thickness** — *Where sediment is stored vs. bedrock is exposed.* Maps the landlab `soil__depth` field (mobile sediment above bedrock), which SPACE conserves and redistributes each timestep.
-*   **River Long Profile** — *Channel incision and knickpoints.* Two panels along the main (trunk) channel from `ChannelProfiler`: elevation vs. downstream distance (initial vs. final), and an incision panel (`final − initial`, with tectonic uplift removed on Tectonics runs) that makes the change legible even when the two profiles overlap.
-*   **Slope–Area Relationship** — *Erosion regime and steady state.* Log-log channel slope vs. drainage area. Hillslope noise is demoted to faint grey, channel nodes highlighted, and a binned-median trend line drawn through the channel data.
 *   **Sediment Budget Over Time** — *Transient vs. equilibrating system.* Cumulative eroded, deposited, and net-change **volumes** (m³) through time, derived from the timeline snapshots × cell area (tectonic uplift removed on Tectonics runs, so uplift isn't counted as deposition).
 *   **Hypsometric Curve** — *Basin maturity.* Cumulative area fraction vs. normalized elevation, initial vs. final.
 
-> **Routing note:** before the drainage-based plots (network, long profile, slope–area), flow is re-routed on the final topography with `FlowDirectorSteepest` **followed by a `LakeMapperBarnes` priority-flood pass**, mirroring the simulation loop. Internal depressions are rerouted automatically (the fill is written to a scratch surface, never to `topographic__elevation`), so the analysis isn't distorted by pits even on unfilled DEMs.
+> **Routing note:** before the Drainage Network plot, flow is re-routed on the final topography with the **same flow director the run was actually configured with** (falls back to `FlowDirectorSteepest`/D4 if none was set), **followed by a `LakeMapperBarnes` priority-flood pass**, mirroring the simulation loop. Using a different director than the run actually used would show a network that doesn't match what really drove the erosion. Internal depressions are rerouted automatically (the fill is written to a scratch surface, never to `topographic__elevation`), so the analysis isn't distorted by pits even on unfilled DEMs.
 
 ## ⚠️ Important Notes (Input DEM Requirements)
 
@@ -237,7 +235,7 @@ Each run is written to `resources/outputs/simulation_<N>/`, including:
 *   `init.png`, `final.png`, `diff.png` — 2D elevation and difference maps
 *   `final.tif`, `diff.tif` — GeoTIFFs of the final surface and total change
 *   `view_3d_comparison.html`, `sediment_timeline.html` — interactive 3D + timeline
-*   analysis plots (`mask.png`, `drainage_network.png`, `soil_thickness.png`, `long_profile.png`, `slope_area.png`, `flux.png`, `hypsometry.png`)
+*   analysis plots (`mask.png`, `drainage_network.png`, `soil_thickness.png`, `flux.png`, `hypsometry.png`)
 *   `simulation_details.txt` — parameters, components, and diagnostics for the run
 
 ## 📦 Packaging (Executable Generation)

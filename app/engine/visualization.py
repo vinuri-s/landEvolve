@@ -27,6 +27,83 @@ _TERRAIN_LIGHTING = dict(ambient=0.55, diffuse=0.85, specular=0.15,
                          roughness=0.9, fresnel=0.05)
 _TERRAIN_LIGHTPOSITION = dict(x=-100, y=-150, z=80)
 
+# Plotly's generated HTML has an unstyled <body> (no height set). A plot div
+# with height:100% resolves against that undefined parent height as if it
+# were "auto" (per the CSS percentage-height rule), so Plotly falls back to
+# some default intrinsic size instead of actually filling the browser
+# window -- this silently undersizes every plot exported via write_html
+# this way, not just one specific figure. Setting html/body to genuinely
+# fill the viewport, then forcing one resize once that's in place, is the
+# real fix; every generated-HTML script in this module should run this
+# first.
+_FIX_HTML_BODY_FILL_SCRIPT = """
+    document.documentElement.style.height = '100%';
+    document.body.style.height = '100%';
+    document.body.style.margin = '0';
+    if (gd && window.Plotly) { Plotly.Plots.resize(gd); }
+"""
+
+# Plotly sizes a 3D scene to fit the *shorter* dimension of its container
+# (constrained by aspectratio/aspectmode), so a fixed camera distance that
+# looks right on one window size leaves the surface small with wide empty
+# margins on a much wider or narrower one -- there is no single fixed value
+# that "fills the space" on every screen. This script runs client-side after
+# the plot loads (and again on every resize) to recompute the camera eye
+# distance from the container's *actual* current aspect ratio, so the
+# surface fills the available space on whatever screen/window it's actually
+# viewed on, not just the size it happened to be generated at.
+#
+# Direction is fixed (the viewing angle that framed the terrain well without
+# hiding the z-axis behind it, tuned separately from distance); only the
+# distance (vector magnitude) is recomputed per aspect ratio. Wider
+# containers are more height-constrained relative to the surface's own
+# aspect ratio, so they need a *closer* camera to fill the extra width;
+# narrower/taller containers need to back off to avoid clipping. The
+# magnitude formula and its clamp bounds were tuned empirically against
+# several real aspect ratios (roughly square through ~2:1 wide).
+_CAMERA_FIT_SCRIPT = """
+(function() {
+    var gd = document.getElementsByClassName('plotly-graph-div')[0];
+    if (!gd) return;
+""" + _FIX_HTML_BODY_FILL_SCRIPT + """
+    var ux = 0.870, uy = 0.328, uz = 0.369;  // unit eye direction
+    function fitCamera() {
+        Plotly.Plots.resize(gd);
+        var w = gd.clientWidth, h = gd.clientHeight;
+        if (!w || !h) return;
+        var ratio = w / h;
+        var mag = 1.55 - 0.5 * (ratio - 1);
+        mag = Math.max(0.85, Math.min(1.6, mag));
+        Plotly.relayout(gd, {
+            'scene.camera.eye': {x: ux * mag, y: uy * mag, z: uz * mag}
+        });
+    }
+    fitCamera();
+    var resizeTimer;
+    window.addEventListener('resize', function() {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(fitCamera, 150);
+    });
+})();
+"""
+
+# For 2D Plotly figures (no camera to fit) that just need the html/body-fill
+# bug above fixed, plus a proper resize on every window resize (not only on
+# load) since config={"responsive": True} alone was not reliably catching
+# it in testing.
+_RESPONSIVE_FILL_SCRIPT = """
+(function() {
+    var gd = document.getElementsByClassName('plotly-graph-div')[0];
+    if (!gd) return;
+""" + _FIX_HTML_BODY_FILL_SCRIPT + """
+    var resizeTimer;
+    window.addEventListener('resize', function() {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(function() { Plotly.Plots.resize(gd); }, 150);
+    });
+})();
+"""
+
 
 # -----------------------------
 # SPACE regime diagnostic tool
@@ -256,8 +333,11 @@ def generate_3d_comparison_html(
                 # back to 'auto' and computes its own (looser) framing.
                 aspectmode='manual',
                 aspectratio=dict(x=1, y=1, z=0.5),
-                # Pull the camera in so the surface fills the available space.
-                camera=dict(eye=dict(x=1.3, y=0.5, z=0.55), center=dict(x=0, y=0, z=-0.05)),
+                # Initial/fallback camera; _CAMERA_FIT_SCRIPT below overrides
+                # this immediately on load (and again on resize) based on
+                # the *actual* container size, so this value only matters
+                # for the brief instant before that script runs.
+                camera=dict(eye=dict(x=0.85, y=0.32, z=0.36), center=dict(x=0, y=0, z=-0.05)),
             ),
             updatemenus=[
                 dict(
@@ -291,6 +371,7 @@ def generate_3d_comparison_html(
             config={"responsive": True},
             default_width="100%",
             default_height="100%",
+            post_script=_CAMERA_FIT_SCRIPT,
         )
         return scale
 
@@ -407,6 +488,7 @@ def generate_sediment_timeline_html(snapshots, times, shape, output_html_path,
             config={"responsive": True},
             default_width="100%",
             default_height="100%",
+            post_script=_RESPONSIVE_FILL_SCRIPT,
         )
         return max(abs(cmin), abs(cmax))
 

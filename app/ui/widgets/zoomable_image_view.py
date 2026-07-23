@@ -60,7 +60,13 @@ class ZoomableImageView(QScrollArea):
             return None
         scale = min(viewport.width() / pm_size.width(),
                     viewport.height() / pm_size.height())
-        scale = min(scale, 1.0) if scale > 0 else 1.0  # never upscale at "fit"
+        # Fill the available panel by default (matches this app's original,
+        # pre-zoom QLabel behavior) -- scale up as well as down. A source
+        # image smaller than the panel (a fixed-size matplotlib PNG in a
+        # large window) would otherwise render small with the rest of the
+        # panel left blank. Ctrl+wheel still zooms further beyond this.
+        if scale <= 0:
+            scale = 1.0
         return pm_size * scale
 
     def _render(self):

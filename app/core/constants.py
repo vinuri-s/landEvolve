@@ -53,8 +53,6 @@ class SimulationResultKeys:
     TIMELINE_HTML = "timeline_html"
     HYPSOMETRY_PLOT = "hypsometry_plot"
     FLUX_PLOT = "flux_plot"
-    LONG_PROFILE_PLOT = "long_profile_plot"
-    SLOPE_AREA_PLOT = "slope_area_plot"
     DRAINAGE_NETWORK_PLOT = "drainage_network_plot"
     SOIL_THICKNESS_PLOT = "soil_thickness_plot"
     CHANGE_EVENTS_PLOT = "change_events_plot"
