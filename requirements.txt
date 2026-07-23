@@ -15,18 +15,8 @@ fiona==1.10.1
 # (landlab/landlab#1901 neighbourhood) -- a floating-point exact-equality
 # check that should be a tolerance check, which can otherwise produce
 # non-physical elevation spikes on gently-sloping terrain. Prebuilt wheels
-# on PyPI for all platforms (no C++ compiler needed, unlike richdem). Not
-# strictly required -- if missing, the engine falls back to Landlab's
-# original code, still protected by the statistical outlier guard in
-# components.py, just without the root-cause fix.
+# on PyPI for all platforms (no C++ compiler needed). Not strictly required
+# -- if missing, the engine falls back to Landlab's original code, still
+# protected by the statistical outlier guard in components.py, just without
+# the root-cause fix.
 numba
-
-# Optional. Enables PriorityFloodFlowRouter, a non-recursive flow-routing
-# path that avoids a native stack-overflow crash the classic
-# FlowAccumulator + LakeMapperBarnes combo can hit on large/complex grids
-# (see FlowAccumulatorComponent in app/engine/components.py). Not required to
-# run the app -- if richdem isn't installed, the engine falls back to the
-# classic path automatically. Known to lack reliable wheels on macOS; install
-# via `conda install richdem -c conda-forge` or `pip install richdem` where
-# available (e.g. the Windows/HPC production environment).
-richdem

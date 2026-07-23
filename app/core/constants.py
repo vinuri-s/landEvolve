@@ -137,7 +137,6 @@ class Carousel2DWidgetConsts:
     Presentation strings for the Carousel2DWidget.
     """
     LBL_LOADING = "Loading..."
-    LBL_NOT_FOUND = "Image not found: "
     BTN_INPUT = "Input Elevation"
     BTN_FINAL = "Final Elevation"
     BTN_DIFF = "Difference Map"
@@ -146,6 +145,13 @@ class Carousel2DWidgetConsts:
     BTN_RESET_SCALE = "Reset to Auto"
     CHK_SYMLOG = "Enhance small changes (log)"
     CHK_REMOVE_UPLIFT = "Remove tectonic uplift"
+
+
+class ZoomableImageViewConsts:
+    """
+    Presentation strings for the ZoomableImageView widget.
+    """
+    LBL_NOT_FOUND = "Image not found:\n"
 
 
 class HomeWindowConsts:

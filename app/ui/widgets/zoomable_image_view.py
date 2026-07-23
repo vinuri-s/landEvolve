@@ -2,6 +2,7 @@ import os
 from PyQt6.QtWidgets import QScrollArea, QLabel, QSizePolicy
 from PyQt6.QtGui import QPixmap, QCursor
 from PyQt6.QtCore import Qt, QPoint
+from app.core.constants import ZoomableImageViewConsts
 
 
 class ZoomableImageView(QScrollArea):
@@ -35,7 +36,7 @@ class ZoomableImageView(QScrollArea):
         """Load an image from disk at fit-to-panel zoom. Returns False (and
         shows a placeholder message) if the path doesn't exist."""
         if not path or not os.path.exists(path):
-            self.set_placeholder(f"Image not found:\n{path}")
+            self.set_placeholder(f"{ZoomableImageViewConsts.LBL_NOT_FOUND}{path}")
             return False
         self._pixmap = QPixmap(path)
         self._zoom = self._MIN_ZOOM

@@ -182,8 +182,7 @@ class Carousel2DWidget(QWidget):
             
         # Find path
         image_path = self.image_paths.get(result_key) # Changed path to image_path, key to result_key
-        if not self.lbl_image.load(image_path):
-            self.lbl_image.set_placeholder(f"{Carousel2DWidgetConsts.LBL_NOT_FOUND}{image_path}")
+        self.lbl_image.load(image_path)
 
         self.current_2d_key = result_key # Changed key to result_key
         self.current_2d_title = title

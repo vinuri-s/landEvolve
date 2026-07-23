@@ -47,14 +47,16 @@ def _select_pour_point(grid, z, nodata_value=-9999.0):
     temporary all-perimeter-open state; the caller is expected to immediately
     set the real watershed boundary via ``set_watershed_boundary_condition_outlet_id``.
 
-    Prefers PriorityFloodFlowRouter (richdem-backed, non-recursive) when
-    available; falls back to FlowAccumulator + LakeMapperBarnes otherwise.
-    That fallback's depression rerouting (`reaccumulate_flow=True`) recurses
-    through Landlab's Braun & Willett stack-building algorithm with no depth
-    guard, and can crash the whole process (native stack overflow) on a
+    Depression rerouting (`reaccumulate_flow=True`) recurses through
+    Landlab's Braun & Willett stack-building algorithm with no depth guard,
+    and can crash the whole process (native stack overflow) on a
     large/complex drainage network -- see FlowAccumulatorComponent in
-    components.py for the full explanation.
+    components.py for the full explanation and how it's mitigated (a larger
+    native stack on the simulation's background thread, see
+    ``app/ui/workers.py``).
     """
+    from landlab.components import FlowAccumulator, LakeMapperBarnes
+
     nodata = (z == nodata_value)
 
     # Temporary boundary conditions: every edge cell open, NoData closed,
@@ -63,30 +65,20 @@ def _select_pour_point(grid, z, nodata_value=-9999.0):
     grid.status_at_node[grid.perimeter_nodes] = grid.BC_NODE_IS_FIXED_VALUE
     grid.status_at_node[nodata] = grid.BC_NODE_IS_CLOSED
 
-    try:
-        from landlab.components import PriorityFloodFlowRouter
-        PriorityFloodFlowRouter(
-            grid, flow_metric="D8", depression_handler="fill",
-        ).run_one_step()
-    except ImportError:
-        # richdem not installed (ModuleNotFoundError) -- fall back to the
-        # classic (recursion-risk) path.
-        from landlab.components import FlowAccumulator, LakeMapperBarnes
+    if "_pourpoint_fill__surface" not in grid.at_node:
+        grid.add_zeros("_pourpoint_fill__surface", at="node")
 
-        if "_pourpoint_fill__surface" not in grid.at_node:
-            grid.add_zeros("_pourpoint_fill__surface", at="node")
-
-        FlowAccumulator(grid, flow_director="FlowDirectorD8").run_one_step()
-        LakeMapperBarnes(
-            grid,
-            method="D8",
-            surface="topographic__elevation",
-            fill_surface="_pourpoint_fill__surface",
-            fill_flat=False,
-            redirect_flow_steepest_descent=True,
-            reaccumulate_flow=True,
-            ignore_overfill=True,
-        ).run_one_step()
+    FlowAccumulator(grid, flow_director="FlowDirectorD8").run_one_step()
+    LakeMapperBarnes(
+        grid,
+        method="D8",
+        surface="topographic__elevation",
+        fill_surface="_pourpoint_fill__surface",
+        fill_flat=False,
+        redirect_flow_steepest_descent=True,
+        reaccumulate_flow=True,
+        ignore_overfill=True,
+    ).run_one_step()
 
     da = grid.at_node["drainage_area"]
     edge = grid.perimeter_nodes
@@ -440,17 +432,17 @@ class SimulationRunner:
         tracker_plot = None
         tracker_first_effect = None
         if tracker:
-            self.log(95, "Exporting feature tracking data...")
+            self.log(99, "Exporting feature tracking data...")
             threshold = float(self.params.get("first_effect_threshold", 0.01))
             tracker_csv, tracker_plot, tracker_first_effect = tracker.export(
                 str(self.output_dir), first_effect_threshold=threshold,
                 cell_area=float(grid.dx) * float(grid.dy),
             )
             if tracker_first_effect and tracker_first_effect.get("detected"):
-                self.log(96, f"Feature first affected at ~{tracker_first_effect['time']:g} years "
+                self.log(99, f"Feature first affected at ~{tracker_first_effect['time']:g} years "
                              f"(≥ {tracker_first_effect['threshold']:g} m change)")
             elif tracker_first_effect:
-                self.log(96, f"Feature never changed by ≥ {tracker_first_effect['threshold']:g} m "
+                self.log(99, f"Feature never changed by ≥ {tracker_first_effect['threshold']:g} m "
                              f"(max observed {tracker_first_effect['max_observed']:g} m)")
 
         self.log(100, "Done")

@@ -693,22 +693,30 @@ class SpaceLargeScaleEroderComponent(BaseSpaceComponent):
 class FlowAccumulatorComponent(SimulationComponent):
     """Routes flow and handles depressions each step.
 
-    Prefers Landlab's ``PriorityFloodFlowRouter`` (richdem-backed): it merges
-    routing and depression-filling into one non-recursive pass, so it has no
-    stack-depth limit regardless of grid size or drainage-network shape.
+    Depression handling: FlowDirectorSteepest/D8 alone dead-ends flow in
+    internal pits, so SPACE dumps the whole upstream sediment load into the
+    sink -- the runaway multi-thousand-metre "deposition" spike. LakeMapperBarnes
+    (Barnes priority-flood, pure-landlab/Cython -- no extra native
+    dependency) reroutes flow across depressions each step in near-linear
+    time.
 
-    Falls back to the classic ``FlowAccumulator`` + ``LakeMapperBarnes`` combo
-    when richdem isn't installed (e.g. local dev on a Mac, where richdem has
-    no reliable wheel). That path is fine for small/medium grids, but its
-    depression rerouting (``reaccumulate_flow=True``) calls into Landlab's
-    Braun & Willett stack-building algorithm (``flow_accum_bw.add_to_stack``),
-    which is a Cython function that recurses once per donor node with no
-    depth guard -- deliberately bypassing Python's own recursion limit (see
-    the comment in landlab's ``flow_accum_bw.py``). For a large/complex
-    drainage network the recursion depth can exceed the OS thread's native
-    stack, causing an uncatchable crash (`Windows fatal exception: access
-    violation` / segfault) that takes the whole process down with no
-    traceback -- this is what happened on the ~9.4M-cell production grid.
+    Its depression rerouting (``reaccumulate_flow=True``) calls into
+    Landlab's Braun & Willett stack-building algorithm
+    (``flow_accum_bw.add_to_stack``), which is a Cython function that
+    recurses once per donor node with no depth guard -- deliberately
+    bypassing Python's own recursion limit (see the comment in landlab's
+    ``flow_accum_bw.py``). For a large/complex drainage network the
+    recursion depth can exceed the OS thread's native stack, causing an
+    uncatchable crash (`Windows fatal exception: access violation` /
+    segfault) that takes the whole process down with no traceback -- this is
+    what happened on the ~9.4M-cell production grid. Landlab's
+    ``PriorityFloodFlowRouter`` avoids this recursion entirely, but it
+    requires the ``richdem`` package, which has no reliable prebuilt wheel on
+    either Windows or macOS and was a bigger installation burden than the
+    crash it prevents. Mitigated instead by giving the simulation's
+    background thread a much larger native stack (see
+    ``SimulationWorker.setStackSize`` in ``app/ui/workers.py``), which raises
+    the recursion depth this can tolerate without the extra dependency.
     """
 
     def __init__(self, grid, **params):
@@ -721,60 +729,32 @@ class FlowAccumulatorComponent(SimulationComponent):
         if "water__unit_flux_in" not in grid.at_node:
             grid.add_ones("water__unit_flux_in", at="node")
 
+        self.flow = FlowAccumulator(grid, **params)
+
+        # Crucially it fills a SCRATCH surface (`_depression_fill__surface`), not
+        # `topographic__elevation`, so the rerouting never injects fake sediment
+        # into the terrain that SPACE erodes.
+        if "_depression_fill__surface" not in grid.at_node:
+            grid.add_zeros("_depression_fill__surface", at="node")
+
         director = str(params.get("flow_director", "")).lower()
-        flow_metric = "D8" if "d8" in director else "D4"
-        runoff_rate = params.get("runoff_rate", None)
-
-        self.router = None
-        try:
-            from landlab.components import PriorityFloodFlowRouter
-            self.router = PriorityFloodFlowRouter(
-                grid,
-                flow_metric=flow_metric,
-                runoff_rate=runoff_rate,
-                depression_handler="fill",
-            )
-        except ImportError:
-            # PriorityFloodFlowRouter.load_richdem() raises ModuleNotFoundError
-            # (an ImportError subclass) specifically when richdem isn't
-            # importable -- fall back below.
-            self.router = None
-
-        if self.router is None:
-            self.flow = FlowAccumulator(grid, **params)
-
-            # Depression handling. FlowDirectorSteepest/D8 alone dead-ends flow in
-            # internal pits, so SPACE dumps the whole upstream sediment load into the
-            # sink — the runaway multi-thousand-metre "deposition" spike. LakeMapperBarnes
-            # (Barnes priority-flood, pure-landlab/Cython — no richdem) reroutes flow
-            # across depressions each step in near-linear time.
-            #
-            # Crucially it fills a SCRATCH surface (`_depression_fill__surface`), not
-            # `topographic__elevation`, so the rerouting never injects fake sediment
-            # into the terrain that SPACE erodes.
-            if "_depression_fill__surface" not in grid.at_node:
-                grid.add_zeros("_depression_fill__surface", at="node")
-
-            method = "D8" if flow_metric == "D8" else "Steepest"
-            self.lake_mapper = LakeMapperBarnes(
-                grid,
-                method=method,
-                surface="topographic__elevation",
-                fill_surface="_depression_fill__surface",
-                fill_flat=False,
-                redirect_flow_steepest_descent=True,
-                reaccumulate_flow=True,
-                # A pit can "overfill" when applying the minimum gradient would spill
-                # it through two outlets at once; tolerate it rather than aborting.
-                ignore_overfill=True,
-            )
+        method = "D8" if "d8" in director else "Steepest"
+        self.lake_mapper = LakeMapperBarnes(
+            grid,
+            method=method,
+            surface="topographic__elevation",
+            fill_surface="_depression_fill__surface",
+            fill_flat=False,
+            redirect_flow_steepest_descent=True,
+            reaccumulate_flow=True,
+            # A pit can "overfill" when applying the minimum gradient would spill
+            # it through two outlets at once; tolerate it rather than aborting.
+            ignore_overfill=True,
+        )
 
     def run(self, dt):
-        if self.router is not None:
-            self.router.run_one_step()
-        else:
-            self.flow.run_one_step()
-            self.lake_mapper.run_one_step()
+        self.flow.run_one_step()
+        self.lake_mapper.run_one_step()
 
 
 # =========================================================
