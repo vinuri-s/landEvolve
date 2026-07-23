@@ -20,7 +20,6 @@ from app.engine.io import (
 from app.engine.visualization import diagnose_space_regime, generate_sediment_timeline_html
 from app.engine.science_plots import (
     refresh_drainage,
-    plot_hypsometry,
     plot_sediment_flux,
     plot_drainage_network,
     plot_soil_thickness,
@@ -340,7 +339,8 @@ class SimulationRunner:
         self.log(88, "Plotting erosion/deposition mask...")
         mask_png = str(self.output_dir / "mask.png")
         plot_erosion_deposition_mask(signal_diff, grid.shape, mask_png,
-                                     uplift_removed=cumulative_uplift is not None)
+                                     uplift_removed=cumulative_uplift is not None,
+                                     hillshade_elev=final)
 
         self.log(89, "Writing final.tif...")
         save_geotiff(str(self.output_dir / "final.tif"), final, tif)
@@ -371,7 +371,8 @@ class SimulationRunner:
         self.log(90, "Building sediment timeline...")
         timeline_html = str(self.output_dir / "sediment_timeline.html")
         timeline_result = generate_sediment_timeline_html(
-            sediment_snapshots, timeline_times, grid.shape, timeline_html
+            sediment_snapshots, timeline_times, grid.shape, timeline_html,
+            elevation=final,
         )
         if timeline_result is False:
             timeline_html = None
@@ -393,9 +394,6 @@ class SimulationRunner:
                 "flow_director", refresh_flow_director)
         refresh_drainage(grid, flow_director=refresh_flow_director)
 
-        self.log(93, "Plotting hypsometry...")
-        hypsometry_plot = plot_hypsometry(
-            initial, final, str(self.output_dir / "hypsometry.png"))
         self.log(93, "Plotting sediment flux...")
         flux_plot = plot_sediment_flux(
             sediment_snapshots, timeline_times, cell_area,
@@ -413,10 +411,10 @@ class SimulationRunner:
             str(self.output_dir / "change_events.png"),
             input_tiff=tif,
             change_threshold=float(self.params.get("first_effect_threshold", 0.01)),
-            uplift_removed=cumulative_uplift is not None)
+            uplift_removed=cumulative_uplift is not None,
+            elevation=final)
 
         science_plots = {
-            "hypsometry_plot": hypsometry_plot,
             "flux_plot": flux_plot,
             "drainage_network_plot": drainage_network_plot,
             "soil_thickness_plot": soil_thickness_plot,
@@ -452,7 +450,6 @@ class SimulationRunner:
             "geomorphic_change_plot": geomorphic_diff_png,
             "mask_plot": mask_png,
             "timeline_html": timeline_html,
-            "hypsometry_plot": science_plots["hypsometry_plot"],
             "flux_plot": science_plots["flux_plot"],
             "drainage_network_plot": science_plots["drainage_network_plot"],
             "soil_thickness_plot": science_plots["soil_thickness_plot"],

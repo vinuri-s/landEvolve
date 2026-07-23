@@ -156,11 +156,16 @@ def plot_difference(data, shape, title, output_path, vmin=None, vmax=None,
     return max_abs
 
 
-def plot_erosion_deposition_mask(data, shape, output_path, threshold=None, uplift_removed=False):
+def plot_erosion_deposition_mask(data, shape, output_path, threshold=None,
+                                 uplift_removed=False, hillshade_elev=None):
     """Render a categorical map: erosion vs. no-change vs. deposition.
 
     Magnitude is ignored, so this answers "where is material leaving vs.
     arriving" regardless of how lopsided the magnitudes are.
+
+    If hillshade_elev (the corresponding terrain) is supplied, the categories
+    are drawn semi-transparently over a shaded-relief underlay, same as
+    plot_difference, so the pattern is read in its topographic context.
     """
     arr = data.reshape(shape).astype(float)
 
@@ -180,15 +185,26 @@ def plot_erosion_deposition_mask(data, shape, output_path, threshold=None, uplif
 
     fig, ax = plt.subplots(figsize=(12, 8))
 
+    draped = hillshade_elev is not None
+    if draped:
+        z = np.asarray(hillshade_elev, dtype=float).reshape(shape)
+        ls = LightSource(azdeg=315, altdeg=45)
+        hs = ls.hillshade(np.nan_to_num(z, nan=np.nanmin(z)), vert_exag=2.0)
+        ax.imshow(hs, cmap="gray")
+
     cmap = ListedColormap(["#b2182b", "#f0f0f0", "#2166ac"])  # erosion / none / deposition
-    cmap.set_bad(color="white")
+    cmap.set_bad(alpha=0.0 if draped else 1.0, color="white")
     norm = BoundaryNorm([-1.5, -0.5, 0.5, 1.5], cmap.N)
 
     # nearest: this is a discrete 3-category field, so any resampling that
     # blends neighbouring pixels (matplotlib's default) would paint colors
     # that don't correspond to any real category -- e.g. erosion-red bleeding
     # toward white. nearest keeps every displayed pixel a real category.
-    ax.imshow(cat, cmap=cmap, norm=norm, interpolation='nearest')
+    # Semi-transparent (uniformly, all 3 categories) when draped over
+    # hillshade, same overlay_alpha convention as plot_difference, so relief
+    # shows through beneath the category color.
+    ax.imshow(cat, cmap=cmap, norm=norm, interpolation='nearest',
+              alpha=0.6 if draped else 1.0)
 
     erosion_cells = int(np.sum(cat == -1))
     deposition_cells = int(np.sum(cat == 1))

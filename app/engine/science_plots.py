@@ -4,8 +4,8 @@ These complement the difference map and timeline. Grid-based plots (drainage
 network) must be generated while the live landlab grid is available in the
 runner, because they depend on the drainage network rather than the saved
 rasters; `refresh_drainage` re-routes that network on the final topography so
-they reflect the final landscape. Array-based plots (hypsometry, sediment
-flux) only need the elevation arrays.
+they reflect the final landscape. Array-based plots (sediment flux) only
+need the elevation arrays.
 
 Every function is defensive: if the required fields/structure are missing for a
 given landscape or component selection, it logs and returns None instead of
@@ -14,6 +14,20 @@ raising, so a partial result set never breaks a simulation run.
 
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.colors import LightSource
+
+
+def _hillshade_underlay(ax, elevation, shape):
+    """Draw a grayscale shaded-relief underlay of `elevation` on `ax`, same
+    sun-angle convention as plot_topography/plot_difference in io.py, so
+    analysis plots read in their topographic context instead of floating on
+    a flat background. Caller draws its actual data semi-transparently on
+    top of this."""
+    z = np.asarray(elevation, dtype=float).reshape(shape)
+    ls = LightSource(azdeg=315, altdeg=45)
+    hs = ls.hillshade(np.nan_to_num(z, nan=np.nanmin(z) if np.isfinite(z).any() else 0.0),
+                       vert_exag=2.0)
+    ax.imshow(hs, cmap="gray")
 
 
 def _titled(ax, main, sub):
@@ -28,46 +42,6 @@ def _titled(ax, main, sub):
 # -----------------------------------------------------------------------------
 # Array-based plots (no grid required)
 # -----------------------------------------------------------------------------
-def plot_hypsometry(initial, final, output_path):
-    """Cumulative-area vs. normalized-elevation curve, initial vs. final.
-    A classic descriptor of basin maturity across any landscape type."""
-    try:
-        def curve(arr):
-            a = np.asarray(arr, dtype=float)
-            a = a[~np.isnan(a)]
-            zmin, zmax = float(np.min(a)), float(np.max(a))
-            if zmax - zmin == 0:
-                return None, None
-            h = (a - zmin) / (zmax - zmin)
-            h_sorted = np.sort(h)[::-1]
-            area_frac = np.arange(1, h_sorted.size + 1) / h_sorted.size
-            return area_frac, h_sorted
-
-        ax_i, ay_i = curve(initial)
-        ax_f, ay_f = curve(final)
-        if ax_i is None or ax_f is None:
-            return None
-
-        fig, ax = plt.subplots(figsize=(8, 8))
-        ax.plot(ax_i, ay_i, label="Initial", color="#888888", lw=2)
-        ax.plot(ax_f, ay_f, label="Final", color="#b2182b", lw=2)
-        ax.set_xlabel("Cumulative area fraction (a/A)")
-        ax.set_ylabel("Normalized elevation (h/H)")
-        _titled(ax, "Hypsometric Curve",
-                "Area below each elevation — basin maturity (initial vs final)")
-        ax.set_xlim(0, 1)
-        ax.set_ylim(0, 1)
-        ax.legend()
-        ax.grid(alpha=0.3)
-        plt.tight_layout()
-        plt.savefig(output_path)
-        plt.close()
-        return output_path
-    except Exception as e:
-        print(f"Hypsometry plot failed: {e}")
-        return None
-
-
 def plot_sediment_flux(snapshots, times, cell_area, output_path, uplift_removed=False):
     """Cumulative eroded vs. deposited vs. net-change volume through time.
     Reveals whether the system is transient or approaching equilibrium.
@@ -168,7 +142,7 @@ def refresh_drainage(grid, flow_director="FlowDirectorSteepest"):
 
 
 
-def plot_drainage_network(grid, output_path, channel_percentile=90.0):
+def plot_drainage_network(grid, output_path, channel_percentile=98.0):
     """Map of log(drainage area) — draws the river network: bright threads
     where flow concentrates, blank hillslopes between. Needs a routed
     drainage_area field (call refresh_drainage first).
@@ -206,12 +180,13 @@ def plot_drainage_network(grid, output_path, channel_percentile=90.0):
             logarea[logarea < threshold] = np.nan
 
         fig, ax = plt.subplots(figsize=(12, 8))
+        _hillshade_underlay(ax, grid.at_node["topographic__elevation"], grid.shape)
         cmap = plt.get_cmap("cubehelix_r").copy()
-        cmap.set_bad(color="white")
+        cmap.set_bad(alpha=0.0)  # let the hillshade underlay show through off-channel
         im = ax.imshow(logarea, cmap=cmap)
         fig.colorbar(im, ax=ax, label="log₁₀ drainage area (m²)")
         _titled(ax, "Drainage Network",
-                f"log₁₀(drainage area) — channel cells only (top {100 - channel_percentile:.0f}% by area)")
+                f"log₁₀(drainage area) — channel cells only (top {100 - channel_percentile:g}% by area)")
         ax.set_xlabel("Easting (columns)")
         ax.set_ylabel("Northing (rows)")
         plt.tight_layout()
@@ -270,11 +245,16 @@ def _detect_change_events(snapshots, times, shape, threshold):
 
 
 def plot_change_events_map(snapshots, times, shape, output_path,
-                           input_tiff=None, change_threshold=0.01, uplift_removed=False):
+                           input_tiff=None, change_threshold=0.01, uplift_removed=False,
+                           elevation=None):
     """Static map of cumulative erosion/deposition with the *first* and *biggest*
     elevation-change events marked. Annotates each with when it happened, the
     change magnitude, and its location (easting/northing if the input GeoTIFF is
-    georeferenced, otherwise grid row/col)."""
+    georeferenced, otherwise grid row/col).
+
+    elevation: optional terrain (e.g. final elevation) drawn as a shaded-
+    relief underlay beneath the semi-transparent change map, same treatment
+    as the Difference Map."""
     try:
         first, biggest = _detect_change_events(snapshots, times, shape, change_threshold)
         if first is None:
@@ -312,7 +292,11 @@ def plot_change_events_map(snapshots, times, shape, output_path,
             scale = 1.0
 
         fig, ax = plt.subplots(figsize=(12, 8))
-        im = ax.imshow(final, cmap="RdBu", vmin=-scale, vmax=scale)
+        draped = elevation is not None
+        if draped:
+            _hillshade_underlay(ax, elevation, shape)
+        im = ax.imshow(final, cmap="RdBu", vmin=-scale, vmax=scale,
+                       alpha=0.6 if draped else 1.0)
         fig.colorbar(im, ax=ax, label="Cumulative change (m)")
 
         # Place each label toward the grid interior so markers near the right
@@ -324,7 +308,7 @@ def plot_change_events_map(snapshots, times, shape, output_path,
 
         # First change (cyan circle) and biggest change (gold star).
         ax.scatter([first["col"]], [first["row"]], s=240, facecolors="none",
-                   edgecolors="#00b8d4", linewidths=2.5, zorder=5)
+                   edgecolors="#00b8d4", linewidths=2.5, zorder=5, label="First change")
         off, ha = label_offset(first["col"], 8)
         ax.annotate("1st change", (first["col"], first["row"]),
                     textcoords="offset points", xytext=off, ha=ha,
@@ -332,13 +316,16 @@ def plot_change_events_map(snapshots, times, shape, output_path,
                     bbox=dict(boxstyle="round,pad=0.2", facecolor="white",
                               edgecolor="none", alpha=0.7))
         ax.scatter([biggest["col"]], [biggest["row"]], s=300, marker="*",
-                   facecolors="#ffd400", edgecolors="#1a1a1a", linewidths=1.5, zorder=6)
+                   facecolors="#ffd400", edgecolors="#1a1a1a", linewidths=1.5, zorder=6,
+                   label="Biggest change")
         off, ha = label_offset(biggest["col"], -14)
         ax.annotate("max change", (biggest["col"], biggest["row"]),
                     textcoords="offset points", xytext=off, ha=ha,
                     color="#1a1a1a", fontsize=10, fontweight="bold",
                     bbox=dict(boxstyle="round,pad=0.2", facecolor="white",
                               edgecolor="none", alpha=0.7))
+        # Legend explaining the two marker symbols, at the bottom of the plot.
+        ax.legend(loc="lower center", ncol=2, framealpha=0.9, fontsize=10)
 
         def verb(ev):
             return "erosion" if ev["value"] < 0 else "deposition"
@@ -387,12 +374,13 @@ def plot_soil_thickness(grid, output_path):
             vmax = 1.0
 
         fig, ax = plt.subplots(figsize=(12, 8))
+        _hillshade_underlay(ax, grid.at_node["topographic__elevation"], grid.shape)
         cmap = plt.get_cmap("YlOrBr").copy()
-        cmap.set_bad(color="white")
-        im = ax.imshow(depth, cmap=cmap, vmin=0, vmax=vmax)
+        cmap.set_bad(alpha=0.0)
+        im = ax.imshow(depth, cmap=cmap, vmin=0, vmax=vmax, alpha=0.75)
         fig.colorbar(im, ax=ax, label="Soil / alluvium thickness (m)")
         _titled(ax, "Soil / Alluvium Thickness",
-                "Mobile sediment stored above bedrock (m)")
+                "Mobile sediment stored above bedrock (m), after simulation")
         ax.set_xlabel("Easting (columns)")
         ax.set_ylabel("Northing (rows)")
         plt.tight_layout()

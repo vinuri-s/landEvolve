@@ -209,7 +209,6 @@ class SimulationResultsWindow(QMainWindow):
             ("Drainage Network", self.image_paths.get(SimulationResultKeys.DRAINAGE_NETWORK_PLOT)),
             ("Soil / Alluvium Thickness", self.image_paths.get(SimulationResultKeys.SOIL_THICKNESS_PLOT)),
             ("Sediment Budget Over Time", self.image_paths.get(SimulationResultKeys.FLUX_PLOT)),
-            ("Hypsometric Curve", self.image_paths.get(SimulationResultKeys.HYPSOMETRY_PLOT)),
         ]
 
         gallery = AnalysisGalleryWidget(plots)

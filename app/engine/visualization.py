@@ -344,14 +344,14 @@ def generate_3d_comparison_html(
                     type="buttons",
                     direction="left",
                     buttons=[
-                        dict(args=[{"visible": [True, False, False]},
-                                   {"title.text": _titled(_caps["out"])}],
-                             label="Output Elevation",
-                             method="update"),
-
                         dict(args=[{"visible": [False, True, False]},
                                    {"title.text": _titled(_caps["in"])}],
                              label="Input Elevation",
+                             method="update"),
+
+                        dict(args=[{"visible": [True, False, False]},
+                                   {"title.text": _titled(_caps["out"])}],
+                             label="Output Elevation",
                              method="update"),
 
                         dict(args=[{"visible": [False, False, True]},
@@ -383,13 +383,43 @@ def generate_3d_comparison_html(
 # -----------------------------
 # Sediment-flow timeline animation (Plotly slider)
 # -----------------------------
+def _hillshade_data_uri(elevation, shape, target_shape):
+    """Render a grayscale hillshade of `elevation` (reshaped to `shape`, then
+    downsampled/cropped to `target_shape` to line up pixel-for-pixel with the
+    heatmap frames it will sit behind) and return it as a base64 PNG data URI
+    for use as a Plotly background image layer."""
+    import io
+    import base64
+    import matplotlib.pyplot as plt
+    from matplotlib.colors import LightSource
+
+    z = np.asarray(elevation, dtype=float).reshape(shape)
+    sx = max(1, shape[0] // target_shape[0])
+    sy = max(1, shape[1] // target_shape[1])
+    z = z[::sx, ::sy][:target_shape[0], :target_shape[1]]
+
+    ls = LightSource(azdeg=315, altdeg=45)
+    hs = ls.hillshade(np.nan_to_num(z, nan=np.nanmin(z) if np.isfinite(z).any() else 0.0),
+                       vert_exag=2.0)
+
+    buf = io.BytesIO()
+    plt.imsave(buf, hs, cmap="gray", format="png")
+    b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+    return f"data:image/png;base64,{b64}"
+
+
 def generate_sediment_timeline_html(snapshots, times, shape, output_html_path,
-                                    vmin=None, vmax=None, max_dim=400):
+                                    vmin=None, vmax=None, max_dim=400, elevation=None):
     """Build an interactive, scrubbable heatmap animation of cumulative
     erosion/deposition over simulation time.
 
     snapshots: list of 1D/2D arrays = (elevation_at_step - initial_elevation).
     times:     list of simulation times matching each snapshot.
+    elevation: optional terrain (e.g. final elevation) to render as a
+        shaded-relief background underneath the semi-transparent change
+        heatmap, so change is read in its topographic context -- the same
+        drape-over-hillshade treatment the static Difference Map plot uses
+        (app/engine/io.py's plot_difference).
     Returns the absolute-max change used for scaling, or False on failure.
     """
     try:
@@ -417,6 +447,16 @@ def generate_sediment_timeline_html(snapshots, times, shape, output_html_path,
                 scale = 1.0
             cmin, cmax = -scale, scale
 
+        target_shape = frames_data[0].shape
+        hillshade_uri = None
+        if elevation is not None:
+            try:
+                hillshade_uri = _hillshade_data_uri(elevation, shape, target_shape)
+            except Exception as e:
+                print(f"Timeline hillshade skipped: {e}")
+
+        heatmap_opacity = 0.6 if hillshade_uri else 1.0
+
         def heatmap(z):
             return go.Heatmap(
                 z=z,
@@ -425,6 +465,7 @@ def generate_sediment_timeline_html(snapshots, times, shape, output_html_path,
                 colorscale='RdBu',
                 zsmooth='best',  # bilinear interpolation -> smooth, non-blocky map
                 colorbar=dict(title='Change (m)'),
+                opacity=heatmap_opacity,
                 hovertemplate='col %{x}<br>row %{y}<br>Δ %{z:.3f} m<extra></extra>',
             )
 
@@ -447,12 +488,28 @@ def generate_sediment_timeline_html(snapshots, times, shape, output_html_path,
             for i in range(len(frames_data))
         ]
 
+        nrows, ncols = target_shape
         fig.update_layout(
             title="Cumulative Erosion / Deposition Over Time",
             autosize=True,
             yaxis=dict(autorange="reversed", scaleanchor="x",
                        constrain="domain", title="Northing (rows)"),
             xaxis=dict(constrain="domain", title="Easting (columns)"),
+            # Shaded-relief background so change is read in its topographic
+            # context, matching the static Difference Map's drape-over-
+            # hillshade treatment. Sized/anchored to exactly cover the
+            # heatmap's cell-centered coordinate extent (-0.5 .. n-0.5) so it
+            # lines up pixel-for-pixel with the (semi-transparent) heatmap
+            # drawn on top of it.
+            images=[dict(
+                source=hillshade_uri,
+                xref="x", yref="y",
+                x=-0.5, y=-0.5,
+                sizex=ncols, sizey=nrows,
+                xanchor="left", yanchor="top",
+                sizing="stretch",
+                layer="below",
+            )] if hillshade_uri else [],
             # Play/Pause sit at the bottom-left, on the slider's row, so they
             # never overlap the title.
             updatemenus=[dict(
@@ -540,15 +597,25 @@ def regenerate_2d_difference_map(diff_tif_path, output_png_path, vmin=None, vmax
             except Exception:
                 hillshade_elev = None
 
+        # Same title/subtitle style as the initial run's Initial/Final Terrain
+        # and Difference Map plots -- this path (interactive rescale/toggle in
+        # the 2D carousel) was silently regenerating the PNG with an empty
+        # title, unlike the very first version the user saw.
+        is_geomorphic = "geomorphic" in os.path.basename(diff_tif_path).lower()
+        title = "Geomorphic Change" if is_geomorphic else "Difference Map"
+        subtitle = ("final − initial − cumulative uplift (erosion/deposition only)"
+                    if is_geomorphic else "final − initial (surface change)")
+
         return plot_difference(
             data,
             data.shape,
-            "",
+            title,
             output_png_path,
             vmin=vmin,
             vmax=vmax,
             scaling=scaling,
-            hillshade_elev=hillshade_elev
+            hillshade_elev=hillshade_elev,
+            subtitle=subtitle,
         )
 
     except Exception as e:
