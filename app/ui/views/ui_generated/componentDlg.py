@@ -3,14 +3,28 @@ from PyQt6 import QtCore, QtWidgets
 class Ui_AddComponents(object):
     def setupUi(self, AddComponents):
         AddComponents.setObjectName("AddComponents")
-        AddComponents.resize(600, 500)
-        AddComponents.setMinimumSize(500, 400)
+        AddComponents.resize(600, 590)
+        AddComponents.setMinimumSize(500, 480)
         
         self.centralwidget = QtWidgets.QWidget(AddComponents)
         self.mainLayout = QtWidgets.QVBoxLayout(self.centralwidget)
         self.mainLayout.setContentsMargins(12, 12, 12, 12)
         self.mainLayout.setSpacing(12)
-        
+
+        # Persistent, visible record of what's been added this session --
+        # placed first/at the top so it's the first thing seen, and stays on
+        # screen (not a status line that gets overwritten and can be missed)
+        # as the list grows with each Add click.
+        self.addedGroup = QtWidgets.QGroupBox("Added This Session (0)")
+        added_layout = QtWidgets.QVBoxLayout(self.addedGroup)
+        self.addedListWidget = QtWidgets.QListWidget()
+        self.addedListWidget.setMaximumHeight(90)
+        self.addedListWidget.setStyleSheet(
+            "QListWidget { color: #2e7d32; font-weight: bold; border: none; }"
+        )
+        added_layout.addWidget(self.addedListWidget)
+        self.mainLayout.addWidget(self.addedGroup)
+
         selection_layout = QtWidgets.QHBoxLayout()
         self.componentLabel = QtWidgets.QLabel("Component:")
         self.selectComponentComboBox = QtWidgets.QComboBox()
@@ -28,15 +42,6 @@ class Ui_AddComponents(object):
         self.mainLayout.addWidget(self.dynamic_frame)
         dynamicLayout = QtWidgets.QVBoxLayout(self.dynamic_frame)
         dynamicLayout.addStretch()
-
-        # Feedback for what's happened so far this session (e.g. "Added
-        # Precipitation. 2 component(s) added so far.") -- the dialog stays
-        # open across multiple adds, so without this a user has no
-        # confirmation their click actually did anything.
-        self.statusLabel = QtWidgets.QLabel("")
-        self.statusLabel.setWordWrap(True)
-        self.statusLabel.setStyleSheet("QLabel { color: #2e7d32; font-weight: bold; }")
-        self.mainLayout.addWidget(self.statusLabel)
 
         button_layout = QtWidgets.QHBoxLayout()
         button_layout.addStretch()

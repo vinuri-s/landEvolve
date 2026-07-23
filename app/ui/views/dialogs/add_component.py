@@ -60,15 +60,16 @@ class AddComponentDlg(QDialog):
             self.accept()
             return
 
-        # Stay open: record what's been added, give visible confirmation
-        # (the dialog no longer closes, so without this a click gives no
-        # feedback that anything happened), and refresh the dropdown so the
-        # just-added component can't be picked again.
+        # Stay open: record what's been added into the persistent, visible
+        # list (not a status line that gets overwritten by the next action
+        # and can be missed -- this stays on screen for the whole session,
+        # each addition its own permanent entry), and refresh the dropdown
+        # so the just-added component can't be picked again.
         self._added_ids.add(component.id)
         self._added_count += 1
-        self.ui.statusLabel.setText(
-            f"✓ Added {component.name}. {self._added_count} component(s) added this session."
-        )
+        self.ui.addedListWidget.addItem(f"✓ {component.name}")
+        self.ui.addedListWidget.scrollToBottom()
+        self.ui.addedGroup.setTitle(f"Added This Session ({self._added_count})")
         self.load_initial_data()
 
     def load_initial_data(self):
