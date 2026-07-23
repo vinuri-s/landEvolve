@@ -326,6 +326,8 @@ class SimulationRunner:
 
         self.log(85, "Plotting initial terrain...")
         plot_topography(initial, grid.shape, "Initial", str(self.output_dir / "init.png"))
+        self.log(85, "Writing init.tif...")
+        save_geotiff(str(self.output_dir / "init.tif"), initial, tif)
         self.log(86, "Plotting final terrain...")
         plot_topography(final, grid.shape, "Final", str(self.output_dir / "final.png"))
         diff_sub = ("final − initial (total surface change, incl. uplift)"
@@ -340,7 +342,7 @@ class SimulationRunner:
         mask_png = str(self.output_dir / "mask.png")
         plot_erosion_deposition_mask(signal_diff, grid.shape, mask_png,
                                      uplift_removed=cumulative_uplift is not None,
-                                     hillshade_elev=final)
+                                     hillshade_elev=final, reference_tif=tif)
 
         self.log(89, "Writing final.tif...")
         save_geotiff(str(self.output_dir / "final.tif"), final, tif)
@@ -401,10 +403,10 @@ class SimulationRunner:
             uplift_removed=cumulative_uplift is not None)
         self.log(96, "Plotting drainage network...")
         drainage_network_plot = plot_drainage_network(
-            grid, str(self.output_dir / "drainage_network.png"))
+            grid, str(self.output_dir / "drainage_network.png"), reference_tif=tif)
         self.log(97, "Plotting soil thickness...")
         soil_thickness_plot = plot_soil_thickness(
-            grid, str(self.output_dir / "soil_thickness.png"))
+            grid, str(self.output_dir / "soil_thickness.png"), reference_tif=tif)
         self.log(98, "Plotting change-events map...")
         change_events_plot = plot_change_events_map(
             sediment_snapshots, timeline_times, grid.shape,

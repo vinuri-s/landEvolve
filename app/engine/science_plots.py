@@ -142,7 +142,7 @@ def refresh_drainage(grid, flow_director="FlowDirectorSteepest"):
 
 
 
-def plot_drainage_network(grid, output_path, channel_percentile=98.0):
+def plot_drainage_network(grid, output_path, channel_percentile=98.0, reference_tif=None):
     """Map of log(drainage area) — draws the river network: bright threads
     where flow concentrates, blank hillslopes between. Needs a routed
     drainage_area field (call refresh_drainage first).
@@ -158,6 +158,9 @@ def plot_drainage_network(grid, output_path, channel_percentile=98.0):
     area-threshold channel-extraction technique standard in geomorphology
     (a real channel is exactly "a cell whose drainage area exceeds some
     threshold"), not an arbitrary cosmetic cutoff.
+
+    If reference_tif is supplied, the full (untrimmed, un-logged) drainage-
+    area field is also saved as a GeoTIFF alongside the PNG, for GIS use.
     """
     try:
         if "drainage_area" not in grid.at_node:
@@ -165,6 +168,13 @@ def plot_drainage_network(grid, output_path, channel_percentile=98.0):
             return None
 
         area = np.asarray(grid.at_node["drainage_area"], dtype=float).reshape(grid.shape)
+
+        if reference_tif is not None:
+            import os
+            from app.engine.io import save_geotiff
+            tif_path = os.path.splitext(output_path)[0] + ".tif"
+            save_geotiff(tif_path, area, reference_tif)
+
         # log scale so channels of all sizes are visible; +cell_area avoids log(0).
         cell_area = float(grid.dx) * float(grid.dy)
         logarea = np.log10(area + cell_area)
@@ -353,10 +363,13 @@ def plot_change_events_map(snapshots, times, shape, output_path,
         return None
 
 
-def plot_soil_thickness(grid, output_path):
+def plot_soil_thickness(grid, output_path, reference_tif=None):
     """Map of soil / alluvium thickness (soil__depth) — shows where sediment is
     stored as cover vs. where bedrock is exposed. Only available when a
-    soil-tracking component (SPACE / diffuser) ran."""
+    soil-tracking component (SPACE / diffuser) ran.
+
+    If reference_tif is supplied, the soil-depth field is also saved as a
+    GeoTIFF alongside the PNG, for GIS use."""
     try:
         if "soil__depth" not in grid.at_node:
             print("Soil thickness skipped: no soil__depth field.")
@@ -367,6 +380,12 @@ def plot_soil_thickness(grid, output_path):
         boundary = (grid.status_at_node != grid.BC_NODE_IS_CORE).reshape(grid.shape)
         depth = depth.astype(float)
         depth[boundary] = np.nan
+
+        if reference_tif is not None:
+            import os
+            from app.engine.io import save_geotiff
+            tif_path = os.path.splitext(output_path)[0] + ".tif"
+            save_geotiff(tif_path, depth, reference_tif)
 
         valid = depth[~np.isnan(depth)]
         vmax = float(np.nanpercentile(valid, 99)) if valid.size else 1.0

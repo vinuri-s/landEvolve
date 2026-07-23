@@ -97,9 +97,16 @@ class SimulationWindow(QMainWindow):
 
     @log_action("Opened Add Component Window")
     def add_component(self):
-        self.add_component_ui = AddComponentDlg()
+        # Modal (.exec()) so only one Add Component dialog can ever be open
+        # at once -- clicking the button again while it was already open
+        # used to spawn a second, untracked dialog instance. The dialog
+        # itself now stays open across multiple additions in one sitting
+        # (closing only on Done/Cancel), so already_added_ids seeds it with
+        # what's in the table so it never re-offers a duplicate.
+        already_added_ids = [c[ComponentDataKeys.COMPONENT].id for c in self.table_manager.get_components()]
+        self.add_component_ui = AddComponentDlg(already_added_ids=already_added_ids)
         self.add_component_ui.component_added.connect(self.on_component_added)
-        self.add_component_ui.show()
+        self.add_component_ui.exec()
         
     def on_component_added(self, component, form_data):
         if self.table_manager.has_component(component.id):

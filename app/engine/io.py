@@ -157,7 +157,8 @@ def plot_difference(data, shape, title, output_path, vmin=None, vmax=None,
 
 
 def plot_erosion_deposition_mask(data, shape, output_path, threshold=None,
-                                 uplift_removed=False, hillshade_elev=None):
+                                 uplift_removed=False, hillshade_elev=None,
+                                 reference_tif=None):
     """Render a categorical map: erosion vs. no-change vs. deposition.
 
     Magnitude is ignored, so this answers "where is material leaving vs.
@@ -166,6 +167,11 @@ def plot_erosion_deposition_mask(data, shape, output_path, threshold=None,
     If hillshade_elev (the corresponding terrain) is supplied, the categories
     are drawn semi-transparently over a shaded-relief underlay, same as
     plot_difference, so the pattern is read in its topographic context.
+
+    If reference_tif (the original input DEM, for georeferencing) is
+    supplied, the categorical (-1/0/+1) array is also saved as a GeoTIFF
+    alongside the PNG (same basename, .tif extension), for use in GIS
+    software.
     """
     arr = data.reshape(shape).astype(float)
 
@@ -182,6 +188,11 @@ def plot_erosion_deposition_mask(data, shape, output_path, threshold=None,
     cat[arr < -threshold] = -1
     cat[arr > threshold] = 1
     cat[np.isnan(arr)] = np.nan
+
+    if reference_tif is not None:
+        import os
+        tif_path = os.path.splitext(output_path)[0] + ".tif"
+        save_geotiff(tif_path, cat, reference_tif)
 
     fig, ax = plt.subplots(figsize=(12, 8))
 
