@@ -4,6 +4,30 @@ import numpy as np
 import os
 
 
+# Earth-tone elevation colorscale (green lowland -> olive -> brown -> pale tan
+# highland), the same palette as the 2D shaded-relief terrain plots
+# (app/engine/io.py's _EARTH_CMAP), so the 3D view matches the 2D maps
+# instead of Plotly's built-in 'Earth' scale (which tints low elevations
+# blue, implying water on dry land).
+_EARTH_COLORSCALE = [
+    [0.0, "#1a4314"],
+    [0.25, "#4a7c2c"],
+    [0.5, "#a0a028"],
+    [0.75, "#8b5a2b"],
+    [1.0, "#d9c9a3"],
+]
+
+# Realistic terrain lighting for go.Surface: a raking light (low-angle,
+# off to one side) reveals slope/relief the way sun-angle hillshading does
+# on the 2D maps, computed live by WebGL as the surface is lit -- so it
+# stays correct as the user rotates the camera, not baked into a texture.
+# High diffuse + low specular/fresnel because terrain is matte, not glossy;
+# moderate ambient so shadowed slopes aren't pure black.
+_TERRAIN_LIGHTING = dict(ambient=0.55, diffuse=0.85, specular=0.15,
+                         roughness=0.9, fresnel=0.05)
+_TERRAIN_LIGHTPOSITION = dict(x=-100, y=-150, z=80)
+
+
 # -----------------------------
 # SPACE regime diagnostic tool
 # -----------------------------
@@ -117,6 +141,17 @@ def generate_3d_comparison_html(
 
         diagnose_space_regime(z_diff)
 
+        # Shared elevation range (union of input and final) so the z-axis and
+        # the Input/Output color scales are both pinned to the same true
+        # range, instead of Plotly auto-scaling each trace's color to its own
+        # min/max independently.
+        z_lo = float(np.nanmin([np.nanmin(z_input), np.nanmin(z_final)]))
+        z_hi = float(np.nanmax([np.nanmax(z_input), np.nanmax(z_final)]))
+        if not (np.isfinite(z_lo) and np.isfinite(z_hi)) or z_lo == z_hi:
+            z_axis_range = None
+        else:
+            z_axis_range = [z_lo, z_hi]
+
         # -----------------------------
         # Robust scaling
         # -----------------------------
@@ -139,18 +174,24 @@ def generate_3d_comparison_html(
         # -----------------------------
         trace_final = go.Surface(
             z=z_final,
-            colorscale='Earth',
+            colorscale=_EARTH_COLORSCALE,
+            cmin=z_lo, cmax=z_hi,
             name='Output Elevation',
             visible=not is_diff_mode,
-            colorbar=dict(title='Elevation (m)')
+            colorbar=dict(title='Elevation (m)'),
+            lighting=_TERRAIN_LIGHTING,
+            lightposition=_TERRAIN_LIGHTPOSITION,
         )
 
         trace_input = go.Surface(
             z=z_input,
-            colorscale='Earth',
+            colorscale=_EARTH_COLORSCALE,
+            cmin=z_lo, cmax=z_hi,
             name='Input Elevation',
             visible=False,
-            colorbar=dict(title='Elevation (m)')
+            colorbar=dict(title='Elevation (m)'),
+            lighting=_TERRAIN_LIGHTING,
+            lightposition=_TERRAIN_LIGHTPOSITION,
         )
 
         # FIXED COLOR SCALE HERE
@@ -162,7 +203,12 @@ def generate_3d_comparison_html(
             cmax=cmax,
             name='Erosion/Deposition',
             visible=is_diff_mode,
-            colorbar=dict(title='Change (m)')
+            colorbar=dict(title='Change (m)'),
+            # Same relief lighting on the geometry so terrain shape stays
+            # legible in the diff view too; the RdBu colorscale still drives
+            # the actual erosion/deposition color, lighting only shades it.
+            lighting=_TERRAIN_LIGHTING,
+            lightposition=_TERRAIN_LIGHTPOSITION,
         )
 
         # -----------------------------
@@ -171,14 +217,10 @@ def generate_3d_comparison_html(
         fig = go.Figure(data=[trace_final, trace_input, trace_diff])
 
         # Pin the shared z-axis to the true elevation range (union of input and
-        # final) so the 3D scale matches the 2D maps exactly, instead of relying
-        # on Plotly's ~5% auto-padding which makes the max look inflated.
-        z_lo = float(np.nanmin([np.nanmin(z_input), np.nanmin(z_final)]))
-        z_hi = float(np.nanmax([np.nanmax(z_input), np.nanmax(z_final)]))
-        if not (np.isfinite(z_lo) and np.isfinite(z_hi)) or z_lo == z_hi:
-            z_range = None
-        else:
-            z_range = [z_lo, z_hi]
+        # final, computed above) so the 3D scale matches the 2D maps exactly,
+        # instead of relying on Plotly's ~5% auto-padding which makes the max
+        # look inflated.
+        z_range = z_axis_range
 
         # One-line caption per mode, so the viewer always knows what the surface
         # is showing (and that tectonic uplift was removed from the difference).
@@ -209,9 +251,13 @@ def generate_3d_comparison_html(
                 yaxis=dict(title='Northing (rows)', autorange='reversed'),
                 zaxis_title='Elevation / Change (m)',
                 zaxis=dict(range=z_range) if z_range else dict(),
+                # aspectmode must be 'manual' for the given aspectratio to
+                # actually take effect -- without it Plotly silently falls
+                # back to 'auto' and computes its own (looser) framing.
+                aspectmode='manual',
                 aspectratio=dict(x=1, y=1, z=0.5),
                 # Pull the camera in so the surface fills the available space.
-                camera=dict(eye=dict(x=1.1, y=1.1, z=0.8)),
+                camera=dict(eye=dict(x=1.3, y=0.5, z=0.55), center=dict(x=0, y=0, z=-0.05)),
             ),
             updatemenus=[
                 dict(

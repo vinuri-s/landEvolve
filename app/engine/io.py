@@ -1,7 +1,17 @@
 import rasterio
 import matplotlib.pyplot as plt
-from matplotlib.colors import SymLogNorm, ListedColormap, BoundaryNorm, LightSource
+from matplotlib.colors import SymLogNorm, ListedColormap, BoundaryNorm, LightSource, LinearSegmentedColormap, Normalize
 import numpy as np
+
+
+# Earth-tone elevation colormap (green lowland -> olive -> brown -> pale tan
+# highland), used with hillshading in plot_topography so terrain reads like a
+# natural aerial/satellite photo instead of matplotlib's default flat 'terrain'
+# colormap (which tints low elevations blue, implying water on dry land).
+_EARTH_CMAP = LinearSegmentedColormap.from_list(
+    "earth_terrain",
+    ["#1a4314", "#4a7c2c", "#a0a028", "#8b5a2b", "#d9c9a3"],
+)
 
 
 def _titled(ax, main, sub=None):
@@ -32,11 +42,54 @@ def save_geotiff(filename, data, reference_tif):
     except Exception as e:
         print(f"Error saving GeoTIFF {filename}: {e}")
 
-def plot_topography(data, shape, title, output_path, cmap='terrain', vmin=None, vmax=None):
+def plot_topography(data, shape, title, output_path, cmap=None, vmin=None, vmax=None):
+    """Render terrain as shaded relief: an earth-tone elevation colormap blended
+    with a sun-angle hillshade, so the output reads like a natural aerial/
+    satellite photo of the terrain rather than a flat elevation-colored map.
+
+    cmap defaults to a green-to-brown earth-tone ramp (_EARTH_CMAP); pass a
+    named colormap string to override it if a flat (non-shaded) look with a
+    different palette is ever wanted instead.
+    """
+    z = data.reshape(shape).astype(float)
+    nodata_mask = ~np.isfinite(z)
+
+    if isinstance(cmap, str):
+        cmap = plt.get_cmap(cmap)
+    elif cmap is None:
+        cmap = _EARTH_CMAP
+
+    valid = z[~nodata_mask]
+    if valid.size == 0:
+        return  # nothing real to plot (e.g. an all-NoData tile)
+
+    if vmin is None:
+        vmin = float(valid.min())
+    if vmax is None:
+        vmax = float(valid.max())
+    if vmax <= vmin:
+        vmax = vmin + 1.0  # avoid a degenerate (flat) elevation range
+
+    # Hillshading needs a real (non-NaN) surface for its slope/aspect
+    # calculation; fill NoData with the domain's own lowest elevation so it
+    # doesn't create a fake cliff at the mask boundary, then paint it back to
+    # white afterward so NoData still reads as blank, not as valid terrain.
+    z_filled = np.where(nodata_mask, vmin, z)
+
+    ls = LightSource(azdeg=315, altdeg=45)
+    rgb = ls.shade(z_filled, cmap=cmap, vmin=vmin, vmax=vmax,
+                   blend_mode='soft', vert_exag=2.0)
+    rgb[nodata_mask] = 1.0  # white, matching this codebase's NoData convention
+
     fig, ax = plt.subplots(figsize=(10, 6))
-    im = ax.imshow(data.reshape(shape), cmap=cmap, vmin=vmin, vmax=vmax)
-    fig.colorbar(im, ax=ax, label='Elevation (m)')
-    _titled(ax, f"{title} Terrain", "Ground-surface elevation (m)")
+    ax.imshow(rgb)
+
+    # The shaded image is plain RGB(A), not a scalar-mapped image, so the
+    # colorbar needs its own ScalarMappable sharing the same cmap/range.
+    sm = plt.cm.ScalarMappable(cmap=cmap, norm=Normalize(vmin=vmin, vmax=vmax))
+    fig.colorbar(sm, ax=ax, label='Elevation (m)')
+
+    _titled(ax, f"{title} Terrain", "Ground-surface elevation (m), hillshaded")
     ax.set_xlabel("Easting (columns)", fontsize=12)
     ax.set_ylabel("Northing (rows)", fontsize=12)
     plt.tight_layout()
