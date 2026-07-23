@@ -36,6 +36,4 @@ app/data/db/*.db-wal
 
 dist/
 build/
-logs/backend.log
-logs/ui.log
-logs/engine.log
+logs/*.log

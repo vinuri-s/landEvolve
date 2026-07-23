@@ -126,6 +126,14 @@ def refresh_drainage(grid):
     depressions, so the drainage-based plots aren't distorted by pits even when
     the input DEM wasn't hydrologically filled. The depression fill is written to
     a scratch surface, never to `topographic__elevation`.
+
+    NOTE: the depression rerouting (`reaccumulate_flow=True`) recurses
+    through Landlab's Braun & Willett stack-building algorithm with no depth
+    guard, and can crash the whole process (native stack overflow, not a
+    catchable Python exception) on a large/complex drainage network -- the
+    `except Exception` below can't protect against that. Mitigated by a
+    larger native stack on the simulation's background thread (see
+    ``app/ui/workers.py``).
     Returns True on success, False if routing isn't applicable.
     """
     try:

@@ -14,6 +14,24 @@ from landlab.components import (
     LithoLayers,
 )
 
+from app.engine.space_fix import patch_space_large_scale_eroder
+
+# Root-cause fix for a confirmed Landlab bug (see space_fix.py for the full
+# explanation): replaces the compiled inner loop's exact-equality edge case
+# with a corrected, numba-compiled equivalent. Safe no-op if numba isn't
+# installed -- the _clamp_space_outliers() guard below still protects
+# against it either way. Logged explicitly (not silent) so a run's console
+# output/log always shows which path was actually active -- this was
+# previously silent, which made it impossible to tell from a run's log
+# whether the fix was really in effect or the guard was doing all the work.
+if patch_space_large_scale_eroder():
+    print("SPACE fix: numba-corrected _sequential_ero_depo active "
+          "(root-cause fix for landlab/landlab#1901-family bug).")
+else:
+    print("SPACE fix: numba not installed -- using Landlab's original "
+          "_sequential_ero_depo, protected only by the statistical outlier "
+          "guard (_clamp_space_outliers). Install numba for the root-cause fix.")
+
 
 # =========================================================
 # BASE
@@ -326,6 +344,111 @@ def _apply_litho_veg_to_space(comp):
     comp.space._K_sed = K_sed
 
 
+def _clamp_space_outliers(grid, z_before, br_before, H_before):
+    """Guard against a known Landlab SPACE bug (both ``Space`` and
+    ``SpaceLargeScaleEroder``): the soil-depth update picks between two
+    branches of a closed-form solution using an *exact* floating-point
+    equality check (``depo_rate == K_sed * Q**m_sp * slope``) meant to catch
+    a genuine mathematical singularity in the "no blowup" branch. On a node
+    that is merely extremely close to (not bit-identical to) that singular
+    point -- which happens routinely on gently-sloping, near-graded terrain,
+    where a node's deposition rate naturally sits close to its erosion
+    capacity -- the check misses, the singular branch runs anyway, and it
+    divides by a near-zero number. That produces an enormous but *finite*
+    elevation change (observed: up to ~1.7e11 m in one step), isolated to a
+    tiny handful of nodes, while the rest of the domain is fine. This is an
+    upstream Landlab bug (confirmed still present in the current landlab
+    GitHub master, and in the same family as their own open, unfixed issue
+    landlab/landlab#1901) -- not something in this codebase, and not
+    something we can safely patch (the hot path is compiled Cython).
+
+    There's no way to recover the "correct" value Landlab should have
+    produced without re-deriving its entire downstream sediment-propagation
+    cascade, so this suppresses the corrupted step at the affected node(s)
+    instead: revert topography, bedrock, and soil depth to their pre-step
+    values there (keeping the three fields mutually consistent, since SPACE
+    recomputes elevation as bedrock + soil every step) and zero the
+    diagnostic flux fields so reported erosion/deposition don't show a
+    phantom spike either.
+
+    Outlier detection is a robust, self-calibrating threshold: this bug's
+    spikes are many orders of magnitude beyond any legitimate elevation
+    change, so comparing against a large multiple of this step's own 99.9th
+    percentile change reliably catches only genuine artifacts, never real
+    (even if unusually fast) erosion or deposition.
+
+    Returns the number of nodes reverted.
+    """
+    z = grid.at_node["topographic__elevation"]
+    br = grid.at_node["bedrock__elevation"]
+    H = grid.at_node["soil__depth"]
+
+    core = grid.core_nodes
+    delta = z[core] - z_before[core]
+    abs_delta = np.abs(delta)
+
+    finite = abs_delta[np.isfinite(abs_delta)]
+    if finite.size == 0:
+        return 0
+
+    p999 = np.percentile(finite, 99.9)
+    # Absolute floor (1 m/step) so a near-all-zero step doesn't make the
+    # threshold collapse to ~0 and start flagging ordinary small changes.
+    threshold = max(p999 * 1000.0, 1.0)
+
+    bad_local = (~np.isfinite(delta)) | (abs_delta > threshold)
+    n_bad = int(np.sum(bad_local))
+    if n_bad == 0:
+        return 0
+
+    bad_nodes = core[bad_local]
+    z[bad_nodes] = z_before[bad_nodes]
+    br[bad_nodes] = br_before[bad_nodes]
+    H[bad_nodes] = H_before[bad_nodes]
+
+    for field in ("sediment__erosion_flux", "sediment__deposition_flux", "bedrock__erosion_flux"):
+        if field in grid.at_node:
+            grid.at_node[field][bad_nodes] = 0.0
+
+    # Report actual (row, col) + magnitude for a few flagged nodes -- concrete
+    # evidence for diagnosing this further, instead of only a bare count.
+    bad_deltas = delta[bad_local]
+    order = np.argsort(-np.abs(bad_deltas))[:min(n_bad, 5)]
+    ncols = grid.shape[1]
+    locations = ", ".join(
+        f"(row {bad_nodes[i] // ncols}, col {bad_nodes[i] % ncols}, "
+        f"Δz={bad_deltas[i]:.3g}m)"
+        for i in order
+    )
+    print(f"SPACE outlier guard: reverted {n_bad} node(s) with non-physical "
+          "elevation change this step (known Landlab SPACE numerical edge "
+          f"case, see landlab/landlab#1901). Worst: {locations}")
+    return n_bad
+
+
+def _log_space_fix_diagnostics(grid_ncols):
+    """Print how often each corrected pathway in space_fix.py's numba
+    replacement actually fired this step (only when non-zero, to avoid log
+    spam) -- real telemetry instead of guessing whether the fix is engaging.
+
+    Also reports which code branch produced any notably large (>1 m) single-
+    step change: branch 1 (slope<=0) is Landlab's own documented mechanism
+    for filling a real local depression with actual deposition -- a
+    legitimate model prediction, not a bug. Branches 3/4 (the exp/log
+    formulas) producing a large jump would instead point at a still-
+    unidentified numerical issue worth investigating further.
+    """
+    from app.engine.space_fix import get_and_reset_diag_counts, get_and_reset_diag_samples
+    counts = get_and_reset_diag_counts()
+    if any(counts.values()):
+        print(f"SPACE fix diagnostics: {counts}")
+
+    samples = get_and_reset_diag_samples(grid_ncols)
+    for s in samples:
+        print(f"SPACE large-Δstep: (row {s['row']}, col {s['col']}) "
+              f"ΔH={s['delta_H']:.3g}m slope={s['slope']:.4g} via [{s['branch']}]")
+
+
 # =========================================================
 # VEGETATION
 # =========================================================
@@ -519,7 +642,15 @@ class SpaceComponent(BaseSpaceComponent):
     def run(self, dt):
         self._clip_soil()
         _apply_litho_veg_to_space(self)
+
+        z_before = self.grid.at_node["topographic__elevation"].copy()
+        br_before = self.grid.at_node["bedrock__elevation"].copy()
+        H_before = self.grid.at_node["soil__depth"].copy()
+
         self.space.run_one_step(dt)
+
+        _log_space_fix_diagnostics(self.grid.shape[1])
+        _clamp_space_outliers(self.grid, z_before, br_before, H_before)
 
 
 # =========================================================
@@ -544,7 +675,15 @@ class SpaceLargeScaleEroderComponent(BaseSpaceComponent):
     def run(self, dt):
         self._clip_soil()
         _apply_litho_veg_to_space(self)
+
+        z_before = self.grid.at_node["topographic__elevation"].copy()
+        br_before = self.grid.at_node["bedrock__elevation"].copy()
+        H_before = self.grid.at_node["soil__depth"].copy()
+
         self.space.run_one_step(dt)
+
+        _log_space_fix_diagnostics(self.grid.shape[1])
+        _clamp_space_outliers(self.grid, z_before, br_before, H_before)
 
 
 # =========================================================
@@ -552,6 +691,33 @@ class SpaceLargeScaleEroderComponent(BaseSpaceComponent):
 # =========================================================
 
 class FlowAccumulatorComponent(SimulationComponent):
+    """Routes flow and handles depressions each step.
+
+    Depression handling: FlowDirectorSteepest/D8 alone dead-ends flow in
+    internal pits, so SPACE dumps the whole upstream sediment load into the
+    sink -- the runaway multi-thousand-metre "deposition" spike. LakeMapperBarnes
+    (Barnes priority-flood, pure-landlab/Cython -- no extra native
+    dependency) reroutes flow across depressions each step in near-linear
+    time.
+
+    Its depression rerouting (``reaccumulate_flow=True``) calls into
+    Landlab's Braun & Willett stack-building algorithm
+    (``flow_accum_bw.add_to_stack``), which is a Cython function that
+    recurses once per donor node with no depth guard -- deliberately
+    bypassing Python's own recursion limit (see the comment in landlab's
+    ``flow_accum_bw.py``). For a large/complex drainage network the
+    recursion depth can exceed the OS thread's native stack, causing an
+    uncatchable crash (`Windows fatal exception: access violation` /
+    segfault) that takes the whole process down with no traceback -- this is
+    what happened on the ~9.4M-cell production grid. Landlab's
+    ``PriorityFloodFlowRouter`` avoids this recursion entirely, but it
+    requires the ``richdem`` package, which has no reliable prebuilt wheel on
+    either Windows or macOS and was a bigger installation burden than the
+    crash it prevents. Mitigated instead by giving the simulation's
+    background thread a much larger native stack (see
+    ``SimulationWorker.setStackSize`` in ``app/ui/workers.py``), which raises
+    the recursion depth this can tolerate without the extra dependency.
+    """
 
     def __init__(self, grid, **params):
         super().__init__(grid)
@@ -565,12 +731,6 @@ class FlowAccumulatorComponent(SimulationComponent):
 
         self.flow = FlowAccumulator(grid, **params)
 
-        # Depression handling. FlowDirectorSteepest/D8 alone dead-ends flow in
-        # internal pits, so SPACE dumps the whole upstream sediment load into the
-        # sink — the runaway multi-thousand-metre "deposition" spike. LakeMapperBarnes
-        # (Barnes priority-flood, pure-landlab/Cython — no richdem) reroutes flow
-        # across depressions each step in near-linear time.
-        #
         # Crucially it fills a SCRATCH surface (`_depression_fill__surface`), not
         # `topographic__elevation`, so the rerouting never injects fake sediment
         # into the terrain that SPACE erodes.
@@ -634,4 +794,33 @@ class DepthDependentDiffuserComponent(SimulationComponent):
         if hasattr(self.grid, '_veg_D_mult'):
             mean_mult = float(np.mean(self.grid._veg_D_mult))
             self.diff._K = self._base_kd * mean_mult
-        self.diff.run_one_step(dt)
+        else:
+            self.diff._K = self._base_kd
+
+        # DepthDependentDiffuser.soilflux() is a plain explicit forward-Euler
+        # update (elevation += dhdt * dt) with no stability check of its own.
+        # Explicit diffusion is only stable when dt <= dx^2 / (4*D); at fine
+        # grid resolutions (e.g. sub-metre LiDAR DEMs) a user-chosen dt of
+        # years-to-decades can be many times over that limit, which makes the
+        # elevation field oscillate and diverge -- this in turn produces an
+        # increasingly pathological, pit-riddled drainage network each step
+        # (and can destabilize downstream flow-routing/erosion components
+        # too). Substepping internally keeps this component numerically
+        # stable regardless of what dt or grid resolution the user picks, so
+        # nothing else needs to change.
+        K = float(self.diff._K)
+        if K > 0:
+            cell_size = min(float(self.grid.dx), float(self.grid.dy))
+            dt_max = (cell_size ** 2) / (4.0 * K)
+            n_substeps = max(1, int(np.ceil(dt / dt_max)))
+            if n_substeps > 10000:
+                print(f"DepthDependentDiffuserComponent: stability would require "
+                      f"{n_substeps} substeps for dt={dt}; capping at 10000 "
+                      "(diffusivity may be unrealistically high for this grid resolution).")
+                n_substeps = 10000
+        else:
+            n_substeps = 1
+
+        sub_dt = dt / n_substeps
+        for _ in range(n_substeps):
+            self.diff.run_one_step(sub_dt)

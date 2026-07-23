@@ -131,7 +131,11 @@ def plot_erosion_deposition_mask(data, shape, output_path, threshold=None, uplif
     cmap.set_bad(color="white")
     norm = BoundaryNorm([-1.5, -0.5, 0.5, 1.5], cmap.N)
 
-    ax.imshow(cat, cmap=cmap, norm=norm)
+    # nearest: this is a discrete 3-category field, so any resampling that
+    # blends neighbouring pixels (matplotlib's default) would paint colors
+    # that don't correspond to any real category -- e.g. erosion-red bleeding
+    # toward white. nearest keeps every displayed pixel a real category.
+    ax.imshow(cat, cmap=cmap, norm=norm, interpolation='nearest')
 
     erosion_cells = int(np.sum(cat == -1))
     deposition_cells = int(np.sum(cat == 1))
