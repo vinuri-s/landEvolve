@@ -214,7 +214,5 @@ class AddComponentDlgConsts:
     """
     Strings and configuration keys for AddComponentDlg.
     """
-    WINDOW_TITLE_EDIT = "Edit Component"
     BTN_UPDATE = "Update"
     LBL_NO_DESCRIPTION = "No description available."
-    LBL_NO_COMPONENT = "No component selected."

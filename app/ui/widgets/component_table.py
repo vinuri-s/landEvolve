@@ -8,18 +8,22 @@ class ComponentTableManager:
     Component Table on the simulation configuration window.
     """
     
-    def __init__(self, table_widget: QTableWidget, on_edit_requested: Callable[[int], None] = None):
+    def __init__(self, table_widget: QTableWidget, on_edit_requested: Callable[[int], None] = None,
+                 on_change: Callable[[], None] = None):
         self.table_widget = table_widget
         self.added_components: List[Dict] = []
         self.on_edit_requested = on_edit_requested
-        
+        # Fired after any add/update/remove so callers (e.g. to re-enable the
+        # "+" button once a type is removed) can stay in sync without polling.
+        self.on_change = on_change
+
     def get_components(self) -> List[Dict]:
         return self.added_components
-        
+
     def has_component(self, component_id) -> bool:
         """Checks if a component with the specified ID already exists in the table."""
         return any(c[ComponentDataKeys.COMPONENT].id == component_id for c in self.added_components)
-        
+
     def add_component(self, component, form_data: dict):
         """Appends a new component and refreshes the view."""
         self.added_components.append({
@@ -27,7 +31,9 @@ class ComponentTableManager:
             ComponentDataKeys.PARAMS: form_data
         })
         self.refresh_table()
-        
+        if self.on_change:
+            self.on_change()
+
     def update_component(self, index: int, component, form_data: dict):
         """Updates an existing component safely and redraws the table row."""
         if 0 <= index < len(self.added_components):
@@ -36,11 +42,15 @@ class ComponentTableManager:
                 ComponentDataKeys.PARAMS: form_data
             }
             self.refresh_table()
+            if self.on_change:
+                self.on_change()
 
     def remove_component_at_index(self, index: int):
         if 0 <= index < len(self.added_components):
             self.added_components.pop(index)
             self.refresh_table()
+            if self.on_change:
+                self.on_change()
             
     def get_component_at_index(self, index: int) -> Dict:
         if 0 <= index < len(self.added_components):

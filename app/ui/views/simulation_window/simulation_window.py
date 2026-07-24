@@ -1,6 +1,8 @@
-from PyQt6.QtWidgets import QMainWindow, QMessageBox
+from PyQt6.QtWidgets import QMainWindow, QMessageBox, QDialog
 from app.controllers.simulation_controller import SimulationController
+from app.controllers.component_controller import ComponentController
 from app.ui.views.dialogs.add_component import AddComponentDlg
+from app.ui.views.dialogs.component_picker import ComponentTypePickerDialog
 from app.ui.views.ui_generated.simulation import Ui_SimulationSetup
 from app.ui.views.simulation_results import SimulationResultsWindow
 from app.core.logging import log_action
@@ -26,17 +28,20 @@ class SimulationWindow(QMainWindow):
         self.ui.setupUi(self)
 
         self.controller = SimulationController()
+        self.component_controller = ComponentController()
         # Absolute path to the GeoTIFF DEM the user browsed for (None until chosen).
         self.input_tiff_path = None
 
         self.map_widget = MapViewWidget(self.ui.webView)
         self.table_manager = ComponentTableManager(
-            self.ui.compTableWidget, 
-            on_edit_requested=self.edit_component_at_index
+            self.ui.compTableWidget,
+            on_edit_requested=self.edit_component_at_index,
+            on_change=self._update_add_button_state,
         )
         self.load_initial_data()
         self.setup_connections()
-        
+        self._update_add_button_state()
+
         WindowManager.load_window_state(self)
 
     def closeEvent(self, event):
@@ -97,33 +102,48 @@ class SimulationWindow(QMainWindow):
 
     @log_action("Opened Add Component Window")
     def add_component(self):
-        self.add_component_ui = AddComponentDlg()
-        self.add_component_ui.component_added.connect(self.on_component_added)
-        self.add_component_ui.show()
-        
-    def on_component_added(self, component, form_data):
-        if self.table_manager.has_component(component.id):
-             QMessageBox.warning(self, "Duplicate", f"{component.name} already added")
-             return
+        remaining = self._remaining_component_types()
+        if not remaining:
+            return
 
-        self.table_manager.add_component(component, form_data)
+        picker = ComponentTypePickerDialog(remaining, parent=self)
+        if picker.exec() == QDialog.DialogCode.Accepted and picker.selected_component:
+            self._open_add_dialog(picker.selected_component)
+
+    def _open_add_dialog(self, component):
+        dlg = AddComponentDlg(component=component)
+        dlg.component_added.connect(lambda c, params: self.table_manager.add_component(c, params))
+        dlg.exec()
+
+    def _remaining_component_types(self):
+        """Component types not already in the table -- what the picker offers."""
+        all_components = self.component_controller.load_components()
+        return [c for c in all_components if not self.table_manager.has_component(c.id)]
+
+    def _update_add_button_state(self):
+        if self._remaining_component_types():
+            self.ui.addComponentBtn.setEnabled(True)
+            self.ui.addComponentBtn.setToolTip("Add Component")
+        else:
+            self.ui.addComponentBtn.setEnabled(False)
+            self.ui.addComponentBtn.setToolTip("All components already added")
 
     def edit_component_at_index(self, index):
         comp_data = self.table_manager.get_component_at_index(index)
         if not comp_data:
             return
-            
+
         component = comp_data[ComponentDataKeys.COMPONENT]
         params = comp_data[ComponentDataKeys.PARAMS]
-        
-        dlg = AddComponentDlg(initial_component=component, initial_params=params)
-        
+
+        dlg = AddComponentDlg(component=component, initial_params=params)
+
         def update_data(new_comp, new_params):
              self.table_manager.update_component(index, new_comp, new_params)
-             
+
         # Connect the dialog's signal to our local update function
         dlg.component_added.connect(update_data)
-        
+
         # Show the dialog
         dlg.exec()
 

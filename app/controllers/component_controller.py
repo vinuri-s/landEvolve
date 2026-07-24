@@ -1,3 +1,5 @@
+import re
+
 from app.services.component_service import ComponentService
 
 
@@ -7,6 +9,13 @@ class ComponentController:
 
     def load_components(self):
         return self.service.get_all_components()
+
+    @staticmethod
+    def humanize_name(name: str) -> str:
+        """Turns a PascalCase component name like 'VegetationComponent' into
+        'Vegetation Component' for display -- the stored/matched name is
+        untouched, this is presentation only."""
+        return re.sub(r'(?<!^)(?=[A-Z])', ' ', name)
 
     def get_dynamic_form_config(self, component_params):
         config = []

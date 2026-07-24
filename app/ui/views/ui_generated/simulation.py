@@ -78,14 +78,18 @@ class Ui_SimulationSetup(object):
 
         self.componentsGroup = QtWidgets.QGroupBox("Simulation Components")
         left_layout.addWidget(self.componentsGroup, 1)
-        
+
         components_layout = QtWidgets.QVBoxLayout(self.componentsGroup)
 
-        # Add Component sits above the table (not below), so it's the first
-        # thing seen when building up the component list, not a
-        # de-emphasized afterthought below already-added rows.
-        self.addComponentBtn = QtWidgets.QPushButton("Add Component")
-        components_layout.addWidget(self.addComponentBtn)
+        # A small labelled "+" affordance above the table, right-aligned,
+        # instead of a full-width button -- the standard "add a row" pattern,
+        # with text so its purpose isn't left to guesswork.
+        add_btn_layout = QtWidgets.QHBoxLayout()
+        add_btn_layout.addStretch()
+        self.addComponentBtn = QtWidgets.QPushButton("+ Add Component")
+        self.addComponentBtn.setStyleSheet("QPushButton { font-weight: 600; padding: 4px 10px; }")
+        add_btn_layout.addWidget(self.addComponentBtn)
+        components_layout.addLayout(add_btn_layout)
 
         self.compTableWidget = QtWidgets.QTableWidget()
         self.compTableWidget.setColumnCount(3)

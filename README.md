@@ -212,7 +212,7 @@ python main.py
 1. **Browse for an input DEM** (`Browse...`) in *Input Setup*. Once selected, the satellite *Location Preview* centres on the DEM and a labelled details line beneath the map shows its metadata — size, **resolution (m)**, CRS, and elevation range. The boundary toggle overlays the DEM's extent on the map.
 2. **Set the run length**: *Total Duration* (total time) and *Time Step* (`dt`).
 3. *(Optional)* Enable **Track Interested Landscape Feature** and supply a polygon shapefile to monitor a specific area over time. Optionally set the **First-Effect Threshold (m)** (default `0.01`) — the amount of geomorphic change at which the feature is reported as "first affected".
-4. **Add components** (*Add Component*) and configure their parameters — e.g. `FlowAccumulatorComponent`, a SPACE eroder, `DepthDependentDiffuserComponent`, `PrecipitationComponent`, `VegetationComponent`, `LithoLayersComponent`. Precipitation requires a Flow Accumulator to take effect.
+4. **Add components**: click **+ Add Component**, pick a type from the list (each shown with its description), then fill in its parameters in the dialog that opens — e.g. `FlowAccumulatorComponent`, a SPACE eroder, `DepthDependentDiffuserComponent`, `PrecipitationComponent`, `VegetationComponent`, `LithoLayersComponent`. Added components appear in the table with their own **Edit**/**Remove**; the picker only offers types not already added. Precipitation requires a Flow Accumulator to take effect.
 5. **Run Simulation**. Progress is shown live; the UI stays responsive (runs on a background thread).
 6. **Explore results** across the tabs: 2D maps, 3D map, Erosion Timeline, Analysis plots, and Feature Tracking. Use *Show Statistics* for performance/diagnostic metrics.
 
