@@ -107,13 +107,27 @@ class ThreeDView(QWidget):
     def on_load_finished(self, ok):
         if not ok:
             return
+        # Plotly renders each updatemenu button as an SVG group containing a
+        # background <rect> plus a <text>/<tspan> label. Most of a button's
+        # clickable area is the (text-less) rect, so matching only the exact
+        # click target's textContent misses clicks that land there -- that's
+        # why this used to need two clicks (the first click that happened to
+        # hit the rect did nothing). Walk up a few ancestor levels from the
+        # click target instead, so the button's group -- not just its text
+        # node -- is what gets matched.
         js = """
         document.addEventListener('click', function(e) {
-            var text = e.target.textContent;
-            if (text === 'Difference Map') {
-                window.document.title = 'SHOW_SCALE_CONTROLS';
-            } else if (text === 'Output Elevation' || text === 'Input Elevation') {
-                window.document.title = 'HIDE_SCALE_CONTROLS';
+            var el = e.target;
+            for (var i = 0; el && i < 5; i++, el = el.parentElement) {
+                var text = (el.textContent || '').trim();
+                if (text === 'Difference Map') {
+                    window.document.title = 'SHOW_SCALE_CONTROLS';
+                    return;
+                }
+                if (text === 'Output Elevation' || text === 'Input Elevation') {
+                    window.document.title = 'HIDE_SCALE_CONTROLS';
+                    return;
+                }
             }
         });
         """

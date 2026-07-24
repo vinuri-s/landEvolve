@@ -75,9 +75,17 @@ class SimulationLogger:
             return False
 
         log_path = os.path.join(output_dir, "simulation_details.txt")
-        
+
         try:
-            with open(log_path, "w") as f:
+            # encoding must be explicit: this file's content can include
+            # non-ASCII characters (e.g. the SPACE regime diagnostic's "⚠️"
+            # and "→"), and without it Python falls back to the platform's
+            # default -- UTF-8 on macOS/Linux, but the system ANSI codepage
+            # on Windows, which can't encode those characters. That raised
+            # UnicodeEncodeError on the very first write, before anything
+            # was flushed, leaving a 0-byte "blank" file on Windows while
+            # working fine on Mac.
+            with open(log_path, "w", encoding="utf-8") as f:
                 # 1. Parameters
                 f.write(SimulationLogger.get_formatted_details(sim_params, output_data))
                 f.write("\n\n")

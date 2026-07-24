@@ -61,7 +61,13 @@ class AppLogger(ILogger):
         )
         
         # File Handler (Rotating logs at 5MB, keep 3 backups)
-        file_handler = RotatingFileHandler(file_path, maxBytes=5*1024*1024, backupCount=3)
+        # encoding must be explicit -- log messages throughout this app
+        # include non-ASCII characters (arrows, em dashes, warning symbols),
+        # and without it Python falls back to the platform default: UTF-8 on
+        # macOS/Linux, but the system ANSI codepage on Windows, which can't
+        # encode them (dropped/errored log lines there instead).
+        file_handler = RotatingFileHandler(file_path, maxBytes=5*1024*1024, backupCount=3,
+                                           encoding="utf-8")
         file_handler.setLevel(logging.DEBUG)
         file_handler.setFormatter(formatter)
         

@@ -24,8 +24,11 @@ class WindowManager:
     @staticmethod
     def load_window_state(window: QWidget, settings_key_prefix: str = "Window"):
         """
-        Loads and applies the saved geometry to the window.
-        
+        Applies the saved geometry to the window, then maximizes it. Windows
+        always open maximized by default; the saved geometry only matters if
+        the user un-maximizes during the session, so it's still restored
+        first to seed a sensible size/position for that case.
+
         Args:
             window: The QWidget (or QMainWindow) to load state for.
             settings_key_prefix: The prefix for the settings keys.
@@ -35,3 +38,5 @@ class WindowManager:
 
         if geometry:
             window.restoreGeometry(geometry)
+
+        window.showMaximized()

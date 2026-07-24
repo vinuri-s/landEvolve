@@ -115,7 +115,7 @@ class SimulationResultsWindow(QMainWindow):
         self.view_3d = ThreeDView()
         self.tabs.addTab(self.view_3d, SimulationResultsWindowConsts.TAB_3D_VISUALIZATION)
 
-        # --- Tab 3: Sediment Timeline (Interactive Plotly slider) ---
+        # --- Tab 3: Erosion Timeline (Interactive Plotly slider) ---
         self._add_timeline_tab()
 
         # --- Tab 4: Scientific Analysis plots ---
@@ -208,10 +208,7 @@ class SimulationResultsWindow(QMainWindow):
             ("Onset and Peak of Landscape Change", self.image_paths.get(SimulationResultKeys.CHANGE_EVENTS_PLOT)),
             ("Drainage Network", self.image_paths.get(SimulationResultKeys.DRAINAGE_NETWORK_PLOT)),
             ("Soil / Alluvium Thickness", self.image_paths.get(SimulationResultKeys.SOIL_THICKNESS_PLOT)),
-            ("River Long Profile", self.image_paths.get(SimulationResultKeys.LONG_PROFILE_PLOT)),
-            ("Slope–Area Relationship", self.image_paths.get(SimulationResultKeys.SLOPE_AREA_PLOT)),
             ("Sediment Budget Over Time", self.image_paths.get(SimulationResultKeys.FLUX_PLOT)),
-            ("Hypsometric Curve", self.image_paths.get(SimulationResultKeys.HYPSOMETRY_PLOT)),
         ]
 
         gallery = AnalysisGalleryWidget(plots)

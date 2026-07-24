@@ -85,7 +85,7 @@ def main():
     # heartbeat that periodically dumps all thread stacks too, so a genuine
     # hang (not a crash) leaves the same kind of evidence behind.
     global _crash_log_file
-    _crash_log_file = open(Config.LOGS_DIR / "crash.log", "w", buffering=1)
+    _crash_log_file = open(Config.LOGS_DIR / "crash.log", "w", buffering=1, encoding="utf-8")
     faulthandler.enable(file=_crash_log_file)
     faulthandler.dump_traceback_later(300, repeat=True, file=_crash_log_file)
 

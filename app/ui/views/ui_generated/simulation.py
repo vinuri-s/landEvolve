@@ -78,18 +78,25 @@ class Ui_SimulationSetup(object):
 
         self.componentsGroup = QtWidgets.QGroupBox("Simulation Components")
         left_layout.addWidget(self.componentsGroup, 1)
-        
+
         components_layout = QtWidgets.QVBoxLayout(self.componentsGroup)
-        
+
+        # A small labelled "+" affordance above the table, right-aligned,
+        # instead of a full-width button -- the standard "add a row" pattern,
+        # with text so its purpose isn't left to guesswork.
+        add_btn_layout = QtWidgets.QHBoxLayout()
+        add_btn_layout.addStretch()
+        self.addComponentBtn = QtWidgets.QPushButton("+ Add Component")
+        self.addComponentBtn.setStyleSheet("QPushButton { font-weight: 600; padding: 4px 10px; }")
+        add_btn_layout.addWidget(self.addComponentBtn)
+        components_layout.addLayout(add_btn_layout)
+
         self.compTableWidget = QtWidgets.QTableWidget()
         self.compTableWidget.setColumnCount(3)
         self.compTableWidget.setHorizontalHeaderLabels(["Component", "Description", "Actions"])
         self.compTableWidget.horizontalHeader().setStretchLastSection(True)
         components_layout.addWidget(self.compTableWidget, 1)
-        
-        self.addComponentBtn = QtWidgets.QPushButton("Add Component")
-        components_layout.addWidget(self.addComponentBtn)
-        
+
         self.viewSimulationBtn = QtWidgets.QPushButton("Run Simulation")
         self.viewSimulationBtn.setMinimumHeight(40)
         self.viewSimulationBtn.setStyleSheet("""

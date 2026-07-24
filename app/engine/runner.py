@@ -20,10 +20,7 @@ from app.engine.io import (
 from app.engine.visualization import diagnose_space_regime, generate_sediment_timeline_html
 from app.engine.science_plots import (
     refresh_drainage,
-    plot_hypsometry,
     plot_sediment_flux,
-    plot_river_long_profile,
-    plot_slope_area,
     plot_drainage_network,
     plot_soil_thickness,
     plot_change_events_map,
@@ -329,6 +326,8 @@ class SimulationRunner:
 
         self.log(85, "Plotting initial terrain...")
         plot_topography(initial, grid.shape, "Initial", str(self.output_dir / "init.png"))
+        self.log(85, "Writing init.tif...")
+        save_geotiff(str(self.output_dir / "init.tif"), initial, tif)
         self.log(86, "Plotting final terrain...")
         plot_topography(final, grid.shape, "Final", str(self.output_dir / "final.png"))
         diff_sub = ("final − initial (total surface change, incl. uplift)"
@@ -342,7 +341,8 @@ class SimulationRunner:
         self.log(88, "Plotting erosion/deposition mask...")
         mask_png = str(self.output_dir / "mask.png")
         plot_erosion_deposition_mask(signal_diff, grid.shape, mask_png,
-                                     uplift_removed=cumulative_uplift is not None)
+                                     uplift_removed=cumulative_uplift is not None,
+                                     hillshade_elev=final, reference_tif=tif)
 
         self.log(89, "Writing final.tif...")
         save_geotiff(str(self.output_dir / "final.tif"), final, tif)
@@ -373,7 +373,8 @@ class SimulationRunner:
         self.log(90, "Building sediment timeline...")
         timeline_html = str(self.output_dir / "sediment_timeline.html")
         timeline_result = generate_sediment_timeline_html(
-            sediment_snapshots, timeline_times, grid.shape, timeline_html
+            sediment_snapshots, timeline_times, grid.shape, timeline_html,
+            elevation=final,
         )
         if timeline_result is False:
             timeline_html = None
@@ -383,44 +384,40 @@ class SimulationRunner:
         cell_area = float(grid.dx) * float(grid.dy)
 
         # Re-route flow on the final topography so drainage-based plots reflect
-        # the final landscape, not the loop's transient routing state.
+        # the final landscape, not the loop's transient routing state. Use the
+        # SAME flow_director the run was actually configured with (falls back
+        # to refresh_drainage's own Steepest/D4 default if none was set), so
+        # the drainage network shown matches the algorithm that actually
+        # routed flow during the simulation, not a different one.
         self.log(92, "Re-routing flow on final topography...")
-        refresh_drainage(grid)
+        refresh_flow_director = "FlowDirectorSteepest"
+        if flow_conf:
+            refresh_flow_director = flow_conf[0].get("params", {}).get(
+                "flow_director", refresh_flow_director)
+        refresh_drainage(grid, flow_director=refresh_flow_director)
 
-        self.log(93, "Plotting hypsometry...")
-        hypsometry_plot = plot_hypsometry(
-            initial, final, str(self.output_dir / "hypsometry.png"))
         self.log(93, "Plotting sediment flux...")
         flux_plot = plot_sediment_flux(
             sediment_snapshots, timeline_times, cell_area,
             str(self.output_dir / "flux.png"),
             uplift_removed=cumulative_uplift is not None)
-        self.log(94, "Plotting river long profile...")
-        long_profile_plot = plot_river_long_profile(
-            grid, initial, str(self.output_dir / "long_profile.png"),
-            uplift=cumulative_uplift)
-        self.log(95, "Plotting slope-area...")
-        slope_area_plot = plot_slope_area(
-            grid, str(self.output_dir / "slope_area.png"))
         self.log(96, "Plotting drainage network...")
         drainage_network_plot = plot_drainage_network(
-            grid, str(self.output_dir / "drainage_network.png"))
+            grid, str(self.output_dir / "drainage_network.png"), reference_tif=tif)
         self.log(97, "Plotting soil thickness...")
         soil_thickness_plot = plot_soil_thickness(
-            grid, str(self.output_dir / "soil_thickness.png"))
+            grid, str(self.output_dir / "soil_thickness.png"), reference_tif=tif)
         self.log(98, "Plotting change-events map...")
         change_events_plot = plot_change_events_map(
             sediment_snapshots, timeline_times, grid.shape,
             str(self.output_dir / "change_events.png"),
             input_tiff=tif,
             change_threshold=float(self.params.get("first_effect_threshold", 0.01)),
-            uplift_removed=cumulative_uplift is not None)
+            uplift_removed=cumulative_uplift is not None,
+            elevation=final)
 
         science_plots = {
-            "hypsometry_plot": hypsometry_plot,
             "flux_plot": flux_plot,
-            "long_profile_plot": long_profile_plot,
-            "slope_area_plot": slope_area_plot,
             "drainage_network_plot": drainage_network_plot,
             "soil_thickness_plot": soil_thickness_plot,
             "change_events_plot": change_events_plot,
@@ -455,10 +452,7 @@ class SimulationRunner:
             "geomorphic_change_plot": geomorphic_diff_png,
             "mask_plot": mask_png,
             "timeline_html": timeline_html,
-            "hypsometry_plot": science_plots["hypsometry_plot"],
             "flux_plot": science_plots["flux_plot"],
-            "long_profile_plot": science_plots["long_profile_plot"],
-            "slope_area_plot": science_plots["slope_area_plot"],
             "drainage_network_plot": science_plots["drainage_network_plot"],
             "soil_thickness_plot": science_plots["soil_thickness_plot"],
             "change_events_plot": science_plots["change_events_plot"],

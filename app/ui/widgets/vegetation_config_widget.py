@@ -63,6 +63,8 @@ class _VegetationClassDialog(QDialog):
             self.D.setValue(existing.get('linear_diffusivity_multiplier', 1.0))
             self.runoff.setValue(existing.get('runoff_multiplier', 1.0))
 
+        self.showMaximized()
+
     def values(self):
         return {
             'name': self.name_edit.text().strip(),

@@ -85,8 +85,8 @@ A modern, responsive PyQt6 interface.
 *   **`SimulationResultsWindow`**: Displays simulation progress and final results.
     *   **2D Visualization**: Carousel view of Initial, Final, and Difference maps. **Ctrl+scroll zooms to native resolution, click-drag pans, double-click resets to fit** — the same zoomable viewer is used in the Analysis tab.
     *   **3D Visualization**: Interactive 3D terrain viewer.
-    *   **Sediment Timeline**: Animated, scrubbable view of erosion/deposition over time.
-    *   **Analysis**: Scientific plots (erosion/deposition mask, drainage network, soil thickness, long profile, slope–area, sediment budget, hypsometry) shown one at a time. See the [Visualizations & Plots](#-visualizations--plots) section for details.
+    *   **Erosion Timeline**: Animated, scrubbable view of erosion/deposition over time.
+    *   **Analysis**: Scientific plots (erosion/deposition mask, onset and peak of change, drainage network, soil thickness, sediment budget) shown one at a time. See the [Visualizations & Plots](#-visualizations--plots) section for details.
     *   **Feature Tracking**: When enabled, shows the elevation/volume history of a user-supplied feature polygon over time (only present if a feature was tracked). It also reports the **first-effect time** — the earliest point at which the evolving landscape produces a meaningful change in the feature (see below) — as a headline label and a marker on the plot.
 *   **`SimulationWorker`**: A background thread worker (`QThread`) that ensures the UI remains responsive while the heavy simulation runs.
 
@@ -127,25 +127,24 @@ LandEvolve operates on a strict, decoupled pipeline that handles complex geospat
 The results window groups outputs into tabs. Each plot below lists **what it shows** and **the logic behind it**. Analysis plots are defensive: if a required field is missing for a given run, the plot is skipped rather than failing.
 
 ### 2D Visualization (`app/engine/io.py`)
-*   **Input / Final Elevation** — The terrain before and after the run, rendered with a `terrain` colormap. Straight `imshow` of the elevation arrays (north-up).
+*   **Input / Final Elevation** — The terrain before and after the run, rendered as **shaded relief**: an earth-tone elevation colormap (green lowland → olive → brown → pale tan highland) blended with a sun-angle hillshade (`matplotlib.LightSource`), so it reads like a natural aerial/satellite photo rather than a flat elevation map.
 *   **Difference Map** — *Where and how much* the surface eroded (red) or aggraded (blue). Computed as `final − initial` on a **symmetric** diverging Red-Blue scale so stable ground (0 m) is pure white. It is **draped over a shaded-relief hillshade** of the final terrain (`matplotlib.LightSource`) so change is read in its topographic context. A **symlog** toggle is available so faint erosion stays visible when deposition dominates the range. When a **Tectonics** run is detected, a **"Remove tectonic uplift"** toggle appears (on by default): it switches to the geomorphic change `final − initial − cumulative_uplift`, so the erosion/deposition signal is visible instead of being swamped by uniform uplift. (The erosion/deposition mask is likewise based on the uplift-removed signal when tectonics is used.)
 
 ### 3D Map (`app/engine/visualization.py`)
-*   **Interactive 3D surface** with Input / Output / Difference modes (Plotly `go.Surface`, embedded WebGL). The difference mode colors the final surface by `final − initial`. The z-axis is **pinned to the true elevation range** so the scale matches the 2D maps, and the y-axis is reversed to keep north at the top. On **Tectonics** runs a **"Remove tectonic uplift"** toggle (on by default) subtracts the cumulative uplift from the difference surface, so it shows the geomorphic signal rather than uniform uplift — mirroring the 2D difference map.
+*   **Interactive 3D surface** with Input / Output / Difference modes (Plotly `go.Surface`, embedded WebGL). Input/Output use the same earth-tone colorscale as the 2D terrain plots, with realistic raking-light shading computed live by WebGL — so relief stays correctly lit as you rotate the model, rather than a baked-in texture. The difference mode colors the final surface by `final − initial` (same lighting on the geometry, RdBu still drives the erosion/deposition color). The z-axis is **pinned to the true elevation range** so the scale matches the 2D maps, and the y-axis is reversed to keep north at the top. On **Tectonics** runs a **"Remove tectonic uplift"** toggle (on by default) subtracts the cumulative uplift from the difference surface, so it shows the geomorphic signal rather than uniform uplift — mirroring the 2D difference map.
 
-### Sediment Timeline (`app/engine/visualization.py`)
-*   **Animated, scrubbable heatmap** of *cumulative* erosion/deposition through time. During the run, ~30 evenly-spaced snapshots of `elevation − initial` are captured; Plotly renders them as time-slider frames (`zsmooth` interpolation) sharing one symmetric color scale, so you can watch sediment migrate. On **Tectonics** runs the cumulative uplift is subtracted from each snapshot, so the animation shows sediment movement rather than the land rising.
+### Erosion Timeline (`app/engine/visualization.py`)
+*   **Animated, scrubbable heatmap** of *cumulative* erosion/deposition through time. During the run, ~30 evenly-spaced snapshots of `elevation − initial` are captured; Plotly renders them as time-slider frames (`zsmooth` interpolation) sharing one symmetric color scale, so you can watch sediment migrate. Drawn semi-transparently over a shaded-relief hillshade background of the final terrain, same drape-over-hillshade treatment as the 2D Difference Map. On **Tectonics** runs the cumulative uplift is subtracted from each snapshot, so the animation shows sediment movement rather than the land rising.
 
 ### Analysis (`app/engine/science_plots.py`)
+All spatial Analysis plots below are drawn semi-transparently over a shaded-relief hillshade of the final terrain, same treatment as the 2D Difference Map, so patterns are read in their topographic context.
 *   **Erosion / Deposition Map (mask)** — *Where* material left vs. arrived, ignoring magnitude. A 3-category map (erosion / no-change / deposition) thresholded near zero — answers "where does deposition go" even when magnitudes are lopsided.
-*   **Drainage Network** — *Where the rivers are.* A `log₁₀(drainage_area)` map: bright threads where flow concentrates, dark hillslopes between. Built from the routed drainage area (boundary nodes blanked).
-*   **Soil / Alluvium Thickness** — *Where sediment is stored vs. bedrock is exposed.* Maps the landlab `soil__depth` field (mobile sediment above bedrock), which SPACE conserves and redistributes each timestep.
-*   **River Long Profile** — *Channel incision and knickpoints.* Two panels along the main (trunk) channel from `ChannelProfiler`: elevation vs. downstream distance (initial vs. final), and an incision panel (`final − initial`, with tectonic uplift removed on Tectonics runs) that makes the change legible even when the two profiles overlap.
-*   **Slope–Area Relationship** — *Erosion regime and steady state.* Log-log channel slope vs. drainage area. Hillslope noise is demoted to faint grey, channel nodes highlighted, and a binned-median trend line drawn through the channel data.
+*   **Onset and Peak of Landscape Change** — *When and where the landscape first changed, and where it changed most.* Cumulative change map with the first-crossing and biggest-change events marked (cyan circle / gold star respectively, explained in a legend at the bottom of the plot), each annotated with when it happened, the magnitude, and its location.
+*   **Drainage Network** — *Where the rivers are.* A `log₁₀(drainage_area)` map showing channel cells only (top 2% by drainage area; boundary nodes blanked). Cells below that are masked out rather than shown on a continuous scale — single-direction flow routers (D4/D8) resolve ties on flat/gentle ground somewhat arbitrarily, which otherwise shows up as directional streaking across hillslope cells specifically; the area threshold removes that routing-tie noise and leaves the real channel network. This is the same threshold-based channel-extraction technique standard in geomorphology, not an arbitrary cosmetic cutoff.
+*   **Soil / Alluvium Thickness** — *Where sediment is stored vs. bedrock is exposed, after simulation.* Maps the landlab `soil__depth` field (mobile sediment above bedrock) at the end of the run, which SPACE conserves and redistributes each timestep.
 *   **Sediment Budget Over Time** — *Transient vs. equilibrating system.* Cumulative eroded, deposited, and net-change **volumes** (m³) through time, derived from the timeline snapshots × cell area (tectonic uplift removed on Tectonics runs, so uplift isn't counted as deposition).
-*   **Hypsometric Curve** — *Basin maturity.* Cumulative area fraction vs. normalized elevation, initial vs. final.
 
-> **Routing note:** before the drainage-based plots (network, long profile, slope–area), flow is re-routed on the final topography with `FlowDirectorSteepest` **followed by a `LakeMapperBarnes` priority-flood pass**, mirroring the simulation loop. Internal depressions are rerouted automatically (the fill is written to a scratch surface, never to `topographic__elevation`), so the analysis isn't distorted by pits even on unfilled DEMs.
+> **Routing note:** before the Drainage Network plot, flow is re-routed on the final topography with the **same flow director the run was actually configured with** (falls back to `FlowDirectorSteepest`/D4 if none was set), **followed by a `LakeMapperBarnes` priority-flood pass**, mirroring the simulation loop. Using a different director than the run actually used would show a network that doesn't match what really drove the erosion. Internal depressions are rerouted automatically (the fill is written to a scratch surface, never to `topographic__elevation`), so the analysis isn't distorted by pits even on unfilled DEMs.
 
 ## ⚠️ Important Notes (Input DEM Requirements)
 
@@ -213,9 +212,9 @@ python main.py
 1. **Browse for an input DEM** (`Browse...`) in *Input Setup*. Once selected, the satellite *Location Preview* centres on the DEM and a labelled details line beneath the map shows its metadata — size, **resolution (m)**, CRS, and elevation range. The boundary toggle overlays the DEM's extent on the map.
 2. **Set the run length**: *Total Duration* (total time) and *Time Step* (`dt`).
 3. *(Optional)* Enable **Track Interested Landscape Feature** and supply a polygon shapefile to monitor a specific area over time. Optionally set the **First-Effect Threshold (m)** (default `0.01`) — the amount of geomorphic change at which the feature is reported as "first affected".
-4. **Add components** (*Add Component*) and configure their parameters — e.g. `FlowAccumulatorComponent`, a SPACE eroder, `DepthDependentDiffuserComponent`, `PrecipitationComponent`, `VegetationComponent`, `LithoLayersComponent`. Precipitation requires a Flow Accumulator to take effect.
+4. **Add components**: click **+ Add Component**, pick a type from the list (each shown with its description), then fill in its parameters in the dialog that opens — e.g. `FlowAccumulatorComponent`, a SPACE eroder, `DepthDependentDiffuserComponent`, `PrecipitationComponent`, `VegetationComponent`, `LithoLayersComponent`. Added components appear in the table with their own **Edit**/**Remove**; the picker only offers types not already added. Precipitation requires a Flow Accumulator to take effect.
 5. **Run Simulation**. Progress is shown live; the UI stays responsive (runs on a background thread).
-6. **Explore results** across the tabs: 2D maps, 3D map, Sediment Timeline, Analysis plots, and Feature Tracking. Use *Show Statistics* for performance/diagnostic metrics.
+6. **Explore results** across the tabs: 2D maps, 3D map, Erosion Timeline, Analysis plots, and Feature Tracking. Use *Show Statistics* for performance/diagnostic metrics.
 
 ### Tracking a Feature of Interest
 
@@ -235,9 +234,10 @@ If you care about a *specific* place in the DEM — a fan, terrace, archaeologic
 ### Outputs
 Each run is written to `resources/outputs/simulation_<N>/`, including:
 *   `init.png`, `final.png`, `diff.png` — 2D elevation and difference maps
-*   `final.tif`, `diff.tif` — GeoTIFFs of the final surface and total change
+*   `init.tif`, `final.tif`, `diff.tif` — GeoTIFFs of the initial/final surface and total change
+*   `mask.tif`, `drainage_network.tif`, `soil_thickness.tif` — GeoTIFFs of the erosion/deposition categories, drainage area, and soil depth, for use in GIS software
 *   `view_3d_comparison.html`, `sediment_timeline.html` — interactive 3D + timeline
-*   analysis plots (`mask.png`, `drainage_network.png`, `soil_thickness.png`, `long_profile.png`, `slope_area.png`, `flux.png`, `hypsometry.png`)
+*   analysis plots (`mask.png`, `change_events.png`, `drainage_network.png`, `soil_thickness.png`, `flux.png`)
 *   `simulation_details.txt` — parameters, components, and diagnostics for the run
 
 ## 📦 Packaging (Executable Generation)
