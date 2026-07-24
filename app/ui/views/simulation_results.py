@@ -115,7 +115,7 @@ class SimulationResultsWindow(QMainWindow):
         self.view_3d = ThreeDView()
         self.tabs.addTab(self.view_3d, SimulationResultsWindowConsts.TAB_3D_VISUALIZATION)
 
-        # --- Tab 3: Sediment Timeline (Interactive Plotly slider) ---
+        # --- Tab 3: Erosion Timeline (Interactive Plotly slider) ---
         self._add_timeline_tab()
 
         # --- Tab 4: Scientific Analysis plots ---

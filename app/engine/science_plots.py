@@ -283,7 +283,25 @@ def plot_change_events_map(snapshots, times, shape, output_path,
                 if transform is not None and not transform.is_identity:
                     if crs is not None:
                         epsg = crs.to_epsg()
-                        crs_label = f"EPSG:{epsg}" if epsg else (crs.to_string() or None)
+                        if epsg:
+                            crs_label = f"EPSG:{epsg}"
+                        else:
+                            # Some GeoTIFFs (e.g. ArcGIS-style ESRI WKT) don't
+                            # cleanly match to_epsg()'s exact-match lookup even
+                            # though they're a standard registered CRS;
+                            # to_authority() uses a more lenient match and
+                            # often still succeeds here.
+                            authority = crs.to_authority()
+                            if authority:
+                                crs_label = f"{authority[0]}:{authority[1]}"
+                            else:
+                                # Last resort: never dump the raw WKT/PROJ
+                                # definition here -- it can run to hundreds of
+                                # characters (this is what previously produced
+                                # a caption overflowing off the whole figure)
+                                # and isn't meaningful to a reader anyway.
+                                raw = (crs.to_string() or "").strip()
+                                crs_label = (raw[:24] + "…") if len(raw) > 24 else (raw or None)
 
                     def to_world(row, col):
                         e, n = transform * (col + 0.5, row + 0.5)

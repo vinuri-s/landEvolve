@@ -34,7 +34,7 @@ class Ui_Home(object):
             "<ul>"
             "<li>Assemble a simulation from interchangeable process components</li>"
             "<li>Drive erosion with precipitation, vegetation, lithology, and uplift scenarios</li>"
-            "<li>Explore results as 2D maps, an interactive 3D surface, and a scrubbable sediment transport timeline</li>"
+            "<li>Explore results as 2D maps, an interactive 3D surface, and a scrubbable erosion timeline</li>"
             "<li>Analyze erosion/deposition patterns, drainage networks, soil thickness, and sediment budgets</li>"
             "<li>Track a chosen landscape feature and export GeoTIFFs for further research</li>"
             "</ul>"

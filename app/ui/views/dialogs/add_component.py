@@ -8,115 +8,58 @@ from app.core.constants import AddComponentDlgConsts
 
 class AddComponentDlg(QDialog):
     component_added = pyqtSignal(object, dict)
-
-    def __init__(self, initial_component=None, initial_params=None, already_added_ids=None):
+    
+    def __init__(self, initial_component=None, initial_params=None):
         super().__init__()
         self.ui = Ui_AddComponents()
         self.ui.setupUi(self)
         self.controller = ComponentController()
-
+        
         self.initial_component = initial_component
         self.initial_params = initial_params
-        # Editing an existing component is a separate, single-shot flow that
-        # closes on Update, same as before. Adding new ones now stays open
-        # across multiple additions in one sitting instead of forcing the
-        # user to reopen this dialog from scratch for every component --
-        # tracking what's been added so far so the dropdown never re-offers
-        # a component that's already in the simulation.
-        self.is_editing = initial_component is not None
-        self._added_ids = set(already_added_ids or [])
-        self._added_count = 0
-
-        self.dynamic_form = None
-
+        
+        self.dynamic_form = None 
+        
         self.load_initial_data()
         self.setup_connections()
-
-        if self.is_editing:
+        
+        if initial_component:
             self.setWindowTitle(AddComponentDlgConsts.WINDOW_TITLE_EDIT)
             self.ui.addBtn.setText(AddComponentDlgConsts.BTN_UPDATE)
-            self.ui.cancelBtn.setText("Cancel")
-        else:
-            self.ui.cancelBtn.setText("Done")
-
+    
     def setup_connections(self):
         self.ui.selectComponentComboBox.currentIndexChanged.connect(self.on_component_changed)
         self.ui.addBtn.clicked.connect(self.add_component)
         self.ui.cancelBtn.clicked.connect(self.reject)
-
+        
     def add_component(self):
         form_data = {}
         if self.dynamic_form and hasattr(self.dynamic_form, "get_form_data"):
             form_data = self.dynamic_form.get_form_data()
-
-        if not hasattr(self, 'selected_component') or not self.selected_component:
-            return
-
-        component = self.selected_component
-        self.component_added.emit(component, form_data)
-
-        if self.is_editing:
-            # One component, then close -- unchanged from before.
-            self.accept()
-            return
-
-        # Stay open: record what's been added into the persistent, visible
-        # list (not a status line that gets overwritten by the next action
-        # and can be missed -- this stays on screen for the whole session,
-        # each addition its own permanent entry), and refresh the dropdown
-        # so the just-added component can't be picked again.
-        self._added_ids.add(component.id)
-        self._added_count += 1
-        self.ui.addedListWidget.addItem(f"✓ {component.name}")
-        self.ui.addedListWidget.scrollToBottom()
-        self.ui.addedGroup.setTitle(f"Added This Session ({self._added_count})")
-        self.load_initial_data()
-
+        
+        # Emit the full component object instead of just the name string
+        if hasattr(self, 'selected_component'):
+            self.component_added.emit(self.selected_component, form_data)
+        self.accept()
+    
     def load_initial_data(self):
-        self.ui.selectComponentComboBox.blockSignals(True)
         self.ui.selectComponentComboBox.clear()
         components = self.controller.load_components()
-
-        # Exclude components already added (earlier, or already this
-        # session) so the user can never select a duplicate -- previously
-        # they'd only find out after configuring it and clicking Add.
-        # The component currently being edited is always kept available so
-        # its own dropdown entry still exists to select.
-        currently_editing_id = self.initial_component.id if self.initial_component else None
-        available = [c for c in components
-                    if c.id not in self._added_ids or c.id == currently_editing_id]
-
-        for comp in available:
+        for comp in components:
             self.ui.selectComponentComboBox.addItem(comp.name, comp)
-
+            
         if self.initial_component:
-            index = self.ui.selectComponentComboBox.findText(self.initial_component.name)
-            if index >= 0:
-                self.ui.selectComponentComboBox.setCurrentIndex(index)
-                # Restrict changing component type during edit to avoid confusion.
-                self.ui.selectComponentComboBox.setEnabled(False)
-        elif available:
+             # Find index
+             index = self.ui.selectComponentComboBox.findText(self.initial_component.name)
+             if index >= 0:
+                 self.ui.selectComponentComboBox.setCurrentIndex(index)
+                 # Disable change if editing? Often easier to allow change or restrict. 
+                 # For now, let's restrict changing component type during edit to avoid confusion.
+                 self.ui.selectComponentComboBox.setEnabled(False)
+        elif components:
             self.ui.selectComponentComboBox.setCurrentIndex(0)
-
-        self.ui.selectComponentComboBox.blockSignals(False)
-
-        if not available and not self.is_editing:
-            self.ui.addBtn.setEnabled(False)
-            self.ui.descriptionLabel.setText(
-                "All available components have been added. Click Done to finish.")
-            self._clear_dynamic_form()
-        else:
-            self.ui.addBtn.setEnabled(True)
-            self.on_component_changed()
-
-    def _clear_dynamic_form(self):
-        layout = self.ui.dynamic_frame.layout()
-        if layout is not None:
-            while layout.count():
-                child = layout.takeAt(0)
-                if child.widget():
-                    child.widget().deleteLater()
-        self.dynamic_form = None
+            
+        self.on_component_changed()
 
     def on_component_changed(self):
         selected_component = self.ui.selectComponentComboBox.currentData()
@@ -126,14 +69,20 @@ class AddComponentDlg(QDialog):
             params_to_load = None
             if self.initial_component and selected_component.id == self.initial_component.id:
                  params_to_load = self.initial_params
-
+                 
             self.load_component_data(selected_component, params_to_load)
         else:
             self.ui.descriptionLabel.setText(AddComponentDlgConsts.LBL_NO_COMPONENT)
 
     def load_component_data(self, selected_component, params=None):
         self.selected_component = selected_component
-        self._clear_dynamic_form()
+
+        layout = self.ui.dynamic_frame.layout()
+        if layout is not None:
+            while layout.count():
+                child = layout.takeAt(0)
+                if child.widget():
+                    child.widget().deleteLater()
 
         if self.selected_component:
             if selected_component.name == "VegetationComponent":

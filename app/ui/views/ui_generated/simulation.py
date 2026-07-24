@@ -80,16 +80,19 @@ class Ui_SimulationSetup(object):
         left_layout.addWidget(self.componentsGroup, 1)
         
         components_layout = QtWidgets.QVBoxLayout(self.componentsGroup)
-        
+
+        # Add Component sits above the table (not below), so it's the first
+        # thing seen when building up the component list, not a
+        # de-emphasized afterthought below already-added rows.
+        self.addComponentBtn = QtWidgets.QPushButton("Add Component")
+        components_layout.addWidget(self.addComponentBtn)
+
         self.compTableWidget = QtWidgets.QTableWidget()
         self.compTableWidget.setColumnCount(3)
         self.compTableWidget.setHorizontalHeaderLabels(["Component", "Description", "Actions"])
         self.compTableWidget.horizontalHeader().setStretchLastSection(True)
         components_layout.addWidget(self.compTableWidget, 1)
-        
-        self.addComponentBtn = QtWidgets.QPushButton("Add Component")
-        components_layout.addWidget(self.addComponentBtn)
-        
+
         self.viewSimulationBtn = QtWidgets.QPushButton("Run Simulation")
         self.viewSimulationBtn.setMinimumHeight(40)
         self.viewSimulationBtn.setStyleSheet("""

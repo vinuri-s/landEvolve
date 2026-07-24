@@ -85,7 +85,7 @@ A modern, responsive PyQt6 interface.
 *   **`SimulationResultsWindow`**: Displays simulation progress and final results.
     *   **2D Visualization**: Carousel view of Initial, Final, and Difference maps. **Ctrl+scroll zooms to native resolution, click-drag pans, double-click resets to fit** — the same zoomable viewer is used in the Analysis tab.
     *   **3D Visualization**: Interactive 3D terrain viewer.
-    *   **Sediment Transport Timeline**: Animated, scrubbable view of erosion/deposition over time.
+    *   **Erosion Timeline**: Animated, scrubbable view of erosion/deposition over time.
     *   **Analysis**: Scientific plots (erosion/deposition mask, onset and peak of change, drainage network, soil thickness, sediment budget) shown one at a time. See the [Visualizations & Plots](#-visualizations--plots) section for details.
     *   **Feature Tracking**: When enabled, shows the elevation/volume history of a user-supplied feature polygon over time (only present if a feature was tracked). It also reports the **first-effect time** — the earliest point at which the evolving landscape produces a meaningful change in the feature (see below) — as a headline label and a marker on the plot.
 *   **`SimulationWorker`**: A background thread worker (`QThread`) that ensures the UI remains responsive while the heavy simulation runs.
@@ -133,7 +133,7 @@ The results window groups outputs into tabs. Each plot below lists **what it sho
 ### 3D Map (`app/engine/visualization.py`)
 *   **Interactive 3D surface** with Input / Output / Difference modes (Plotly `go.Surface`, embedded WebGL). Input/Output use the same earth-tone colorscale as the 2D terrain plots, with realistic raking-light shading computed live by WebGL — so relief stays correctly lit as you rotate the model, rather than a baked-in texture. The difference mode colors the final surface by `final − initial` (same lighting on the geometry, RdBu still drives the erosion/deposition color). The z-axis is **pinned to the true elevation range** so the scale matches the 2D maps, and the y-axis is reversed to keep north at the top. On **Tectonics** runs a **"Remove tectonic uplift"** toggle (on by default) subtracts the cumulative uplift from the difference surface, so it shows the geomorphic signal rather than uniform uplift — mirroring the 2D difference map.
 
-### Sediment Transport Timeline (`app/engine/visualization.py`)
+### Erosion Timeline (`app/engine/visualization.py`)
 *   **Animated, scrubbable heatmap** of *cumulative* erosion/deposition through time. During the run, ~30 evenly-spaced snapshots of `elevation − initial` are captured; Plotly renders them as time-slider frames (`zsmooth` interpolation) sharing one symmetric color scale, so you can watch sediment migrate. Drawn semi-transparently over a shaded-relief hillshade background of the final terrain, same drape-over-hillshade treatment as the 2D Difference Map. On **Tectonics** runs the cumulative uplift is subtracted from each snapshot, so the animation shows sediment movement rather than the land rising.
 
 ### Analysis (`app/engine/science_plots.py`)
@@ -214,7 +214,7 @@ python main.py
 3. *(Optional)* Enable **Track Interested Landscape Feature** and supply a polygon shapefile to monitor a specific area over time. Optionally set the **First-Effect Threshold (m)** (default `0.01`) — the amount of geomorphic change at which the feature is reported as "first affected".
 4. **Add components** (*Add Component*) and configure their parameters — e.g. `FlowAccumulatorComponent`, a SPACE eroder, `DepthDependentDiffuserComponent`, `PrecipitationComponent`, `VegetationComponent`, `LithoLayersComponent`. Precipitation requires a Flow Accumulator to take effect.
 5. **Run Simulation**. Progress is shown live; the UI stays responsive (runs on a background thread).
-6. **Explore results** across the tabs: 2D maps, 3D map, Sediment Transport Timeline, Analysis plots, and Feature Tracking. Use *Show Statistics* for performance/diagnostic metrics.
+6. **Explore results** across the tabs: 2D maps, 3D map, Erosion Timeline, Analysis plots, and Feature Tracking. Use *Show Statistics* for performance/diagnostic metrics.
 
 ### Tracking a Feature of Interest
 
