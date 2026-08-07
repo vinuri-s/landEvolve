@@ -324,6 +324,14 @@ class SimulationRunner:
 
         self.log(85, "Saving outputs...")
 
+        self.log(85, "Writing timeline snapshots...")
+        snapshots_dir = self.output_dir / "snapshots"
+        snapshots_dir.mkdir(exist_ok=True)
+        for snap, year in zip(timeline_snapshots, timeline_times):
+            snap_masked = snap.copy()
+            snap_masked[self._nodata_mask] = np.nan
+            save_geotiff(str(snapshots_dir / f"diff_t{int(year):04d}.tif"), snap_masked, tif)
+
         self.log(85, "Plotting initial terrain...")
         plot_topography(initial, grid.shape, "Initial", str(self.output_dir / "init.png"))
         self.log(85, "Writing init.tif...")
