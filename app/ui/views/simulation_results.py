@@ -118,6 +118,9 @@ class SimulationResultsWindow(QMainWindow):
         # --- Tab 3: Erosion Timeline (Interactive Plotly slider) ---
         self._add_timeline_tab()
 
+        # --- Tab 3b: Sediment Movement (Interactive Plotly flow animation) ---
+        self._add_flow_animation_tab()
+
         # --- Tab 4: Scientific Analysis plots ---
         self._add_analysis_tab()
 
@@ -198,6 +201,28 @@ class SimulationResultsWindow(QMainWindow):
             layout.addWidget(lbl)
 
         self.tabs.addTab(container, SimulationResultsWindowConsts.TAB_TIMELINE)
+
+    def _add_flow_animation_tab(self):
+        """Adds the interactive sediment-flux/flow-direction (Plotly slider) tab."""
+        from PyQt6.QtWebEngineWidgets import QWebEngineView
+        from PyQt6.QtCore import QUrl
+
+        flow_animation_html = self.image_paths.get(SimulationResultKeys.FLOW_ANIMATION_HTML)
+
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        if flow_animation_html and os.path.exists(flow_animation_html):
+            web_view = QWebEngineView()
+            web_view.setUrl(QUrl.fromLocalFile(flow_animation_html))
+            layout.addWidget(web_view)
+        else:
+            lbl = QLabel(SimulationResultsWindowConsts.LBL_FLOW_ANIMATION_NOT_AVAILABLE)
+            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            layout.addWidget(lbl)
+
+        self.tabs.addTab(container, SimulationResultsWindowConsts.TAB_FLOW_ANIMATION)
 
     def _add_analysis_tab(self):
         """Adds the scientific-analysis gallery tab."""

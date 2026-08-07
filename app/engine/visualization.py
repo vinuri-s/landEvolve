@@ -554,6 +554,199 @@ def generate_sediment_timeline_html(snapshots, times, shape, output_html_path,
         return False
 
 
+def generate_sediment_flow_animation_html(flux_snapshots, receiver_snapshots, times, shape,
+                                          output_html_path, elevation=None,
+                                          max_dim=50, top_fraction=0.15, max_arrows=250):
+    """Build an interactive, scrubbable animation of sediment flux and flow
+    direction: markers sized/colored by `sediment__flux` at each node, with
+    downhill arrows from each node to its `flow__receiver_node`. Modeled on
+    `generate_sediment_timeline_html` (same hillshade background + go.Frame/
+    slider pattern), swapping the change heatmap for a per-frame flux
+    scatter + annotation arrows.
+
+    flux_snapshots:     list of 1D arrays = grid.at_node["sediment__flux"] per captured step.
+    receiver_snapshots: list of 1D arrays = grid.at_node["flow__receiver_node"] per captured step.
+    times:     list of simulation times matching each snapshot.
+    elevation: optional terrain (e.g. final elevation) to render as a
+        shaded-relief background, same drape-over-hillshade treatment as
+        the timeline heatmap.
+    max_dim:      candidate nodes are drawn from a regular sub-grid at most
+        this many rows/cols, so dense grids don't produce huge frames.
+    top_fraction: only the top fraction (by flux magnitude) of candidate
+        nodes get a marker/arrow each frame, so the animation isn't cluttered.
+    max_arrows:   hard cap on arrows per frame regardless of top_fraction.
+    Returns True on success, False on failure.
+    """
+    try:
+        if (not flux_snapshots or not receiver_snapshots or not times
+                or len(flux_snapshots) != len(times)
+                or len(receiver_snapshots) != len(times)):
+            print("Flow animation: no snapshots to render.")
+            return False
+
+        nrows, ncols = shape
+        flat_idx = np.arange(nrows * ncols)
+        row_idx = flat_idx // ncols
+        col_idx = flat_idx % ncols
+
+        # Regular sub-grid of candidate nodes, same downsampling idea as the
+        # timeline heatmap, so dense grids don't produce thousands of arrows.
+        sx = max(1, nrows // max_dim)
+        sy = max(1, ncols // max_dim)
+        candidate_idx = flat_idx[(row_idx % sx == 0) & (col_idx % sy == 0)]
+
+        # Scale marker size/color consistently across the whole run.
+        all_flux = np.concatenate(
+            [np.asarray(f, dtype=float)[candidate_idx] for f in flux_snapshots]
+        )
+        all_flux = all_flux[np.isfinite(all_flux)]
+        fmax = float(np.nanpercentile(np.abs(all_flux), 99)) if all_flux.size else 1.0
+        if not np.isfinite(fmax) or fmax <= 0:
+            fmax = 1.0
+
+        target_shape = (min(nrows, 400), min(ncols, 400))
+        hillshade_uri = None
+        if elevation is not None:
+            try:
+                hillshade_uri = _hillshade_data_uri(elevation, shape, target_shape)
+            except Exception as e:
+                print(f"Flow animation hillshade skipped: {e}")
+
+        size_min, size_max = 4, 18
+
+        def build_frame(flux, receiver):
+            flux = np.asarray(flux, dtype=float)[candidate_idx]
+            recv = np.asarray(receiver)[candidate_idx]
+
+            mag = np.abs(flux)
+            finite = np.isfinite(mag)
+            mag = np.where(finite, mag, 0.0)
+
+            if mag.size and np.any(mag > 0):
+                threshold = np.nanpercentile(mag[mag > 0], 100 * (1 - top_fraction))
+            else:
+                threshold = np.inf  # nothing passes -> empty frame
+
+            sel = np.where(finite & (mag >= threshold) & (mag > 1e-9))[0]
+            if sel.size > max_arrows:  # bound worst case regardless of percentile math
+                sel = sel[np.argsort(-mag[sel])[:max_arrows]]
+
+            sel_node = candidate_idx[sel]
+            sel_recv = recv[sel]
+            sel_mag = mag[sel]
+
+            xs = col_idx[sel_node]
+            ys = row_idx[sel_node]
+
+            norm = np.clip(sel_mag / fmax, 0.0, 1.0)
+            sizes = size_min + (size_max - size_min) * np.sqrt(norm)
+
+            marker_trace = go.Scatter(
+                x=xs, y=ys, mode="markers",
+                marker=dict(
+                    size=list(sizes),
+                    color=list(sel_mag),
+                    colorscale="YlOrRd",
+                    cmin=0, cmax=fmax,
+                    colorbar=dict(title="Flux"),
+                    line=dict(width=0.5, color="rgba(0,0,0,0.4)"),
+                ),
+                hovertemplate="col %{x}<br>row %{y}<br>flux %{marker.color:.3g}<extra></extra>",
+            )
+
+            annotations = []
+            for n, r, m in zip(sel_node, sel_recv, sel_mag):
+                if int(r) == int(n):
+                    continue  # sink / no downhill neighbor -- nothing to point at
+                rx, ry = int(r) % ncols, int(r) // ncols
+                width = 1.0 + 2.5 * (m / fmax if fmax else 0)
+                annotations.append(dict(
+                    x=rx, y=ry, ax=int(col_idx[n]), ay=int(row_idx[n]),
+                    xref="x", yref="y", axref="x", ayref="y",
+                    showarrow=True, arrowhead=2, arrowsize=1, arrowwidth=width,
+                    arrowcolor="rgba(30,30,30,0.55)",
+                ))
+            return marker_trace, annotations
+
+        first_trace, first_annotations = build_frame(flux_snapshots[0], receiver_snapshots[0])
+
+        frames = []
+        for i, (flux, recv) in enumerate(zip(flux_snapshots, receiver_snapshots)):
+            trace, annotations = build_frame(flux, recv)
+            frames.append(go.Frame(data=[trace], name=f"{i}",
+                                   layout=go.Layout(annotations=annotations)))
+
+        fig = go.Figure(data=[first_trace], frames=frames)
+
+        slider_steps = [
+            dict(
+                method="animate",
+                args=[[f"{i}"],
+                      dict(mode="immediate",
+                           frame=dict(duration=0, redraw=True),
+                           transition=dict(duration=0))],
+                label=f"{times[i]:.0f}",
+            )
+            for i in range(len(frames))
+        ]
+
+        fig.update_layout(
+            title="Sediment Flux & Flow Direction Over Time",
+            autosize=True,
+            annotations=first_annotations,
+            yaxis=dict(autorange="reversed", scaleanchor="x",
+                       constrain="domain", title="Northing (rows)"),
+            xaxis=dict(constrain="domain", title="Easting (columns)"),
+            images=[dict(
+                source=hillshade_uri,
+                xref="x", yref="y",
+                x=-0.5, y=-0.5,
+                sizex=ncols, sizey=nrows,
+                xanchor="left", yanchor="top",
+                sizing="stretch",
+                layer="below",
+            )] if hillshade_uri else [],
+            updatemenus=[dict(
+                type="buttons",
+                direction="left",
+                x=0.0, y=-0.02, xanchor="left", yanchor="top",
+                pad=dict(t=5, r=10),
+                buttons=[
+                    dict(label="▶ Play", method="animate",
+                         args=[None, dict(frame=dict(duration=300, redraw=True),
+                                          fromcurrent=True,
+                                          transition=dict(duration=0))]),
+                    dict(label="⏸ Pause", method="animate",
+                         args=[[None], dict(mode="immediate",
+                                            frame=dict(duration=0, redraw=False),
+                                            transition=dict(duration=0))]),
+                ],
+            )],
+            sliders=[dict(
+                active=0,
+                x=0.15, len=0.85,
+                currentvalue=dict(prefix="Time: "),
+                pad=dict(t=50),
+                steps=slider_steps,
+            )],
+            margin=dict(l=65, r=50, b=65, t=90),
+        )
+
+        fig.write_html(
+            output_html_path,
+            full_html=True,
+            config={"responsive": True},
+            default_width="100%",
+            default_height="100%",
+            post_script=_RESPONSIVE_FILL_SCRIPT,
+        )
+        return True
+
+    except Exception as e:
+        print(f"Error generating sediment flow animation: {e}")
+        return False
+
+
 # -----------------------------
 # 2D difference map
 # -----------------------------
