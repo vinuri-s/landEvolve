@@ -381,6 +381,151 @@ def generate_3d_comparison_html(
 
 
 # -----------------------------
+# Animated 3D terrain evolution (Plotly slider)
+# -----------------------------
+def generate_terrain_evolution_3d_html(snapshots, times, shape, initial_elevation,
+                                       output_html_path, max_dim=150):
+    """Build a scrubbable 3D surface animation of the terrain actually rising
+    and falling over time, combining the animation/slider mechanics of
+    `generate_sediment_timeline_html` with the go.Surface rendering of
+    `generate_3d_comparison_html`.
+
+    snapshots: list of 1D/2D arrays = (elevation_at_step - initial_elevation),
+        same cumulative-change snapshots the sediment timeline uses.
+    times:     list of simulation times matching each snapshot.
+    initial_elevation: the starting elevation array, added back to each
+        snapshot so the surface height is real elevation (initial + change),
+        not just the change itself -- the terrain visibly deforms, not just
+        recolors.
+    Returns True on success, False on failure.
+    """
+    try:
+        if not snapshots or not times or len(snapshots) != len(times):
+            print("Terrain evolution: no snapshots to render.")
+            return False
+
+        z0 = np.asarray(initial_elevation, dtype=float).reshape(shape)
+
+        elev_frames = []
+        diff_frames = []
+        for snap in snapshots:
+            diff = np.asarray(snap, dtype=float).reshape(shape)
+            elev = z0 + diff
+            # Downsample large grids the same way the timeline heatmap does,
+            # so ~30+ frames of a full surface mesh stay light for WebGL.
+            if diff.shape[0] > max_dim or diff.shape[1] > max_dim:
+                sx = max(1, diff.shape[0] // max_dim)
+                sy = max(1, diff.shape[1] // max_dim)
+                diff = diff[::sx, ::sy]
+                elev = elev[::sx, ::sy]
+            diff_frames.append(diff)
+            elev_frames.append(elev)
+
+        # Symmetric change-color scale across the whole run, same treatment
+        # as generate_sediment_timeline_html, so colors are comparable
+        # frame-to-frame.
+        all_diff = np.concatenate([f[~np.isnan(f)].ravel() for f in diff_frames])
+        scale = float(np.nanpercentile(np.abs(all_diff), 99)) if all_diff.size else 1.0
+        if np.isnan(scale) or scale == 0:
+            scale = 1.0
+        cmin, cmax = -scale, scale
+
+        # Fixed z-axis range (elevation) across all frames so the surface
+        # doesn't rescale/jump between frames -- same reasoning as the fixed
+        # z_axis_range in generate_3d_comparison_html.
+        all_elev = np.concatenate([f[~np.isnan(f)].ravel() for f in elev_frames])
+        if all_elev.size:
+            z_lo = float(np.nanmin(all_elev))
+            z_hi = float(np.nanmax(all_elev))
+        else:
+            z_lo = z_hi = 0.0
+        z_range = [z_lo, z_hi] if np.isfinite(z_lo) and np.isfinite(z_hi) and z_lo != z_hi else None
+
+        def surface(elev, diff):
+            return go.Surface(
+                z=elev,
+                surfacecolor=diff,
+                colorscale='RdBu',
+                cmin=cmin, cmax=cmax,
+                colorbar=dict(title='Change (m)'),
+                lighting=_TERRAIN_LIGHTING,
+                lightposition=_TERRAIN_LIGHTPOSITION,
+            )
+
+        frames = [
+            go.Frame(data=[surface(elev_frames[i], diff_frames[i])], name=f"{i}")
+            for i in range(len(elev_frames))
+        ]
+
+        fig = go.Figure(data=[surface(elev_frames[0], diff_frames[0])], frames=frames)
+
+        slider_steps = [
+            dict(
+                method="animate",
+                args=[[f"{i}"],
+                      dict(mode="immediate",
+                           frame=dict(duration=0, redraw=True),
+                           transition=dict(duration=0))],
+                label=f"{times[i]:.0f}",
+            )
+            for i in range(len(elev_frames))
+        ]
+
+        fig.update_layout(
+            title="Terrain Evolution Over Time",
+            autosize=True,
+            margin=dict(l=0, r=0, b=65, t=64),
+            scene=dict(
+                domain=dict(x=[0, 1], y=[0, 1]),
+                xaxis_title='Easting (columns)',
+                yaxis=dict(title='Northing (rows)', autorange='reversed'),
+                zaxis_title='Elevation (m)',
+                zaxis=dict(range=z_range) if z_range else dict(),
+                aspectmode='manual',
+                aspectratio=dict(x=1, y=1, z=0.5),
+                camera=dict(eye=dict(x=0.85, y=0.32, z=0.36), center=dict(x=0, y=0, z=-0.05)),
+            ),
+            updatemenus=[dict(
+                type="buttons",
+                direction="left",
+                x=0.0, y=-0.02, xanchor="left", yanchor="top",
+                pad=dict(t=5, r=10),
+                buttons=[
+                    dict(label="▶ Play", method="animate",
+                         args=[None, dict(frame=dict(duration=300, redraw=True),
+                                          fromcurrent=True,
+                                          transition=dict(duration=0))]),
+                    dict(label="⏸ Pause", method="animate",
+                         args=[[None], dict(mode="immediate",
+                                            frame=dict(duration=0, redraw=False),
+                                            transition=dict(duration=0))]),
+                ],
+            )],
+            sliders=[dict(
+                active=0,
+                x=0.15, len=0.85,
+                currentvalue=dict(prefix="Time: "),
+                pad=dict(t=50),
+                steps=slider_steps,
+            )],
+        )
+
+        fig.write_html(
+            output_html_path,
+            full_html=True,
+            config={"responsive": True},
+            default_width="100%",
+            default_height="100%",
+            post_script=_CAMERA_FIT_SCRIPT,
+        )
+        return True
+
+    except Exception as e:
+        print(f"Error generating terrain evolution 3D animation: {e}")
+        return False
+
+
+# -----------------------------
 # Sediment-flow timeline animation (Plotly slider)
 # -----------------------------
 def _hillshade_data_uri(elevation, shape, target_shape):

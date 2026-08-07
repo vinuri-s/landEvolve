@@ -118,6 +118,9 @@ class SimulationResultsWindow(QMainWindow):
         # --- Tab 3: Erosion Timeline (Interactive Plotly slider) ---
         self._add_timeline_tab()
 
+        # --- Tab 3a: Terrain Evolution (Animated 3D Plotly surface) ---
+        self._add_terrain_evolution_tab()
+
         # --- Tab 3b: Sediment Movement (Interactive Plotly flow animation) ---
         self._add_flow_animation_tab()
 
@@ -201,6 +204,32 @@ class SimulationResultsWindow(QMainWindow):
             layout.addWidget(lbl)
 
         self.tabs.addTab(container, SimulationResultsWindowConsts.TAB_TIMELINE)
+
+    def _add_terrain_evolution_tab(self):
+        """Adds the animated 3D terrain-evolution (Plotly slider) tab."""
+        from PyQt6.QtWebEngineWidgets import QWebEngineView
+        from PyQt6.QtWebEngineCore import QWebEngineSettings
+        from PyQt6.QtCore import QUrl
+
+        terrain_evolution_html = self.image_paths.get(SimulationResultKeys.TERRAIN_EVOLUTION_HTML)
+
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        if terrain_evolution_html and os.path.exists(terrain_evolution_html):
+            web_view = QWebEngineView()
+            settings = web_view.settings()
+            settings.setAttribute(QWebEngineSettings.WebAttribute.WebGLEnabled, True)
+            settings.setAttribute(QWebEngineSettings.WebAttribute.LocalContentCanAccessFileUrls, True)
+            web_view.setUrl(QUrl.fromLocalFile(terrain_evolution_html))
+            layout.addWidget(web_view)
+        else:
+            lbl = QLabel(SimulationResultsWindowConsts.LBL_TERRAIN_EVOLUTION_NOT_AVAILABLE)
+            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            layout.addWidget(lbl)
+
+        self.tabs.addTab(container, SimulationResultsWindowConsts.TAB_TERRAIN_EVOLUTION)
 
     def _add_flow_animation_tab(self):
         """Adds the interactive sediment-flux/flow-direction (Plotly slider) tab."""
