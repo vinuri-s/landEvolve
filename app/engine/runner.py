@@ -17,12 +17,7 @@ from app.engine.io import (
     plot_difference,
     plot_erosion_deposition_mask,
 )
-from app.engine.visualization import (
-    diagnose_space_regime,
-    generate_sediment_timeline_html,
-    generate_sediment_flow_animation_html,
-    generate_terrain_evolution_3d_html,
-)
+from app.engine.visualization import diagnose_space_regime, generate_sediment_timeline_html
 from app.engine.science_plots import (
     refresh_drainage,
     plot_sediment_flux,
@@ -289,11 +284,6 @@ class SimulationRunner:
         timeline_times = [0.0]
         snapshot_every = max(1, steps // 30)
 
-        # Matching flux + flow-direction snapshots for the sediment-flow
-        # animation (Part 2): who's moving sediment, and which way it's headed.
-        timeline_flux = [np.zeros_like(initial)]
-        timeline_receiver = [grid.at_node["flow__receiver_node"].copy()]
-
         for i in range(steps):
 
             t += dt
@@ -315,8 +305,6 @@ class SimulationRunner:
                 upl = getattr(grid, "_cumulative_uplift", None)
                 timeline_uplift.append(upl.copy() if upl is not None else (initial - initial))
                 timeline_times.append(t)
-                timeline_flux.append(grid.at_node["sediment__flux"].copy())
-                timeline_receiver.append(grid.at_node["flow__receiver_node"].copy())
 
             if i % max(1, steps // 20) == 0:
                 self.log(int(20 + 60 * i / steps), f"Step {i}/{steps}")
@@ -399,27 +387,6 @@ class SimulationRunner:
         if timeline_result is False:
             timeline_html = None
 
-        # Animated 3D terrain surface (rises/falls with elevation, colored by
-        # cumulative change), built from the same timeline snapshots.
-        self.log(90, "Building terrain evolution 3D animation...")
-        terrain_evolution_html = str(self.output_dir / "terrain_evolution_3d.html")
-        terrain_evolution_result = generate_terrain_evolution_3d_html(
-            timeline_snapshots, timeline_times, grid.shape, initial, terrain_evolution_html,
-        )
-        if terrain_evolution_result is False:
-            terrain_evolution_html = None
-
-        # Interactive sediment-flux / flow-direction animation (arrows toward
-        # each node's downhill receiver, sized/colored by flux magnitude).
-        self.log(90, "Building sediment flow animation...")
-        flow_animation_html = str(self.output_dir / "sediment_flow_animation.html")
-        flow_animation_result = generate_sediment_flow_animation_html(
-            timeline_flux, timeline_receiver, timeline_times, grid.shape,
-            flow_animation_html, elevation=final,
-        )
-        if flow_animation_result is False:
-            flow_animation_html = None
-
         # ---- Scientific / geomorphic analysis plots ----
         self.log(92, "Generating analysis plots...")
         cell_area = float(grid.dx) * float(grid.dy)
@@ -493,8 +460,6 @@ class SimulationRunner:
             "geomorphic_change_plot": geomorphic_diff_png,
             "mask_plot": mask_png,
             "timeline_html": timeline_html,
-            "terrain_evolution_html": terrain_evolution_html,
-            "flow_animation_html": flow_animation_html,
             "flux_plot": science_plots["flux_plot"],
             "drainage_network_plot": science_plots["drainage_network_plot"],
             "soil_thickness_plot": science_plots["soil_thickness_plot"],
