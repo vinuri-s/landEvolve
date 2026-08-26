@@ -118,6 +118,9 @@ class SimulationResultsWindow(QMainWindow):
         # --- Tab 3: Erosion Timeline (Interactive Plotly slider) ---
         self._add_timeline_tab()
 
+        # --- Tab 3b: Terrain Evolution (Interactive Plotly slider) ---
+        self._add_terrain_timeline_tab()
+
         # --- Tab 4: Scientific Analysis plots ---
         self._add_analysis_tab()
 
@@ -199,6 +202,28 @@ class SimulationResultsWindow(QMainWindow):
 
         self.tabs.addTab(container, SimulationResultsWindowConsts.TAB_TIMELINE)
 
+    def _add_terrain_timeline_tab(self):
+        """Adds the interactive terrain-elevation evolution (Plotly slider) tab."""
+        from PyQt6.QtWebEngineWidgets import QWebEngineView
+        from PyQt6.QtCore import QUrl
+
+        terrain_timeline_html = self.image_paths.get(SimulationResultKeys.TERRAIN_TIMELINE_HTML)
+
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        if terrain_timeline_html and os.path.exists(terrain_timeline_html):
+            web_view = QWebEngineView()
+            web_view.setUrl(QUrl.fromLocalFile(terrain_timeline_html))
+            layout.addWidget(web_view)
+        else:
+            lbl = QLabel(SimulationResultsWindowConsts.LBL_TERRAIN_TIMELINE_NOT_AVAILABLE)
+            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            layout.addWidget(lbl)
+
+        self.tabs.addTab(container, SimulationResultsWindowConsts.TAB_TERRAIN_TIMELINE)
+
     def _add_analysis_tab(self):
         """Adds the scientific-analysis gallery tab."""
         from app.ui.widgets.visualization_tabs.analysis_gallery import AnalysisGalleryWidget
@@ -206,9 +231,9 @@ class SimulationResultsWindow(QMainWindow):
         plots = [
             ("Erosion / Deposition Map", self.image_paths.get(SimulationResultKeys.MASK_PLOT)),
             ("Onset and Peak of Landscape Change", self.image_paths.get(SimulationResultKeys.CHANGE_EVENTS_PLOT)),
-            ("Drainage Network", self.image_paths.get(SimulationResultKeys.DRAINAGE_NETWORK_PLOT)),
             ("Soil / Alluvium Thickness", self.image_paths.get(SimulationResultKeys.SOIL_THICKNESS_PLOT)),
             ("Sediment Budget Over Time", self.image_paths.get(SimulationResultKeys.FLUX_PLOT)),
+            ("Drainage Network", self.image_paths.get(SimulationResultKeys.DRAINAGE_NETWORK_PLOT)),
         ]
 
         gallery = AnalysisGalleryWidget(plots)

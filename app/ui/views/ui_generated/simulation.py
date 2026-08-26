@@ -76,7 +76,7 @@ class Ui_SimulationSetup(object):
         self.firstEffectThresholdLabel = QtWidgets.QLabel("First-Effect Threshold (m):")
         location_form.addRow(self.firstEffectThresholdLabel, self.firstEffectThresholdLineEdit)
 
-        self.componentsGroup = QtWidgets.QGroupBox("Simulation Components")
+        self.componentsGroup = QtWidgets.QGroupBox("Select earth surface processes")
         left_layout.addWidget(self.componentsGroup, 1)
 
         components_layout = QtWidgets.QVBoxLayout(self.componentsGroup)

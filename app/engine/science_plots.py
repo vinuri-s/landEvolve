@@ -15,6 +15,7 @@ raising, so a partial result set never breaks a simulation run.
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import LightSource
+from scipy import ndimage
 
 
 def _hillshade_underlay(ax, elevation, shape):
@@ -28,6 +29,22 @@ def _hillshade_underlay(ax, elevation, shape):
     hs = ls.hillshade(np.nan_to_num(z, nan=np.nanmin(z) if np.isfinite(z).any() else 0.0),
                        vert_exag=2.0)
     ax.imshow(hs, cmap="gray")
+
+
+def _dilate_mask(mask):
+    """8-connected 1-cell dilation of a boolean 2D mask (grows it by one ring
+    of neighbors). Used to expand a boundary mask to also cover the cells
+    touching it, without pulling in scipy for a single grow-by-one op."""
+    out = mask.copy()
+    out[1:, :] |= mask[:-1, :]
+    out[:-1, :] |= mask[1:, :]
+    out[:, 1:] |= mask[:, :-1]
+    out[:, :-1] |= mask[:, 1:]
+    out[1:, 1:] |= mask[:-1, :-1]
+    out[1:, :-1] |= mask[:-1, 1:]
+    out[:-1, 1:] |= mask[1:, :-1]
+    out[:-1, :-1] |= mask[1:, 1:]
+    return out
 
 
 def _titled(ax, main, sub):
@@ -159,6 +176,26 @@ def plot_drainage_network(grid, output_path, channel_percentile=98.0, reference_
     (a real channel is exactly "a cell whose drainage area exceeds some
     threshold"), not an arbitrary cosmetic cutoff.
 
+    Nodes immediately adjacent to the closed/no-data boundary get the same
+    treatment for a different reason: the flow router can resolve directions
+    right at the domain edge inconsistently, giving that single-cell fringe
+    an artificially inflated drainage area that has nothing to do with a real
+    channel (verified on a real run: this ring alone accounted for roughly
+    half the cells that would otherwise rank in the top 2% by area) -- left
+    in, it reads as long fake "channels" hugging the domain perimeter and
+    crowds out the real, smaller interior network. So that ring is excluded
+    the same way the boundary itself already was.
+
+    After thresholding, the surviving cells also get a shape-based cleanup:
+    on this D4/D8-routed raster, a real channel is at most ~1-2 cells wide by
+    construction (each cell has exactly one downstream receiver), so any
+    patch of above-threshold cells that's wide enough to contain a 3x3 block
+    can't be a channel -- it's a flat/tied patch that happened to cross the
+    area threshold together. Morphological opening isolates exactly those
+    wide interiors so they can be subtracted out, and what's left of any
+    remaining speckle (<4 connected cells) is dropped too, leaving the
+    genuinely thin, connected channel network.
+
     If reference_tif is supplied, the full (untrimmed, un-logged) drainage-
     area field is also saved as a GeoTIFF alongside the PNG, for GIS use.
     """
@@ -179,15 +216,37 @@ def plot_drainage_network(grid, output_path, channel_percentile=98.0, reference_
         cell_area = float(grid.dx) * float(grid.dy)
         logarea = np.log10(area + cell_area)
 
-        # Blank out boundary nodes so the closed perimeter doesn't dominate.
-        boundary = (grid.status_at_node != grid.BC_NODE_IS_CORE).reshape(grid.shape)
+        # Blank out boundary nodes (closed perimeter) and the ring of cells
+        # touching them (see docstring), so neither dominates the "channel"
+        # selection below.
+        # np.array(..., copy=True) strips Landlab's status_at_node subclass
+        # (which ties __setitem__ back to the live grid) down to a plain
+        # ndarray -- _dilate_mask mutates in place and would otherwise crash
+        # trying to update grid state through a reshaped view of it.
+        boundary = np.array(grid.status_at_node != grid.BC_NODE_IS_CORE).reshape(grid.shape)
+        boundary_ring = _dilate_mask(boundary)
         logarea = logarea.astype(float)
-        logarea[boundary] = np.nan
+        logarea[boundary_ring] = np.nan
 
         finite = logarea[np.isfinite(logarea)]
         if finite.size:
             threshold = float(np.percentile(finite, channel_percentile))
-            logarea[logarea < threshold] = np.nan
+            channel_mask = np.isfinite(logarea) & (logarea >= threshold)
+
+            # Shape-based cleanup (see docstring): strip wide/blobby interiors,
+            # then drop leftover tiny speckle, so only thin connected channel
+            # segments remain.
+            struct = np.ones((3, 3), dtype=bool)
+            blobby = ndimage.binary_opening(channel_mask, structure=struct)
+            channel_mask &= ~blobby
+
+            labeled, n_labels = ndimage.label(channel_mask, structure=struct)
+            if n_labels:
+                sizes = ndimage.sum(channel_mask, labeled, index=np.arange(1, n_labels + 1))
+                small_labels = np.nonzero(sizes < 4)[0] + 1
+                channel_mask &= ~np.isin(labeled, small_labels)
+
+            logarea[~channel_mask] = np.nan
 
         fig, ax = plt.subplots(figsize=(12, 8))
         _hillshade_underlay(ax, grid.at_node["topographic__elevation"], grid.shape)
@@ -327,33 +386,22 @@ def plot_change_events_map(snapshots, times, shape, output_path,
                        alpha=0.6 if draped else 1.0)
         fig.colorbar(im, ax=ax, label="Cumulative change (m)")
 
-        # Place each label toward the grid interior so markers near the right
-        # edge don't push their text over the colorbar.
-        def label_offset(col, dy):
-            if col > shape[1] * 0.7:           # near right edge -> label to the left
-                return (-8, dy), "right"
-            return (8, dy), "left"
-
-        # First change (cyan circle) and biggest change (gold star).
+        # First change (cyan circle) and biggest change (gold star). No inline
+        # text labels on the map itself -- the legend below (outside the map)
+        # already names the two symbols, and the caption gives the full
+        # time/magnitude/location detail for each.
         ax.scatter([first["col"]], [first["row"]], s=240, facecolors="none",
                    edgecolors="#00b8d4", linewidths=2.5, zorder=5, label="First change")
-        off, ha = label_offset(first["col"], 8)
-        ax.annotate("1st change", (first["col"], first["row"]),
-                    textcoords="offset points", xytext=off, ha=ha,
-                    color="#1a1a1a", fontsize=10, fontweight="bold",
-                    bbox=dict(boxstyle="round,pad=0.2", facecolor="white",
-                              edgecolor="none", alpha=0.7))
         ax.scatter([biggest["col"]], [biggest["row"]], s=300, marker="*",
                    facecolors="#ffd400", edgecolors="#1a1a1a", linewidths=1.5, zorder=6,
                    label="Biggest change")
-        off, ha = label_offset(biggest["col"], -14)
-        ax.annotate("max change", (biggest["col"], biggest["row"]),
-                    textcoords="offset points", xytext=off, ha=ha,
-                    color="#1a1a1a", fontsize=10, fontweight="bold",
-                    bbox=dict(boxstyle="round,pad=0.2", facecolor="white",
-                              edgecolor="none", alpha=0.7))
-        # Legend explaining the two marker symbols, at the bottom of the plot.
-        ax.legend(loc="lower center", ncol=2, framealpha=0.9, fontsize=10)
+        # Legend explaining the two marker symbols, placed outside the map
+        # itself (below the axes, above the caption) so it never sits on top
+        # of the terrain/change data -- only the marker symbols (circle,
+        # star) appear inside the diagram, at their actual locations.
+        handles, labels = ax.get_legend_handles_labels()
+        fig.legend(handles, labels, loc="lower center", bbox_to_anchor=(0.5, 0.095),
+                  ncol=2, framealpha=0.9, fontsize=10)
 
         def verb(ev):
             return "erosion" if ev["value"] < 0 else "deposition"
@@ -372,7 +420,7 @@ def plot_change_events_map(snapshots, times, shape, output_path,
             f"{crs_note}"
         )
         fig.text(0.5, 0.01, caption, ha="center", va="bottom", fontsize=10)
-        fig.subplots_adjust(bottom=0.16)
+        fig.subplots_adjust(bottom=0.26)
         plt.savefig(output_path)
         plt.close()
         return output_path
