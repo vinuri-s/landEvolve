@@ -11,6 +11,7 @@ from app.ui.widgets.component_table import ComponentTableManager
 from app.ui.window_manager import WindowManager
 from app.ui.validators.simulation_validator import SimulationValidator
 from app.core.constants import SimulationDefaults, ComponentDataKeys
+from app.core.config import Config
 
 class SimulationWindow(QMainWindow):
     """
@@ -46,11 +47,13 @@ class SimulationWindow(QMainWindow):
 
     def closeEvent(self, event):
         WindowManager.save_window_state(self)
+        self.component_controller.close()
         super().closeEvent(event)
 
     def setup_connections(self):
         self.ui.addComponentBtn.clicked.connect(self.add_component)
         self.ui.inputDemBtn.clicked.connect(self._on_browse_input_dem)
+        self.ui.outputFolderBtn.clicked.connect(self._on_browse_output_folder)
         self.ui.viewSimulationBtn.clicked.connect(self.on_view_simulation_clicked)
         self.ui.showDemBoundaryToggle.toggled.connect(self._on_toggle_dem_boundary)
         self.ui.webView.loadFinished.connect(self._on_map_load_finished)
@@ -93,6 +96,13 @@ class SimulationWindow(QMainWindow):
     def load_initial_data(self):
         self.ui.simulationPeriodLineEdit.setText(str(SimulationDefaults.PERIOD))
         self.ui.timeStepLineEdit.setText(str(SimulationDefaults.TIME_STEP))
+
+        # Pre-fill with the last folder the user chose, else the app's own
+        # default outputs location -- always a valid starting point, but
+        # Browse lets them redirect this run's (and future runs') outputs
+        # anywhere they like.
+        default_output_dir = WindowManager.load_last_output_dir() or str(Config.OUTPUTS_DIR)
+        self.ui.outputFolderLineEdit.setText(default_output_dir)
 
         # Hide the feature shapefile uploader initially
         self._toggle_feature_tracking(False)
@@ -165,6 +175,22 @@ class SimulationWindow(QMainWindow):
         self.input_tiff_path = file_path
         self.ui.inputDemLineEdit.setText(file_path)
         self._load_input_preview()
+
+    def _on_browse_output_folder(self):
+        """Lets the user redirect where this (and future) simulations write
+        their results, instead of always using the app's default outputs
+        folder. The choice is remembered for next time via WindowManager."""
+        from PyQt6.QtWidgets import QFileDialog
+        folder = QFileDialog.getExistingDirectory(
+            self,
+            "Select Output Folder",
+            self.ui.outputFolderLineEdit.text() or str(Config.OUTPUTS_DIR),
+        )
+        if not folder:
+            return
+
+        self.ui.outputFolderLineEdit.setText(folder)
+        WindowManager.save_last_output_dir(folder)
 
     def _load_input_preview(self):
         """Renders the selected DEM: details panel + map preview centred on it."""
@@ -281,12 +307,14 @@ class SimulationWindow(QMainWindow):
             
     def collect_simulation_params(self):
         """Builds the final payload dictionary to pass to the Simulation Engine."""
+        output_dir = self.ui.outputFolderLineEdit.text()
         return SimulationValidator.validate_and_collect(
             parent_window=self,
             input_tiff_path=self.input_tiff_path,
+            output_dir=output_dir,
             period_text=self.ui.simulationPeriodLineEdit.text(),
             time_step_text=self.ui.timeStepLineEdit.text(),
-            simulation_number=self.controller.get_next_simulation_number(),
+            simulation_number=self.controller.get_next_simulation_number(output_dir),
             components_list=self.table_manager.get_components(),
             track_feature=self.ui.trackFeatureCheckBox.isChecked(),
             feature_shapefile=self.ui.featureShapefileLineEdit.text(),

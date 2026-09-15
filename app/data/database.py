@@ -23,8 +23,14 @@ class Database:
         
     def create_tables(self):
         """Create tables if they don't exist"""
-        # Import models to ensure they are registered with Base.metadata
-        # We do this inside the method to avoid circular imports at module level if models import this file
+        # Import models to ensure they are registered with Base.metadata before
+        # create_all runs -- without this, create_all is a silent no-op unless
+        # something else already imported app.data.models first (previously
+        # harmless because the DB file shipped pre-populated with these tables
+        # already; now that it's created fresh at first launch, this import is
+        # load-bearing). Done inside the method, not at module level, to avoid
+        # a circular import if models.py ever imports this file.
+        from app.data import models  # noqa: F401
         Base.metadata.create_all(bind=self.engine)
 
 # Create a global instance

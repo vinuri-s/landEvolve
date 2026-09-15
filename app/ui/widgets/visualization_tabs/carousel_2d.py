@@ -14,11 +14,7 @@ class Carousel2DWidget(QWidget):
         super().__init__(parent)
         self.image_paths = image_paths
         self.controller = controller
-        
-        self.current_2d_key = None
-        self.current_2d_title = None
-        self.current_active_btn = None
-        
+
         self.setup_ui()
         
     def setup_ui(self):
@@ -183,10 +179,6 @@ class Carousel2DWidget(QWidget):
         # Find path
         image_path = self.image_paths.get(result_key) # Changed path to image_path, key to result_key
         self.lbl_image.load(image_path)
-
-        self.current_2d_key = result_key # Changed key to result_key
-        self.current_2d_title = title
-        self.current_active_btn = active_btn
 
     def show_input(self):
         self._update_2d_display(SimulationResultKeys.INITIAL_PLOT, Carousel2DWidgetConsts.BTN_INPUT, self.btn_input)

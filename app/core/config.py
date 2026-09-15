@@ -28,14 +28,17 @@ class Config:
 
     @classmethod
     def init_directories(cls):
-        """Creates necessary directories for writable data."""
+        """Creates necessary directories for writable data.
+
+        The DB itself is never bundled or copied in from elsewhere: it is not
+        committed to git, and main.py always calls db_manager.create_tables()
+        + seed_database() right after this, which creates the schema and
+        populates the reference tables from app/data/seed.py if the file
+        here doesn't exist yet or is empty. That keeps the shipped reference
+        data (components, lithologies, vegetation classes) tied to one
+        source of truth instead of a hand-maintained binary that can drift
+        from it.
+        """
         cls.DB_FILE.parent.mkdir(parents=True, exist_ok=True)
         cls.OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
         cls.LOGS_DIR.mkdir(parents=True, exist_ok=True)
-        
-        # Bootstrap DB if needed: If the bundled DB exists but the writable one doesn't, copy it.
-        if getattr(sys, 'frozen', False):
-            bundled_db = cls._BUNDLED_ROOT / "app" / "data" / "db" / "app_data.db"
-            if bundled_db.exists() and not cls.DB_FILE.exists():
-                import shutil
-                shutil.copy2(bundled_db, cls.DB_FILE)

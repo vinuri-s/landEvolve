@@ -7,6 +7,12 @@ class ComponentController:
     def __init__(self):
         self.service = ComponentService()
 
+    def close(self):
+        """Releases the underlying DB session. Call when the owning
+        window/dialog is done with this controller (a new one is created per
+        dialog open, so leaving this uncalled leaks one session per open)."""
+        self.service.close()
+
     def load_components(self):
         return self.service.get_all_components()
 

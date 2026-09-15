@@ -1,4 +1,4 @@
-from app.data.models import Component, ComponentParam
+from app.data.models import Component
 from app.data.repositories.base_repository import BaseRepository
 
 class ComponentRepository(BaseRepository):
@@ -26,13 +26,3 @@ class ComponentRepository(BaseRepository):
             if comp_defaults:
                 defaults[comp.name] = comp_defaults
         return defaults
-
-class ComponentParamRepository(BaseRepository):
-    def get_all(self):
-        return self.session.query(ComponentParam).all()
-
-    def get_by_id(self, param_id):
-        return self.session.query(ComponentParam).filter(ComponentParam.id == param_id).first()
-
-    def get_by_component_id(self, component_id):
-        return self.session.query(ComponentParam).filter(ComponentParam.component_id == component_id).all()

@@ -57,16 +57,17 @@ def build_app():
     #
     # Only READ-ONLY assets the app loads at runtime are bundled:
     #   - resources/about.jpg : home-screen image
-    #   - app/data/db/app_data.db : seeded SQLite DB, copied to a writable
-    #                         location on first launch (see Config.init_directories)
-    # Input DEMs are browsed from the user's filesystem at run time, so they are
-    # NOT bundled. NOT bundled either: resources/outputs (writable,
+    # The SQLite DB is NOT bundled: Config.init_directories() + main.py's
+    # db_manager.create_tables() + seed_database() create and populate it
+    # fresh at first launch from app/data/seed.py, so there's no binary DB
+    # here that needs to be kept in sync with that source. Input DEMs are
+    # browsed from the user's filesystem at run time, so they are NOT
+    # bundled. NOT bundled either: resources/outputs (writable,
     # runtime-generated), the empty app/resources dir, dev docs, and the
     # transient SQLite -wal/-shm files.
     sep = os.pathsep
     add_data = [
         f"--add-data=resources/about.jpg{sep}resources",
-        f"--add-data=app/data/db/app_data.db{sep}app/data/db",
     ]
 
     args = [
@@ -102,7 +103,7 @@ def build_app():
             print("NOTE: On Windows, run the .exe inside the folder.")
             
     except subprocess.CalledProcessError as e:
-        print("\nError during build process.")
+        print(f"\nError during build process: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":

@@ -29,8 +29,13 @@ resources/outputs/
 *.tif
 !resources/inputs/**/*.tif
 
-# The seeded app_data.db IS committed (bundled into the build). Only the
-# transient SQLite WAL sidecars are ignored.
+# The SQLite DB is generated fresh at first launch (main.py calls
+# db_manager.create_tables() + seed_database(), seeded from app/data/seed.py)
+# instead of being committed as a binary -- that binary previously drifted
+# out of sync with seed.py whenever the app was used locally (e.g. editing
+# vegetation classes writes straight back to this file), with no way to spot
+# the change in review beyond an opaque binary diff.
+app/data/db/*.db
 app/data/db/*.db-shm
 app/data/db/*.db-wal
 

@@ -10,6 +10,13 @@ class VegetationController:
     def __init__(self):
         self.service = VegetationService()
 
+    def close(self):
+        """Releases the underlying DB session. Call when the owning
+        widget/dialog is done with this controller (a new one is created per
+        widget instance, so leaving this uncalled leaks one session per
+        open)."""
+        self.service.close()
+
     def get_classes(self):
         return self.service.get_all_classes()
 

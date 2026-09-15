@@ -100,13 +100,6 @@ def plot_sediment_flux(snapshots, times, cell_area, output_path, uplift_removed=
 # -----------------------------------------------------------------------------
 # Grid-based plots (need the live landlab grid + drainage network)
 # -----------------------------------------------------------------------------
-def _has_flow_fields(grid):
-    return (
-        "drainage_area" in grid.at_node
-        and "flow__receiver_node" in grid.at_node
-    )
-
-
 def refresh_drainage(grid, flow_director="FlowDirectorSteepest"):
     """Re-route flow on the *current* grid topography so drainage_area and the
     receiver network reflect the final landscape, independent of whatever

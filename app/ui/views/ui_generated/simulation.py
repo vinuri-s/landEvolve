@@ -40,6 +40,21 @@ class Ui_SimulationSetup(object):
         input_dem_layout.addWidget(self.inputDemBtn)
         location_form.addRow(self.inputDemLabel, self.inputDemWidget)
 
+        # Output folder: where this simulation's results are written. Pre-filled
+        # with the app's default outputs location (or the last folder the user
+        # picked), overridable via Browse.
+        self.outputFolderLabel = QtWidgets.QLabel("Output Folder:")
+        self.outputFolderWidget = QtWidgets.QWidget()
+        output_folder_layout = QtWidgets.QHBoxLayout(self.outputFolderWidget)
+        output_folder_layout.setContentsMargins(0, 0, 0, 0)
+        self.outputFolderLineEdit = QtWidgets.QLineEdit()
+        self.outputFolderLineEdit.setPlaceholderText("Select a folder to store simulation outputs")
+        self.outputFolderLineEdit.setReadOnly(True)
+        self.outputFolderBtn = QtWidgets.QPushButton("Browse...")
+        output_folder_layout.addWidget(self.outputFolderLineEdit)
+        output_folder_layout.addWidget(self.outputFolderBtn)
+        location_form.addRow(self.outputFolderLabel, self.outputFolderWidget)
+
         self.periodLabel = QtWidgets.QLabel("Total Duration:")
         self.simulationPeriodLineEdit = QtWidgets.QLineEdit()
         location_form.addRow(self.periodLabel, self.simulationPeriodLineEdit)

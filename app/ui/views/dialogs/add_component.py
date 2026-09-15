@@ -38,6 +38,18 @@ class AddComponentDlg(QDialog):
     def setup_connections(self):
         self.ui.addBtn.clicked.connect(self.add_component)
         self.ui.cancelBtn.clicked.connect(self.reject)
+        # `finished` fires on accept/reject/close alike (unlike closeEvent,
+        # which accept()/reject() don't trigger), so this is the one place
+        # that reliably runs to release the DB session(s) this dialog opened
+        # -- one for self.controller, and (when the component is Vegetation
+        # or Litho) one more for the embedded config widget's own controller.
+        self.finished.connect(self._release_controllers)
+
+    def _release_controllers(self):
+        self.controller.close()
+        nested_controller = getattr(self.dynamic_form, "controller", None)
+        if nested_controller is not None:
+            nested_controller.close()
 
     def add_component(self):
         form_data = {}

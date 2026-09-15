@@ -12,8 +12,8 @@ class SimulationController:
     def run_simulation(self, sim_params, callback):
         return self.sim_service.run_simulation(sim_params, callback)
 
-    def get_next_simulation_number(self):
-        return self.sim_service.get_next_simulation_number()
+    def get_next_simulation_number(self, output_base_dir=None):
+        return self.sim_service.get_next_simulation_number(output_base_dir)
 
     def load_shapefiles_as_geojson(self, file_paths: list):
         return ShapefileService.load_shapefiles_as_geojson(file_paths)

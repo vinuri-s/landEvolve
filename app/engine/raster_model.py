@@ -3,7 +3,6 @@ import numpy as np
 import rasterio
 from rasterio.warp import calculate_default_transform, reproject, Resampling
 from rasterio.crs import CRS
-import os
 
 
 def _utm_epsg_for(lon, lat):
@@ -13,11 +12,9 @@ def _utm_epsg_for(lon, lat):
 
 
 class RasterModel:
-    def __init__(self, geo_tiff_file=None, geology_file=None, shape=None, xy_spacing=None,
-                 xy_of_lower_left=(0., 0.)):
+    def __init__(self, geo_tiff_file=None, geology_file=None, shape=None, xy_spacing=None):
         if geo_tiff_file:
             self.geo_tiff_file = geo_tiff_file
-            self.filename_without_ext = os.path.splitext(os.path.basename(geo_tiff_file))[0]
 
             # Reproject target: only set when the source DEM is geographic (degrees).
             # The simulation physics (slopes, areas, SPACE) is in METRES, so a

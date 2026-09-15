@@ -18,7 +18,6 @@ class ProgressTrackerWidget(QWidget):
         self.start_time = None
         self.peak_ram = 0
         self.final_ram = 0
-        self.simulation_steps = 0
         self.ram_readings = []
         self.log_messages = []
         
@@ -63,10 +62,9 @@ class ProgressTrackerWidget(QWidget):
         self.start_time = datetime.datetime.now()
         self.peak_ram = 0
         self.final_ram = 0
-        self.simulation_steps = 0
         self.ram_readings = []
         self.log_messages = []
-        
+
         self.elapsed_timer.start()
         self.stats_timer.start(1000)
 
@@ -90,10 +88,7 @@ class ProgressTrackerWidget(QWidget):
         """Receives updates from the worker, updates UI, and tracks logs."""
         self.progress_bar.setValue(percent)
         self.lbl_status.setText(message)
-        
-        if "Step" in message:
-            self.simulation_steps += 1
-            
+
         timestamp = datetime.datetime.now().strftime("%H:%M:%S")
         self.log_messages.append(f"[{timestamp}] {message}")
 

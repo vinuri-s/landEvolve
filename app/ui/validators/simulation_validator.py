@@ -13,6 +13,7 @@ class SimulationValidator:
     @staticmethod
     def validate_and_collect(parent_window,
                            input_tiff_path,
+                           output_dir,
                            period_text: str,
                            time_step_text: str,
                            simulation_number: int,
@@ -34,7 +35,22 @@ class SimulationValidator:
             return None
 
         sim_obj[SimulationParamKeys.INPUT_TIFF_PATH] = input_tiff_path
-        
+
+        # 1b. Validate the output folder the user picked (pre-filled with the
+        # app's default, but the user may have browsed to a different one).
+        if not output_dir:
+            QMessageBox.warning(parent_window, "Missing Data", "Please select an output folder.")
+            return None
+
+        try:
+            os.makedirs(output_dir, exist_ok=True)
+        except OSError as e:
+            QMessageBox.warning(parent_window, "Invalid Output Folder",
+                                f"Couldn't use the selected output folder:\n{e}")
+            return None
+
+        sim_obj[SimulationParamKeys.OUTPUT_BASE_DIR] = output_dir
+
         # 2. Validate Time Parameters
         try:
             period = float(period_text)

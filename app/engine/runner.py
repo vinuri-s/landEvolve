@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import numpy as np
 
 from app.engine.raster_model import RasterModel
@@ -100,7 +102,11 @@ class SimulationRunner:
         self.progress_callback = progress_callback
 
         self.sim_id = sim_params.get('simulation_number', 0)
-        self.output_dir = Config.OUTPUTS_DIR / f"simulation_{self.sim_id}"
+        # User-selectable per run (Simulation Setup's Output Folder field);
+        # falls back to the app's own default outputs location if the caller
+        # didn't set one (e.g. an older/partial sim_params payload).
+        output_base_dir = sim_params.get('output_base_dir') or Config.OUTPUTS_DIR
+        self.output_dir = Path(output_base_dir) / f"simulation_{self.sim_id}"
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
         # Persist the run narrative to engine.log, tagged with the simulation id

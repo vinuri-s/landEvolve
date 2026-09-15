@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from app.core.config import Config
 from app.engine.runner import run_simulation
 from app.data.database import db_manager
@@ -15,12 +16,17 @@ class SimulationService:
     It prepares the data (fetching configuration from DB, resolving parameters)
     and then triggers the simulation engine.
     """
-    def get_next_simulation_number(self):
-        output_dir = Config.OUTPUTS_DIR
+    def get_next_simulation_number(self, output_base_dir=None):
+        """Scans `output_base_dir` (defaulting to the app's own outputs
+        folder) for existing `simulation_N` subfolders and returns the next
+        free N. Must be scoped to the folder the run will actually be
+        written to -- users can pick a different output folder per run, and
+        each folder numbers its own runs independently."""
+        output_dir = Path(output_base_dir) if output_base_dir else Config.OUTPUTS_DIR
         if not output_dir.exists():
             return 1
-        
-        existing = [d for d in os.listdir(output_dir) 
+
+        existing = [d for d in os.listdir(output_dir)
                    if (output_dir / d).is_dir() and d.startswith("simulation_")]
         numbers = []
         for d in existing:
@@ -53,8 +59,12 @@ class SimulationService:
             # which must stay database-isolated, never touches the DB itself.
             vegetation_classes = VegetationService(session).get_classes_map()
         except Exception as e:
+            # Each of erodibility_map/defaults_map/vegetation_classes already
+            # defaults to {} above and is only overwritten once its own fetch
+            # succeeds, so on a partial failure (e.g. vegetation_classes'
+            # fetch throws) whichever ones already succeeded keep their real
+            # values here instead of being wiped back to {}.
             logger.error(f"Failed to fetch data from DB: {e}")
-            erodibility_map = {}
         finally:
             session.close()
 
@@ -164,7 +174,7 @@ class SimulationService:
                     data[data == src.nodata] = np.nan
 
                 valid = data[~np.isnan(data)]
-                res_x, res_y = src.res
+                res_x, _ = src.res  # DEMs are square-pixel; only res_x is reported
 
                 # Prefer a compact "EPSG:xxxx" code. Some DEMs only embed a full
                 # WKT projection string; resolve it to its EPSG code, else fall

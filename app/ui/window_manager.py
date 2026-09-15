@@ -40,3 +40,18 @@ class WindowManager:
             window.restoreGeometry(geometry)
 
         window.showMaximized()
+
+    @staticmethod
+    def save_last_output_dir(path: str):
+        """Remembers the folder the user last chose for simulation outputs,
+        so the next Simulation Setup screen pre-fills it instead of always
+        resetting to the app's default outputs location."""
+        settings = QSettings("LandEvolve", "LandEvolveApp")
+        settings.setValue("Simulation/LastOutputDir", path)
+
+    @staticmethod
+    def load_last_output_dir() -> str | None:
+        """Returns the last folder the user chose for simulation outputs, or
+        None if they've never changed it from the default."""
+        settings = QSettings("LandEvolve", "LandEvolveApp")
+        return settings.value("Simulation/LastOutputDir") or None

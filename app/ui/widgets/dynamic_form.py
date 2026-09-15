@@ -58,11 +58,14 @@ class LithologyPickerWidget(QWidget):
             self._on_combo_changed(0)
 
     def _load_lithologies(self):
+        from app.controllers.lithology_controller import LithologyController
+        controller = LithologyController()
         try:
-            from app.controllers.lithology_controller import LithologyController
-            self._lithologies = LithologyController().get_lithologies()
+            self._lithologies = controller.get_lithologies()
         except Exception:
             self._lithologies = []
+        finally:
+            controller.close()
 
     def _on_combo_changed(self, index):
         is_custom = (index == 0)

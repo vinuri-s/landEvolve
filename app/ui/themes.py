@@ -5,11 +5,7 @@ class ThemeManager:
     LIGHT = "light"
     DARK = "dark"
 
-    def __init__(self):
-        self.current_theme = self.LIGHT
-
     def set_theme(self, theme_name):
-        self.current_theme = theme_name
         app = QApplication.instance()
 
         if theme_name == self.DARK:

@@ -32,6 +32,7 @@ class SimulationParamKeys:
     that is sent from the UI layer to the Engine/Simulation layer.
     """
     INPUT_TIFF_PATH = "input_tiff_path"
+    OUTPUT_BASE_DIR = "output_base_dir"
     SIMULATION_PERIOD = "simulation_period"
     TIME_STEP = "time_step"
     SIMULATION_NUMBER = "simulation_number"
@@ -52,8 +53,6 @@ class SimulationResultKeys:
     MASK_PLOT = "mask_plot"
     TIMELINE_HTML = "timeline_html"
     TERRAIN_TIMELINE_HTML = "terrain_timeline_html"
-    DEM_SNAPSHOTS_DIR = "dem_snapshots_dir"
-    DIFF_SNAPSHOTS_DIR = "diff_snapshots_dir"
     FLUX_PLOT = "flux_plot"
     DRAINAGE_NETWORK_PLOT = "drainage_network_plot"
     SOIL_THICKNESS_PLOT = "soil_thickness_plot"
@@ -188,7 +187,6 @@ class DynamicFormConsts:
     FIELD_FINAL_PRECIPITATION = "final_precipitation"
     FIELD_VARIABILITY = "variability"
     FIELD_RANDOM_SEED = "random_seed"
-    PRECIP_MODE_UNIFORM = "Uniform"
     PRECIP_MODE_SPATIAL = "Spatial"
     PRECIP_MODE_STOCHASTIC = "Stochastic"
     PRECIP_MODE_TREND = "Trend"
@@ -197,7 +195,6 @@ class DynamicFormConsts:
     FIELD_TECT_MODE = "mode"
     FIELD_UPLIFT_RATE = "uplift_rate"
     FIELD_UPLIFT_RASTER = "uplift_raster"
-    TECT_MODE_UNIFORM = "Uniform"
     TECT_MODE_SPATIAL = "Spatial"
 
 

@@ -205,16 +205,17 @@ pip install -r requirements.txt
 python main.py
 ```
 
-> On first launch the app **creates and seeds its SQLite database automatically**: `Database.create_tables()` builds the schema and `app/data/seed.py` populates the reference data (components, lithologies, vegetation classes) if the tables are empty. Input DEMs are not seeded — they are browsed from the user's filesystem at run time. A pre-seeded `app/data/db/app_data.db` is **committed to the repo** (so the build can bundle it and CI needs no seeding step); only the transient SQLite `-wal`/`-shm` sidecars are git-ignored. Seeding remains idempotent — your edits and runs are never overwritten, and the seed source in `app/data/seed.py` stays the source of truth.
+> On first launch the app **creates and seeds its SQLite database automatically**: `Database.create_tables()` builds the schema and `app/data/seed.py` populates the reference data (components, lithologies, vegetation classes) if the tables are empty. Input DEMs are not seeded — they are browsed from the user's filesystem at run time. `app/data/db/app_data.db` is git-ignored and never committed — it's generated fresh wherever the app runs (dev checkout or packaged build), so there's no binary file that can drift out of sync with `app/data/seed.py`. Seeding remains idempotent — your edits and runs are never overwritten, and the seed source in `app/data/seed.py` stays the source of truth.
 
 ## ▶️ Usage
 
 1. **Browse for an input DEM** (`Browse...`) in *Input Setup*. Once selected, the satellite *Location Preview* centres on the DEM and a labelled details line beneath the map shows its metadata — size, **resolution (m)**, CRS, and elevation range. The boundary toggle overlays the DEM's extent on the map.
-2. **Set the run length**: *Total Duration* (total time) and *Time Step* (`dt`).
-3. *(Optional)* Enable **Track Interested Landscape Feature** and supply a polygon shapefile to monitor a specific area over time. Optionally set the **First-Effect Threshold (m)** (default `0.01`) — the amount of geomorphic change at which the feature is reported as "first affected".
-4. **Add components**: click **+ Add Component**, pick a type from the list (each shown with its description), then fill in its parameters in the dialog that opens — e.g. `FlowAccumulatorComponent`, a SPACE eroder, `DepthDependentDiffuserComponent`, `PrecipitationComponent`, `VegetationComponent`, `LithoLayersComponent`. Added components appear in the table with their own **Edit**/**Remove**; the picker only offers types not already added. Precipitation requires a Flow Accumulator to take effect.
-5. **Run Simulation**. Progress is shown live; the UI stays responsive (runs on a background thread).
-6. **Explore results** across the tabs: 2D maps, 3D map, Erosion Timeline, Analysis plots, and Feature Tracking. Use *Show Statistics* for performance/diagnostic metrics.
+2. **Choose an output folder** in the same *Input Setup* section — pre-filled with the app's default outputs location (or whichever folder you picked last time), overridable via `Browse...`. Each run writes to a `simulation_<N>/` subfolder here, numbered independently per output folder.
+3. **Set the run length**: *Total Duration* (total time) and *Time Step* (`dt`).
+4. *(Optional)* Enable **Track Interested Landscape Feature** and supply a polygon shapefile to monitor a specific area over time. Optionally set the **First-Effect Threshold (m)** (default `0.01`) — the amount of geomorphic change at which the feature is reported as "first affected".
+5. **Add components**: click **+ Add Component**, pick a type from the list (each shown with its description), then fill in its parameters in the dialog that opens — e.g. `FlowAccumulatorComponent`, a SPACE eroder, `DepthDependentDiffuserComponent`, `PrecipitationComponent`, `VegetationComponent`, `LithoLayersComponent`. Added components appear in the table with their own **Edit**/**Remove**; the picker only offers types not already added. Precipitation requires a Flow Accumulator to take effect.
+6. **Run Simulation**. Progress is shown live; the UI stays responsive (runs on a background thread).
+7. **Explore results** across the tabs: 2D maps, 3D map, Erosion Timeline, Analysis plots, and Feature Tracking. Use *Show Statistics* for performance/diagnostic metrics.
 
 ### Tracking a Feature of Interest
 
@@ -232,7 +233,7 @@ If you care about a *specific* place in the DEM — a fan, terrace, archaeologic
 > **How "first effect" is determined:** each timestep the engine measures the **peak absolute geomorphic change** inside the feature mask (peak, so it catches the moment the erosion/deposition front first touches *any* edge), excludes tectonic uplift, and reports the earliest time that change crosses the threshold — linearly interpolated between steps for sub-timestep precision. See [First-Effect Detection](#b-the-simulation-engine) above for the rationale.
 
 ### Outputs
-Each run is written to `resources/outputs/simulation_<N>/`, including:
+Each run is written to `simulation_<N>/` inside the output folder chosen in *Input Setup* (`resources/outputs/` by default), including:
 *   `init.png`, `final.png`, `diff.png` — 2D elevation and difference maps
 *   `init.tif`, `final.tif`, `diff.tif` — GeoTIFFs of the initial/final surface and total change
 *   `mask.tif`, `drainage_network.tif`, `soil_thickness.tif` — GeoTIFFs of the erosion/deposition categories, drainage area, and soil depth, for use in GIS software
@@ -253,11 +254,8 @@ python build_executable.py
 > [!NOTE]
 > The build uses `build_executable.py` (the equivalent `LandEvolve.spec` is kept in sync for `pyinstaller LandEvolve.spec`). Only **read-only runtime assets** are bundled:
 > - `resources/about.jpg` — the home-screen image
-> - `app/data/db/app_data.db` — the seeded SQLite database, copied to a writable location on first launch
 >
-> Input DEMs are browsed from the user's own filesystem at run time, so they are **not** bundled. Also deliberately **not** bundled: `resources/outputs/` (writable, generated per run beside the executable), the empty `app/resources/` directory, dev docs, and the transient SQLite `-wal`/`-shm` files. This keeps the bundle lean and avoids shipping run artifacts.
->
-> If you regenerate the seeded `app_data.db`, checkpoint any pending WAL writes first (open and cleanly close the app once) so the bundled `.db` is complete without its `-wal` sidecar.
+> The SQLite database is **not** bundled either — the packaged app creates and seeds it the same way a dev checkout does, on first launch (see above), from `app/data/seed.py`. Input DEMs are browsed from the user's own filesystem at run time, so they are **not** bundled. Also deliberately **not** bundled: `resources/outputs/` (writable, generated per run beside the executable), the empty `app/resources/` directory, dev docs, and the transient SQLite `-wal`/`-shm` files. This keeps the bundle lean and avoids shipping run artifacts.
 
 ### 2. Run the Executable
 
