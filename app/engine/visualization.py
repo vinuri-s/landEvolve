@@ -415,17 +415,23 @@ def generate_sediment_timeline_html(snapshots, times, shape, output_html_path,
 
     snapshots: list of 1D/2D arrays = (elevation_at_step - initial_elevation).
     times:     list of simulation times matching each snapshot.
-    elevation: optional terrain (e.g. final elevation) to render as a
-        shaded-relief background underneath the semi-transparent change
-        heatmap, so change is read in its topographic context -- the same
-        drape-over-hillshade treatment the static Difference Map plot uses
-        (app/engine/io.py's plot_difference).
+    elevation: optional list of terrain elevation arrays, one per snapshot
+        (same length/order as `snapshots`), each rendered as a shaded-relief
+        background underneath that frame's semi-transparent change heatmap --
+        so the hillshade always matches the DEM at that exact timestep,
+        instead of a single static backdrop borrowed from one point in the
+        run (e.g. the final terrain) and shown behind every frame. Same
+        drape-over-hillshade treatment as the static Difference Map plot
+        (app/engine/io.py's plot_difference), just recomputed per frame.
     Returns the absolute-max change used for scaling, or False on failure.
     """
     try:
         if not snapshots or not times or len(snapshots) != len(times):
             print("Timeline: no snapshots to render.")
             return False
+        if elevation is not None and len(elevation) != len(snapshots):
+            print("Timeline: elevation snapshots length mismatch, skipping hillshade.")
+            elevation = None
 
         frames_data = []
         for snap in snapshots:
@@ -448,14 +454,22 @@ def generate_sediment_timeline_html(snapshots, times, shape, output_html_path,
             cmin, cmax = -scale, scale
 
         target_shape = frames_data[0].shape
-        hillshade_uri = None
+        nrows, ncols = target_shape
+
+        # One hillshade per frame, computed from that frame's own elevation
+        # snapshot, so early frames (near t=0) show the near-initial DEM and
+        # late frames show the evolved DEM -- not one terrain baked in for
+        # the whole animation.
+        hillshade_uris = None
         if elevation is not None:
             try:
-                hillshade_uri = _hillshade_data_uri(elevation, shape, target_shape)
+                hillshade_uris = [_hillshade_data_uri(elev, shape, target_shape)
+                                  for elev in elevation]
             except Exception as e:
                 print(f"Timeline hillshade skipped: {e}")
+                hillshade_uris = None
 
-        heatmap_opacity = 0.6 if hillshade_uri else 1.0
+        heatmap_opacity = 0.6 if hillshade_uris else 1.0
 
         def heatmap(z):
             return go.Heatmap(
@@ -469,10 +483,26 @@ def generate_sediment_timeline_html(snapshots, times, shape, output_html_path,
                 hovertemplate='col %{x}<br>row %{y}<br>Δ %{z:.3f} m<extra></extra>',
             )
 
-        frames = [
-            go.Frame(data=[heatmap(frames_data[i])], name=f"{i}")
-            for i in range(len(frames_data))
-        ]
+        # Sized/anchored to exactly cover the heatmap's cell-centered
+        # coordinate extent (-0.5 .. n-0.5) so it lines up pixel-for-pixel
+        # with the (semi-transparent) heatmap drawn on top of it.
+        def bg_image(uri):
+            return dict(
+                source=uri,
+                xref="x", yref="y",
+                x=-0.5, y=-0.5,
+                sizex=ncols, sizey=nrows,
+                xanchor="left", yanchor="top",
+                sizing="stretch",
+                layer="below",
+            )
+
+        frames = []
+        for i in range(len(frames_data)):
+            frame_kwargs = dict(data=[heatmap(frames_data[i])], name=f"{i}")
+            if hillshade_uris:
+                frame_kwargs["layout"] = go.Layout(images=[bg_image(hillshade_uris[i])])
+            frames.append(go.Frame(**frame_kwargs))
 
         fig = go.Figure(data=[heatmap(frames_data[0])], frames=frames)
 
@@ -488,28 +518,16 @@ def generate_sediment_timeline_html(snapshots, times, shape, output_html_path,
             for i in range(len(frames_data))
         ]
 
-        nrows, ncols = target_shape
         fig.update_layout(
             title="Cumulative Erosion / Deposition Over Time",
             autosize=True,
             yaxis=dict(autorange="reversed", scaleanchor="x",
                        constrain="domain", title="Northing (rows)"),
             xaxis=dict(constrain="domain", title="Easting (columns)"),
-            # Shaded-relief background so change is read in its topographic
-            # context, matching the static Difference Map's drape-over-
-            # hillshade treatment. Sized/anchored to exactly cover the
-            # heatmap's cell-centered coordinate extent (-0.5 .. n-0.5) so it
-            # lines up pixel-for-pixel with the (semi-transparent) heatmap
-            # drawn on top of it.
-            images=[dict(
-                source=hillshade_uri,
-                xref="x", yref="y",
-                x=-0.5, y=-0.5,
-                sizex=ncols, sizey=nrows,
-                xanchor="left", yanchor="top",
-                sizing="stretch",
-                layer="below",
-            )] if hillshade_uri else [],
+            # Initial/fallback background; each frame's own layout (set
+            # above) overrides this with that frame's own hillshade as the
+            # slider/play moves through the animation.
+            images=[bg_image(hillshade_uris[0])] if hillshade_uris else [],
             # Play/Pause sit at the bottom-left, on the slider's row, so they
             # never overlap the title.
             updatemenus=[dict(
@@ -551,6 +569,375 @@ def generate_sediment_timeline_html(snapshots, times, shape, output_html_path,
 
     except Exception as e:
         print(f"Error generating sediment timeline: {e}")
+        return False
+
+
+# -----------------------------
+# Terrain-elevation timeline animation (Plotly slider)
+# -----------------------------
+def generate_terrain_timeline_html(snapshots, times, shape, output_html_path, max_dim=400):
+    """Build an interactive, scrubbable heatmap animation of the actual
+    terrain elevation surface evolving over time.
+
+    Same slider/play interface as generate_sediment_timeline_html, but each
+    frame shows absolute elevation (earth-tone colorscale, shared across all
+    frames) instead of the cumulative erosion/deposition delta -- so the
+    landscape itself is seen rising and eroding, not just the change map.
+    Each frame is also draped over its own hillshade (computed from that
+    same frame's elevation, since here the frame data *is* the DEM), so the
+    relief shading always matches the terrain at that exact timestep.
+
+    snapshots: list of 1D/2D arrays = absolute elevation at each snapshot time.
+    times:     list of simulation times matching each snapshot.
+    Returns True on success, or False on failure.
+    """
+    try:
+        if not snapshots or not times or len(snapshots) != len(times):
+            print("Terrain timeline: no snapshots to render.")
+            return False
+
+        frames_data = []
+        for snap in snapshots:
+            arr = np.asarray(snap, dtype=float).reshape(shape)
+            # Downsample large grids so the HTML stays light.
+            if arr.shape[0] > max_dim or arr.shape[1] > max_dim:
+                sx = max(1, arr.shape[0] // max_dim)
+                sy = max(1, arr.shape[1] // max_dim)
+                arr = arr[::sx, ::sy]
+            frames_data.append(arr)
+
+        # Shared elevation range across the whole run so colors are
+        # comparable frame-to-frame (same reasoning as the sediment
+        # timeline's shared change scale).
+        all_vals = np.concatenate([f[~np.isnan(f)].ravel() for f in frames_data])
+        if all_vals.size:
+            zmin = float(np.nanmin(all_vals))
+            zmax = float(np.nanmax(all_vals))
+        else:
+            zmin, zmax = 0.0, 1.0
+        if zmin == zmax:
+            zmax = zmin + 1.0
+
+        target_shape = frames_data[0].shape
+        nrows, ncols = target_shape
+
+        # One hillshade per frame, computed directly from that frame's own
+        # (already-downsampled) elevation array -- shape == target_shape so
+        # _hillshade_data_uri's internal downsample is a no-op and the
+        # shading lines up pixel-for-pixel with the elevation heatmap on top
+        # of it.
+        hillshade_uris = None
+        try:
+            hillshade_uris = [_hillshade_data_uri(arr, target_shape, target_shape)
+                              for arr in frames_data]
+        except Exception as e:
+            print(f"Terrain timeline hillshade skipped: {e}")
+            hillshade_uris = None
+
+        heatmap_opacity = 0.6 if hillshade_uris else 1.0
+
+        def heatmap(z):
+            return go.Heatmap(
+                z=z,
+                zmin=zmin,
+                zmax=zmax,
+                colorscale=_EARTH_COLORSCALE,
+                zsmooth='best',
+                opacity=heatmap_opacity,
+                colorbar=dict(title='Elevation (m)'),
+                hovertemplate='col %{x}<br>row %{y}<br>Elevation %{z:.3f} m<extra></extra>',
+            )
+
+        def bg_image(uri):
+            return dict(
+                source=uri,
+                xref="x", yref="y",
+                x=-0.5, y=-0.5,
+                sizex=ncols, sizey=nrows,
+                xanchor="left", yanchor="top",
+                sizing="stretch",
+                layer="below",
+            )
+
+        frames = []
+        for i in range(len(frames_data)):
+            frame_kwargs = dict(data=[heatmap(frames_data[i])], name=f"{i}")
+            if hillshade_uris:
+                frame_kwargs["layout"] = go.Layout(images=[bg_image(hillshade_uris[i])])
+            frames.append(go.Frame(**frame_kwargs))
+
+        fig = go.Figure(data=[heatmap(frames_data[0])], frames=frames)
+
+        slider_steps = [
+            dict(
+                method="animate",
+                args=[[f"{i}"],
+                      dict(mode="immediate",
+                           frame=dict(duration=0, redraw=True),
+                           transition=dict(duration=0))],
+                label=f"{times[i]:.0f}",
+            )
+            for i in range(len(frames_data))
+        ]
+
+        fig.update_layout(
+            title="Terrain Elevation Over Time",
+            autosize=True,
+            yaxis=dict(autorange="reversed", scaleanchor="x",
+                       constrain="domain", title="Northing (rows)"),
+            xaxis=dict(constrain="domain", title="Easting (columns)"),
+            # Initial/fallback background; each frame's own layout (set
+            # above) overrides this with that frame's own hillshade.
+            images=[bg_image(hillshade_uris[0])] if hillshade_uris else [],
+            updatemenus=[dict(
+                type="buttons",
+                direction="left",
+                x=0.0, y=-0.02, xanchor="left", yanchor="top",
+                pad=dict(t=5, r=10),
+                buttons=[
+                    dict(label="▶ Play", method="animate",
+                         args=[None, dict(frame=dict(duration=300, redraw=True),
+                                          fromcurrent=True,
+                                          transition=dict(duration=0))]),
+                    dict(label="⏸ Pause", method="animate",
+                         args=[[None], dict(mode="immediate",
+                                            frame=dict(duration=0, redraw=False),
+                                            transition=dict(duration=0))]),
+                ],
+            )],
+            sliders=[dict(
+                active=0,
+                x=0.15, len=0.85,
+                currentvalue=dict(prefix="Time: "),
+                pad=dict(t=50),
+                steps=slider_steps,
+            )],
+            margin=dict(l=65, r=50, b=65, t=90),
+        )
+
+        fig.write_html(
+            output_html_path,
+            full_html=True,
+            config={"responsive": True},
+            default_width="100%",
+            default_height="100%",
+            post_script=_RESPONSIVE_FILL_SCRIPT,
+        )
+        return True
+
+    except Exception as e:
+        print(f"Error generating terrain timeline: {e}")
+        return False
+
+
+# -----------------------------
+# Feature-tracking timeline animation (Plotly slider)
+# -----------------------------
+def generate_feature_tracking_timeline_html(snapshots, times, shape, mask, output_html_path,
+                                             first_effect=None, elevation=None, pad=6):
+    """Build an interactive, scrubbable heatmap animation of the tracked
+    feature's erosion/deposition, cropped to just its polygon (plus a little
+    surrounding context) so the change is legible at native scale instead of
+    being a few pixels lost in the full-grid sediment timeline.
+
+    snapshots: list of 1D/2D arrays = (elevation_at_step - initial_elevation),
+        same as generate_sediment_timeline_html's `snapshots`.
+    times:     list of simulation times matching each snapshot.
+    mask:      flattened boolean array (same length as a flattened `shape`
+        array) marking which cells belong to the tracked feature
+        (FeatureTracker.mask). Cells inside the crop but outside the mask are
+        left blank (NaN) each frame so only the tracked polygon is colored,
+        with the surrounding terrain visible as plain hillshade context.
+    first_effect: optional dict from FeatureTracker.compute_first_effect();
+        when detected, the frame nearest that time is opened by default and
+        later frame titles are marked "(change detected)".
+    elevation: optional list of elevation arrays (one per snapshot, same
+        order), used for the per-frame hillshade backdrop.
+    pad: rows/cols of surrounding context to include around the feature's
+        bounding box.
+    Returns True on success, or False on failure.
+    """
+    try:
+        if not snapshots or not times or len(snapshots) != len(times):
+            print("Feature timeline: no snapshots to render.")
+            return False
+        if mask is None:
+            print("Feature timeline: no mask to crop to.")
+            return False
+
+        mask2d = np.asarray(mask, dtype=bool).reshape(shape)
+        rows, cols = np.where(mask2d)
+        if rows.size == 0:
+            print("Feature timeline: mask is empty.")
+            return False
+
+        r0 = max(0, int(rows.min()) - pad)
+        r1 = min(shape[0], int(rows.max()) + pad + 1)
+        c0 = max(0, int(cols.min()) - pad)
+        c1 = min(shape[1], int(cols.max()) + pad + 1)
+
+        mask_crop = mask2d[r0:r1, c0:c1]
+
+        if elevation is not None and len(elevation) != len(snapshots):
+            print("Feature timeline: elevation snapshots length mismatch, skipping hillshade.")
+            elevation = None
+
+        frames_data = []
+        for snap in snapshots:
+            arr = np.asarray(snap, dtype=float).reshape(shape)[r0:r1, c0:c1].copy()
+            arr[~mask_crop] = np.nan
+            frames_data.append(arr)
+
+        # Symmetric scale from the feature's own change range (not diluted by
+        # the rest of the grid), so small features still show visible color.
+        masked_vals = np.concatenate([f[~np.isnan(f)].ravel() for f in frames_data])
+        scale = float(np.nanpercentile(np.abs(masked_vals), 99)) if masked_vals.size else 1.0
+        if not np.isfinite(scale) or scale == 0:
+            scale = 1.0
+        cmin, cmax = -scale, scale
+
+        target_shape = mask_crop.shape
+        nrows, ncols = target_shape
+
+        hillshade_uris = None
+        if elevation is not None:
+            try:
+                hillshade_uris = [
+                    _hillshade_data_uri(np.asarray(elev, dtype=float).reshape(shape)[r0:r1, c0:c1],
+                                        target_shape, target_shape)
+                    for elev in elevation
+                ]
+            except Exception as e:
+                print(f"Feature timeline hillshade skipped: {e}")
+                hillshade_uris = None
+
+        heatmap_opacity = 0.75 if hillshade_uris else 1.0
+
+        # Mark the *first* crossing of the threshold and the *biggest* change
+        # reached, restricted to the tracked feature -- same detection logic
+        # and marker convention (cyan circle / gold star) as the whole-grid
+        # "Onset and Peak of Landscape Change" analysis plot, just scoped to
+        # this feature's mask instead of the full DEM.
+        from app.engine.science_plots import _detect_change_events
+        threshold = float(first_effect.get("threshold", 0.01)) if first_effect else 0.01
+        masked_full = [np.where(mask2d, np.asarray(s, dtype=float).reshape(shape), np.nan)
+                       for s in snapshots]
+        first_ev, biggest_ev = _detect_change_events(masked_full, times, shape, threshold)
+
+        marker_traces = []
+        if first_ev is not None:
+            marker_traces.append(go.Scatter(
+                x=[first_ev["col"] - c0], y=[first_ev["row"] - r0],
+                mode="markers", name=f"First change (t={first_ev['time']:.0f} yr, {first_ev['value']:+.3f} m)",
+                marker=dict(symbol="circle-open", size=16, color="#00b8d4", line=dict(width=3)),
+                hoverinfo="name",
+            ))
+        if biggest_ev is not None:
+            marker_traces.append(go.Scatter(
+                x=[biggest_ev["col"] - c0], y=[biggest_ev["row"] - r0],
+                mode="markers", name=f"Biggest change (t={biggest_ev['time']:.0f} yr, {biggest_ev['value']:+.3f} m)",
+                marker=dict(symbol="star", size=16, color="#ffd400", line=dict(color="#1a1a1a", width=1.5)),
+                hoverinfo="name",
+            ))
+
+        def heatmap(z):
+            return go.Heatmap(
+                z=z,
+                zmin=cmin,
+                zmax=cmax,
+                colorscale='RdBu',
+                zsmooth='best',
+                colorbar=dict(title='Change (m)'),
+                opacity=heatmap_opacity,
+                hovertemplate='col %{x}<br>row %{y}<br>Δ %{z:.3f} m<extra></extra>',
+            )
+
+        def bg_image(uri):
+            return dict(
+                source=uri,
+                xref="x", yref="y",
+                x=-0.5, y=-0.5,
+                sizex=ncols, sizey=nrows,
+                xanchor="left", yanchor="top",
+                sizing="stretch",
+                layer="below",
+            )
+
+        detected = bool(first_effect and first_effect.get("detected"))
+        fe_time = first_effect.get("time") if detected else None
+
+        frames = []
+        for i in range(len(frames_data)):
+            frame_kwargs = dict(data=[heatmap(frames_data[i])], name=f"{i}")
+            if hillshade_uris:
+                frame_kwargs["layout"] = go.Layout(images=[bg_image(hillshade_uris[i])])
+            frames.append(go.Frame(**frame_kwargs))
+
+        # Open on the frame nearest the first-effect time (if detected) so the
+        # tab lands on the interesting moment instead of the blank t=0 frame.
+        default_idx = 0
+        if detected:
+            default_idx = min(range(len(times)), key=lambda i: abs(times[i] - fe_time))
+
+        fig = go.Figure(data=[heatmap(frames_data[default_idx])] + marker_traces, frames=frames)
+
+        slider_steps = [
+            dict(
+                method="animate",
+                args=[[f"{i}"],
+                      dict(mode="immediate",
+                           frame=dict(duration=0, redraw=True),
+                           transition=dict(duration=0))],
+                label=f"{times[i]:.0f}",
+            )
+            for i in range(len(frames_data))
+        ]
+
+        fig.update_layout(
+            autosize=True,
+            yaxis=dict(autorange="reversed", scaleanchor="x",
+                       constrain="domain", title="Northing (rows)"),
+            xaxis=dict(constrain="domain", title="Easting (columns)"),
+            images=[bg_image(hillshade_uris[default_idx])] if hillshade_uris else [],
+            legend=dict(orientation="h", x=0, y=1.05, xanchor="left", yanchor="bottom"),
+            updatemenus=[dict(
+                type="buttons",
+                direction="left",
+                x=0.0, y=-0.02, xanchor="left", yanchor="top",
+                pad=dict(t=5, r=10),
+                buttons=[
+                    dict(label="▶ Play", method="animate",
+                         args=[None, dict(frame=dict(duration=300, redraw=True),
+                                          fromcurrent=True,
+                                          transition=dict(duration=0))]),
+                    dict(label="⏸ Pause", method="animate",
+                         args=[[None], dict(mode="immediate",
+                                            frame=dict(duration=0, redraw=False),
+                                            transition=dict(duration=0))]),
+                ],
+            )],
+            sliders=[dict(
+                active=default_idx,
+                x=0.15, len=0.85,
+                currentvalue=dict(prefix="Time: "),
+                pad=dict(t=50),
+                steps=slider_steps,
+            )],
+            margin=dict(l=65, r=50, b=65, t=55),
+        )
+
+        fig.write_html(
+            output_html_path,
+            full_html=True,
+            config={"responsive": True},
+            default_width="100%",
+            default_height="100%",
+            post_script=_RESPONSIVE_FILL_SCRIPT,
+        )
+        return True
+
+    except Exception as e:
+        print(f"Error generating feature tracking timeline: {e}")
         return False
 
 

@@ -165,14 +165,23 @@ class FeatureTracker:
         `self.first_effect`) or a `detected: False` dict if it never crosses.
         """
         threshold = max(float(threshold), 0.0)
+        # Peak |Δz| the feature reached at any point in the run, regardless of
+        # whether/when it crossed the threshold -- lets callers show "max
+        # elevation change" alongside the first-effect timing.
+        max_observed = max((row["Max Abs Change (m)"] for row in self.history), default=0.0)
+
         prev_t, prev_v = None, 0.0
         for row in self.history:
             t = row["Time (Years)"]
             v = row["Max Abs Change (m)"]
             if v >= threshold and threshold > 0:
                 # Interpolate the crossing time between the previous step and this one.
+                # frac is clamped to [0, 1] so a near-duplicate v/prev_v (float
+                # rounding) can't blow the division up into a cross_t that
+                # extrapolates outside [prev_t, t] -- i.e. past the run itself.
                 if prev_t is not None and v != prev_v:
                     frac = (threshold - prev_v) / (v - prev_v)
+                    frac = min(max(frac, 0.0), 1.0)
                     cross_t = prev_t + frac * (t - prev_t)
                 else:
                     cross_t = t
@@ -182,15 +191,15 @@ class FeatureTracker:
                     "threshold": threshold,
                     "magnitude_at_step": v,
                     "step_time": t,
+                    "max_observed": max_observed,
                 }
                 return self.first_effect
             prev_t, prev_v = t, v
 
-        final_v = self.history[-1]["Max Abs Change (m)"] if self.history else 0.0
         self.first_effect = {
             "detected": False,
             "threshold": threshold,
-            "max_observed": final_v,
+            "max_observed": max_observed,
         }
         return self.first_effect
 

@@ -17,7 +17,12 @@ from app.engine.io import (
     plot_difference,
     plot_erosion_deposition_mask,
 )
-from app.engine.visualization import diagnose_space_regime, generate_sediment_timeline_html
+from app.engine.visualization import (
+    diagnose_space_regime,
+    generate_sediment_timeline_html,
+    generate_terrain_timeline_html,
+    generate_feature_tracking_timeline_html,
+)
 from app.engine.science_plots import (
     refresh_drainage,
     plot_sediment_flux,
@@ -214,10 +219,20 @@ class SimulationRunner:
             else:
                 other_conf.append(c)
 
-        # When precipitation drives runoff, FlowAccumulator must not overwrite
-        # `water__unit_flux_in` with its own scalar runoff_rate — drop it so the
-        # accumulator reads the precipitation-set field instead.
-        if precip_conf:
+        # When Precipitation or Vegetation drives/modulates runoff, FlowAccumulator
+        # must not overwrite `water__unit_flux_in` with its own scalar runoff_rate.
+        # Landlab's FlowAccumulator, given a non-None runoff_rate AND a field that
+        # already exists, *replaces* the field outright with
+        # np.broadcast_to(runoff_rate, n) -- a read-only view, not a copy. Any
+        # later in-place write into that field (VegetationComponent re-applies its
+        # runoff multiplier every step; PrecipitationComponent writes its own base
+        # every step) then raises "ValueError: assignment destination is
+        # read-only". Both build *before* FlowAccumulator, so by the time
+        # FlowAccumulator's own constructor runs, the field already exists and
+        # would trigger that replacement -- dropping runoff_rate here makes
+        # FlowAccumulator just read the field Precipitation/Vegetation manage
+        # instead.
+        if precip_conf or veg_conf:
             for c in flow_conf:
                 c.get("params", {}).pop("runoff_rate", None)
 
@@ -276,13 +291,21 @@ class SimulationRunner:
                 tracker = None
 
         # Capture cumulative-change snapshots for the sediment-flow timeline.
-        # Aim for ~30 evenly spaced frames regardless of step count. Also capture
-        # cumulative uplift per snapshot so tectonic forcing can be removed from
-        # the sediment timeline / budget (which are about erosion, not uplift).
+        # A frame is captured every entered timestep (dt) so the timeline's
+        # slider times line up exactly with the simulation's actual time_step,
+        # instead of ~30 evenly-spaced samples regardless of dt -- unless that
+        # would produce more than MAX_TIMELINE_FRAMES frames (nothing bounds
+        # period/time_step in the UI, so a long period with a small dt could
+        # otherwise mean thousands of Plotly frames and PNG snapshot pairs),
+        # in which case we fall back to evenly spacing exactly that many
+        # frames across the run. Also capture cumulative uplift per snapshot
+        # so tectonic forcing can be removed from the sediment timeline /
+        # budget (which are about erosion, not uplift).
+        MAX_TIMELINE_FRAMES = 300
         timeline_snapshots = [initial - initial]  # all-zero baseline at t=0
         timeline_uplift = [initial - initial]     # uplift accumulated by t=0 (zero)
         timeline_times = [0.0]
-        snapshot_every = max(1, steps // 30)
+        snapshot_every = max(1, -(-steps // MAX_TIMELINE_FRAMES))
 
         for i in range(steps):
 
@@ -369,15 +392,97 @@ class SimulationRunner:
         else:
             sediment_snapshots = timeline_snapshots
 
-        # Interactive sediment-flow timeline (scrubbable Plotly slider).
+        # Actual elevation at each snapshot time, for use as the per-frame
+        # hillshade backdrop in both animations below. timeline_snapshots[i]
+        # is already (elevation_i - initial), so adding initial back recovers
+        # the raw elevation at each snapshot without a second capture pass.
+        terrain_snapshots = [initial + s for s in timeline_snapshots]
+
+        # Interactive sediment-flow timeline (scrubbable Plotly slider). Each
+        # frame is draped over the hillshade of *that same timestep's* DEM
+        # (terrain_snapshots), not a single backdrop borrowed from the final
+        # terrain, so early frames don't show relief that hasn't formed yet.
         self.log(90, "Building sediment timeline...")
         timeline_html = str(self.output_dir / "sediment_timeline.html")
         timeline_result = generate_sediment_timeline_html(
             sediment_snapshots, timeline_times, grid.shape, timeline_html,
-            elevation=final,
+            elevation=terrain_snapshots,
         )
         if timeline_result is False:
             timeline_html = None
+
+        # Interactive terrain-elevation timeline (same cadence as the sediment
+        # timeline above, but showing the actual elevation surface rather than
+        # the erosion/deposition delta).
+        self.log(90, "Building terrain evolution timeline...")
+        terrain_timeline_html = str(self.output_dir / "terrain_timeline.html")
+        terrain_timeline_result = generate_terrain_timeline_html(
+            terrain_snapshots, timeline_times, grid.shape, terrain_timeline_html,
+        )
+        if terrain_timeline_result is False:
+            terrain_timeline_html = None
+
+        # Static PNG snapshot of each captured timestep, DEM and difference
+        # map in their own folders (same snapshots/cadence as the two
+        # interactive timelines above, just as individual images for offline
+        # viewing/sharing rather than a scrubbable HTML player). A shared
+        # vmin/vmax per folder (computed once, like the interactive
+        # timelines) keeps colors comparable frame-to-frame.
+        self.log(90, "Saving DEM and difference-map PNG snapshots...")
+        dem_snapshots_dir = self.output_dir / "dem_snapshots"
+        diff_snapshots_dir = self.output_dir / "difference_snapshots"
+        dem_snapshots_dir.mkdir(exist_ok=True)
+        diff_snapshots_dir.mkdir(exist_ok=True)
+
+        # Min/max is associative, so it needs no concatenation. The 99th-
+        # percentile scale is computed from a bounded random sample of each
+        # snapshot instead of concatenating every snapshot at full
+        # resolution -- on a large grid with many captured steps (e.g. a few
+        # million cells x 100+ steps) that concatenation produced a
+        # multi-gigabyte array and np.nanpercentile's internal sort on it
+        # could run for minutes and exhaust memory, getting the whole process
+        # killed by the OS. Same class of blowup the interactive timelines
+        # above avoid by downsampling before computing their own scale.
+        dem_vmin = min(
+            (float(np.nanmin(s)) for s in terrain_snapshots if np.isfinite(s).any()),
+            default=0.0,
+        )
+        dem_vmax = max(
+            (float(np.nanmax(s)) for s in terrain_snapshots if np.isfinite(s).any()),
+            default=1.0,
+        )
+        if dem_vmax <= dem_vmin:
+            dem_vmax = dem_vmin + 1.0
+
+        _scale_rng = np.random.default_rng(0)
+
+        def _sample_finite(arr, n=20000):
+            flat = np.asarray(arr, dtype=float).ravel()
+            flat = flat[np.isfinite(flat)]
+            if flat.size > n:
+                flat = flat[_scale_rng.choice(flat.size, n, replace=False)]
+            return flat
+
+        diff_sample = (np.concatenate([_sample_finite(s) for s in sediment_snapshots])
+                       if sediment_snapshots else np.array([]))
+        diff_scale = float(np.nanpercentile(np.abs(diff_sample), 99)) if diff_sample.size else 1.0
+        if not np.isfinite(diff_scale) or diff_scale == 0:
+            diff_scale = 1.0
+
+        n_pad = len(str(max(len(timeline_times) - 1, 0)))
+        for i, t in enumerate(timeline_times):
+            idx = str(i).zfill(n_pad)
+            plot_topography(
+                terrain_snapshots[i], grid.shape, f"t={t:.0f}",
+                str(dem_snapshots_dir / f"dem_{idx}_t{t:.0f}.png"),
+                vmin=dem_vmin, vmax=dem_vmax,
+            )
+            plot_difference(
+                sediment_snapshots[i], grid.shape, f"Change @ t={t:.0f}",
+                str(diff_snapshots_dir / f"diff_{idx}_t{t:.0f}.png"),
+                vmin=-diff_scale, vmax=diff_scale,
+                hillshade_elev=terrain_snapshots[i],
+            )
 
         # ---- Scientific / geomorphic analysis plots ----
         self.log(92, "Generating analysis plots...")
@@ -428,6 +533,7 @@ class SimulationRunner:
         tracker_csv = None
         tracker_plot = None
         tracker_first_effect = None
+        tracker_timeline_html = None
         if tracker:
             self.log(99, "Exporting feature tracking data...")
             threshold = float(self.params.get("first_effect_threshold", 0.01))
@@ -442,6 +548,16 @@ class SimulationRunner:
                 self.log(99, f"Feature never changed by ≥ {tracker_first_effect['threshold']:g} m "
                              f"(max observed {tracker_first_effect['max_observed']:g} m)")
 
+            self.log(99, "Building feature tracking timeline...")
+            tracker_timeline_html = str(self.output_dir / "feature_tracking_timeline.html")
+            tracker_timeline_result = generate_feature_tracking_timeline_html(
+                sediment_snapshots, timeline_times, grid.shape, tracker.mask,
+                tracker_timeline_html, first_effect=tracker_first_effect,
+                elevation=terrain_snapshots,
+            )
+            if tracker_timeline_result is False:
+                tracker_timeline_html = None
+
         self.log(100, "Done")
 
         return {
@@ -452,6 +568,9 @@ class SimulationRunner:
             "geomorphic_change_plot": geomorphic_diff_png,
             "mask_plot": mask_png,
             "timeline_html": timeline_html,
+            "terrain_timeline_html": terrain_timeline_html,
+            "dem_snapshots_dir": str(dem_snapshots_dir),
+            "diff_snapshots_dir": str(diff_snapshots_dir),
             "flux_plot": science_plots["flux_plot"],
             "drainage_network_plot": science_plots["drainage_network_plot"],
             "soil_thickness_plot": science_plots["soil_thickness_plot"],
@@ -468,6 +587,7 @@ class SimulationRunner:
             "tracker_csv": tracker_csv,
             "tracker_plot": tracker_plot,
             "tracker_first_effect": tracker_first_effect,
+            "tracker_timeline_html": tracker_timeline_html,
         }
 
 
