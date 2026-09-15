@@ -289,8 +289,11 @@ def _detect_change_events(snapshots, times, shape, threshold):
             masked = np.where(crossed, absstack[f], -np.inf)
             r, c = np.unravel_index(int(np.argmax(masked)), masked.shape)
             v_now, v_prev = absstack[f, r, c], absstack[f - 1, r, c]
+            # frac clamped to [0, 1] so a near-duplicate v_now/v_prev (float
+            # rounding) can't extrapolate cross_t outside [times[f-1], times[f]].
             if threshold > 0 and v_now != v_prev:
                 frac = (threshold - v_prev) / (v_now - v_prev)
+                frac = min(max(frac, 0.0), 1.0)
                 cross_t = times[f - 1] + frac * (times[f] - times[f - 1])
             else:
                 cross_t = times[f]

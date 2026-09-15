@@ -21,6 +21,7 @@ from app.engine.visualization import (
     diagnose_space_regime,
     generate_sediment_timeline_html,
     generate_terrain_timeline_html,
+    generate_feature_tracking_timeline_html,
 )
 from app.engine.science_plots import (
     refresh_drainage,
@@ -292,13 +293,19 @@ class SimulationRunner:
         # Capture cumulative-change snapshots for the sediment-flow timeline.
         # A frame is captured every entered timestep (dt) so the timeline's
         # slider times line up exactly with the simulation's actual time_step,
-        # instead of ~30 evenly-spaced samples regardless of dt. Also capture
-        # cumulative uplift per snapshot so tectonic forcing can be removed from
-        # the sediment timeline / budget (which are about erosion, not uplift).
+        # instead of ~30 evenly-spaced samples regardless of dt -- unless that
+        # would produce more than MAX_TIMELINE_FRAMES frames (nothing bounds
+        # period/time_step in the UI, so a long period with a small dt could
+        # otherwise mean thousands of Plotly frames and PNG snapshot pairs),
+        # in which case we fall back to evenly spacing exactly that many
+        # frames across the run. Also capture cumulative uplift per snapshot
+        # so tectonic forcing can be removed from the sediment timeline /
+        # budget (which are about erosion, not uplift).
+        MAX_TIMELINE_FRAMES = 300
         timeline_snapshots = [initial - initial]  # all-zero baseline at t=0
         timeline_uplift = [initial - initial]     # uplift accumulated by t=0 (zero)
         timeline_times = [0.0]
-        snapshot_every = 1
+        snapshot_every = max(1, -(-steps // MAX_TIMELINE_FRAMES))
 
         for i in range(steps):
 
@@ -427,18 +434,38 @@ class SimulationRunner:
         dem_snapshots_dir.mkdir(exist_ok=True)
         diff_snapshots_dir.mkdir(exist_ok=True)
 
-        dem_valid = np.concatenate([
-            np.asarray(s, dtype=float)[np.isfinite(s)].ravel() for s in terrain_snapshots
-        ])
-        dem_vmin = float(np.nanmin(dem_valid)) if dem_valid.size else 0.0
-        dem_vmax = float(np.nanmax(dem_valid)) if dem_valid.size else 1.0
+        # Min/max is associative, so it needs no concatenation. The 99th-
+        # percentile scale is computed from a bounded random sample of each
+        # snapshot instead of concatenating every snapshot at full
+        # resolution -- on a large grid with many captured steps (e.g. a few
+        # million cells x 100+ steps) that concatenation produced a
+        # multi-gigabyte array and np.nanpercentile's internal sort on it
+        # could run for minutes and exhaust memory, getting the whole process
+        # killed by the OS. Same class of blowup the interactive timelines
+        # above avoid by downsampling before computing their own scale.
+        dem_vmin = min(
+            (float(np.nanmin(s)) for s in terrain_snapshots if np.isfinite(s).any()),
+            default=0.0,
+        )
+        dem_vmax = max(
+            (float(np.nanmax(s)) for s in terrain_snapshots if np.isfinite(s).any()),
+            default=1.0,
+        )
         if dem_vmax <= dem_vmin:
             dem_vmax = dem_vmin + 1.0
 
-        diff_valid = np.concatenate([
-            np.asarray(s, dtype=float)[np.isfinite(s)].ravel() for s in sediment_snapshots
-        ])
-        diff_scale = float(np.nanpercentile(np.abs(diff_valid), 99)) if diff_valid.size else 1.0
+        _scale_rng = np.random.default_rng(0)
+
+        def _sample_finite(arr, n=20000):
+            flat = np.asarray(arr, dtype=float).ravel()
+            flat = flat[np.isfinite(flat)]
+            if flat.size > n:
+                flat = flat[_scale_rng.choice(flat.size, n, replace=False)]
+            return flat
+
+        diff_sample = (np.concatenate([_sample_finite(s) for s in sediment_snapshots])
+                       if sediment_snapshots else np.array([]))
+        diff_scale = float(np.nanpercentile(np.abs(diff_sample), 99)) if diff_sample.size else 1.0
         if not np.isfinite(diff_scale) or diff_scale == 0:
             diff_scale = 1.0
 
@@ -506,6 +533,7 @@ class SimulationRunner:
         tracker_csv = None
         tracker_plot = None
         tracker_first_effect = None
+        tracker_timeline_html = None
         if tracker:
             self.log(99, "Exporting feature tracking data...")
             threshold = float(self.params.get("first_effect_threshold", 0.01))
@@ -519,6 +547,16 @@ class SimulationRunner:
             elif tracker_first_effect:
                 self.log(99, f"Feature never changed by ≥ {tracker_first_effect['threshold']:g} m "
                              f"(max observed {tracker_first_effect['max_observed']:g} m)")
+
+            self.log(99, "Building feature tracking timeline...")
+            tracker_timeline_html = str(self.output_dir / "feature_tracking_timeline.html")
+            tracker_timeline_result = generate_feature_tracking_timeline_html(
+                sediment_snapshots, timeline_times, grid.shape, tracker.mask,
+                tracker_timeline_html, first_effect=tracker_first_effect,
+                elevation=terrain_snapshots,
+            )
+            if tracker_timeline_result is False:
+                tracker_timeline_html = None
 
         self.log(100, "Done")
 
@@ -549,6 +587,7 @@ class SimulationRunner:
             "tracker_csv": tracker_csv,
             "tracker_plot": tracker_plot,
             "tracker_first_effect": tracker_first_effect,
+            "tracker_timeline_html": tracker_timeline_html,
         }
 
 

@@ -1,9 +1,8 @@
 from PyQt6.QtWidgets import (
-    QMainWindow, QVBoxLayout, QHBoxLayout, QPushButton, 
-    QWidget, QTabWidget, QMessageBox, QLabel
+    QMainWindow, QVBoxLayout, QHBoxLayout, QPushButton,
+    QWidget, QTabWidget, QMessageBox, QLabel, QSizePolicy
 )
 from PyQt6.QtCore import QTimer, Qt
-from PyQt6.QtGui import QPixmap
 import os
 from app.ui.window_manager import WindowManager
 from app.core.constants import (
@@ -115,52 +114,17 @@ class SimulationResultsWindow(QMainWindow):
         self.view_3d = ThreeDView()
         self.tabs.addTab(self.view_3d, SimulationResultsWindowConsts.TAB_3D_VISUALIZATION)
 
-        # --- Tab 3: Erosion Timeline (Interactive Plotly slider) ---
-        self._add_timeline_tab()
-
-        # --- Tab 3b: Terrain Evolution (Interactive Plotly slider) ---
+        # --- Tab 3: Terrain Evolution (Interactive Plotly slider) ---
         self._add_terrain_timeline_tab()
 
-        # --- Tab 4: Scientific Analysis plots ---
+        # --- Tab 4: Erosion Timeline (Interactive Plotly slider) ---
+        self._add_timeline_tab()
+
+        # --- Tab 5: Feature Tracking Map (interactive, only when a feature was tracked) ---
+        self._add_feature_tracking_map_tab()
+
+        # --- Tab 6: Scientific Analysis plots (last) ---
         self._add_analysis_tab()
-
-        # --- Tab 5: Feature Tracking (Dynamic) ---
-        tracker_plot = self.image_paths.get(SimulationResultKeys.TRACKER_PLOT)
-        if tracker_plot and os.path.exists(tracker_plot):
-            tracker_widget = QWidget()
-            layout = QVBoxLayout(tracker_widget)
-            
-            # Headline: when the tracked feature is first affected by the
-            # evolving landscape (geomorphic change, uplift excluded).
-            fe = self.image_paths.get(SimulationResultKeys.TRACKER_FIRST_EFFECT)
-            if fe:
-                if fe.get("detected"):
-                    fe_text = (f"⏱ First effect on feature: ~{fe['time']:g} years "
-                               f"(reached ≥ {fe['threshold']:g} m of change)")
-                    fe_color = "#1b5e20"
-                else:
-                    fe_text = (f"No significant effect: feature changed by at most "
-                               f"{fe.get('max_observed', 0):g} m (threshold {fe['threshold']:g} m)")
-                    fe_color = "#777"
-                fe_lbl = QLabel(fe_text)
-                fe_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                fe_lbl.setStyleSheet(f"QLabel {{ font-size: 15px; font-weight: bold; color: {fe_color}; padding: 6px; }}")
-                layout.addWidget(fe_lbl)
-
-            lbl = QLabel()
-            pixmap = QPixmap(tracker_plot)
-            # Scale to fit nicely in the tab
-            lbl.setPixmap(pixmap.scaled(800, 600, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
-            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            layout.addWidget(lbl)
-
-            csv_path = self.image_paths.get(SimulationResultKeys.TRACKER_CSV)
-            if csv_path:
-                info_lbl = QLabel(f"Data saved to:\\n{csv_path}")
-                info_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                layout.addWidget(info_lbl)
-                
-            self.tabs.addTab(tracker_widget, SimulationResultsWindowConsts.TAB_FEATURE_TRACKING)
 
         # Bottom Button Area
         button_layout = QHBoxLayout()
@@ -223,6 +187,31 @@ class SimulationResultsWindow(QMainWindow):
             layout.addWidget(lbl)
 
         self.tabs.addTab(container, SimulationResultsWindowConsts.TAB_TERRAIN_TIMELINE)
+
+    def _add_feature_tracking_map_tab(self):
+        """Adds the interactive tracked-feature erosion/deposition map
+        (Plotly slider), cropped to just the polygon. Only called when a
+        feature was actually tracked, so this tab never appears otherwise."""
+        from PyQt6.QtWebEngineWidgets import QWebEngineView
+        from PyQt6.QtCore import QUrl
+
+        tracker_timeline_html = self.image_paths.get(SimulationResultKeys.TRACKER_TIMELINE_HTML)
+        if not (tracker_timeline_html and os.path.exists(tracker_timeline_html)):
+            return
+
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        # First-effect and max-change are now shown as markers/legend on the
+        # map itself (see generate_feature_tracking_timeline_html), so the
+        # web view is the only thing in this tab and gets the full canvas.
+        web_view = QWebEngineView()
+        web_view.setUrl(QUrl.fromLocalFile(tracker_timeline_html))
+        web_view.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        layout.addWidget(web_view)
+
+        self.tabs.addTab(container, SimulationResultsWindowConsts.TAB_FEATURE_TRACKING_MAP)
 
     def _add_analysis_tab(self):
         """Adds the scientific-analysis gallery tab."""
