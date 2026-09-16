@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-from PyInstaller.utils.hooks import collect_all
+from PyInstaller.utils.hooks import collect_all, collect_submodules, collect_dynamic_libs
 
 # Bundle only read-only assets the app loads at runtime: the home-screen image.
 # The SQLite DB is never bundled -- it's created fresh at first launch by
@@ -14,9 +14,38 @@ binaries = []
 hiddenimports = ['landlab', 'rasterio', 'sklearn.utils._cython_blas', 'PyQt6.QtWebEngineCore', 'app.engine.components', 'scipy.special.cython_special', 'landlab.grid.gradients', 'landlab.grid.divergence', 'landlab.grid.mappers', 'landlab.grid.raster', 'landlab.grid.create', 'landlab.grid.diagonals', 'landlab.grid.hex', 'landlab.grid.network', 'landlab.grid.radial', 'landlab.grid.voronoi', 'landlab.grid.raster_funcs', 'landlab.grid.raster_divergence', 'landlab.grid.raster_gradients', 'landlab.grid.raster_mappers', 'landlab.grid.raster_set_status', 'landlab.grid.raster_mappers', 'landlab.grid.raster_aspect', 'app.core.logging', 'app.core.config', 'app.ui.validators.simulation_validator', 'app.engine.runner']
 tmp_ret = collect_all('rasterio')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-tmp_ret = collect_all('landlab')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+# landlab: submodules + binaries only, NOT collect_all's data half -- that
+# swept in ~97MB of landlab's own .pyx/.c Cython sources (shipped alongside
+# the already-compiled .so extensions) plus real shapefiles from its
+# example/test fixtures, none of which this app's own code ever opens (it
+# uses its own user-browsed DEMs/shapefiles, never landlab's bundled ones).
+# Verified by tracing every file landlab opened during a real
+# RasterModelGrid + FlowAccumulator + DepthDependentDiffuser +
+# SpaceLargeScaleEroder run: zero non-.py/.so files touched. See
+# build_executable.py for the full rationale.
+binaries += collect_dynamic_libs('landlab')
+hiddenimports += collect_submodules('landlab')
 
+
+# --collect-all=landlab (via collect_all above, before it was narrowed for
+# landlab specifically) used to also pull in every optional dependency of
+# every landlab component, including ones this app never builds. netCDF4
+# (~55MB on macOS) is one: landlab's own optional NetCDF grid I/O
+# (landlab.io.netcdf) is never imported anywhere in this app, which does all
+# its GeoTIFF I/O through rasterio instead. Verified excludable by actually
+# launching a build with this exclusion and watching it start, seed its DB,
+# and run cleanly with no ImportError.
+#
+# statsmodels (~11MB) looks similarly unused (only landlab's unused
+# LandslideProbability component imports it) but is NOT excludable:
+# landlab/components/__init__.py unconditionally does
+# `from .landslides import LandslideProbability` with no try/except, so
+# importing landlab.components at all -- which this app must do, to get
+# FlowAccumulator/Space/etc. -- eagerly imports statsmodels too. Confirmed by
+# testing: excluding it crashes the app at startup with
+# `ModuleNotFoundError: No module named 'statsmodels'` deep in that import
+# chain. Left bundled.
+excludes = ['netCDF4']
 
 a = Analysis(
     ['main.py'],
@@ -27,7 +56,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=excludes,
     noarchive=False,
     optimize=0,
 )

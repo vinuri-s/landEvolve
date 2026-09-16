@@ -70,6 +70,50 @@ def build_app():
         f"--add-data=resources/about.jpg{sep}resources",
     ]
 
+    # --collect-all=landlab pulls in every optional dependency of every
+    # landlab component, including ones this app never builds. netCDF4 (~55MB
+    # on macOS) is one: landlab's own optional NetCDF grid I/O (landlab.io.netcdf)
+    # is never imported anywhere in this app, which does all its GeoTIFF I/O
+    # through rasterio instead. Verified excludable: no landlab package (top
+    # level or landlab.io) imports netCDF4 eagerly at import time -- only
+    # landlab.io.netcdf itself does, and this app never imports that module --
+    # confirmed by actually launching a build with this exclusion and watching
+    # it start, seed its DB, and run cleanly with no ImportError.
+    #
+    # statsmodels (~11MB) looks similarly unused (only landlab's unused
+    # LandslideProbability component imports it) but is NOT excludable:
+    # landlab/components/__init__.py unconditionally does
+    # `from .landslides import LandslideProbability` with no try/except, so
+    # importing landlab.components at all -- which this app must do, to get
+    # FlowAccumulator/Space/etc. -- eagerly imports statsmodels too. Confirmed
+    # by testing: excluding it crashes the app at startup with
+    # `ModuleNotFoundError: No module named 'statsmodels'` deep in that import
+    # chain. Left bundled.
+    exclude_modules = [
+        "--exclude-module=netCDF4",
+    ]
+
+    # landlab specifically: use --collect-submodules + --collect-binaries
+    # instead of --collect-all, to get every landlab module/component
+    # PyInstaller's static analysis might miss (submodules) and their
+    # compiled Cython extensions (binaries), WITHOUT --collect-data. The
+    # data half of --collect-all also swept in landlab's *own* package-data
+    # declarations: its .pyx/.c Cython sources shipped alongside the already-
+    # compiled .so extensions, plus real shapefiles from its example/test
+    # fixtures (a001_network, Soque_Nodes, MethowSubBasin, etc.) -- ~97MB
+    # nothing at runtime ever opens, since this app uses its own
+    # user-browsed DEMs/shapefiles, never landlab's bundled ones. Verified
+    # by tracing every file landlab opened during a real
+    # RasterModelGrid + FlowAccumulator + DepthDependentDiffuser +
+    # SpaceLargeScaleEroder run: zero non-.py/.so files touched. rasterio
+    # keeps --collect-all because its own data/ (PROJ's coordinate-system
+    # database and datum-grid files) *is* needed at runtime for accurate
+    # CRS reprojection.
+    landlab_collect = [
+        "--collect-submodules=landlab",
+        "--collect-binaries=landlab",
+    ]
+
     args = [
         sys.executable,
         "-m",
@@ -80,8 +124,7 @@ def build_app():
         "--name", app_name,
         "--onedir", # Directory output (easier for debugging assets)
         "--collect-all=rasterio",
-        "--collect-all=landlab",
-    ] + hidden_imports + add_data + [main_script]
+    ] + landlab_collect + hidden_imports + exclude_modules + add_data + [main_script]
 
     # 4. Run PyInstaller
     print(f"Running command: {' '.join(args)}")
