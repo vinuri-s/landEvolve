@@ -1,6 +1,7 @@
 import os
 import datetime
 from app.core.constants import SimulationParamKeys, SimulationResultKeys, SimulationStatsKeys
+from app.core.text_utils import humanize_pascal_case
 
 class SimulationLogger:
     """
@@ -23,14 +24,20 @@ class SimulationLogger:
         details.append(f"Time Step: {sim_params.get(SimulationParamKeys.TIME_STEP)} years")
         details.append(f"Simulation ID: {sim_params.get(SimulationParamKeys.SIMULATION_NUMBER)}")
 
-        details.append("\n=== Components Used ===")
+        details.append("\n=== Processes Used ===")
         components = sim_params.get(SimulationParamKeys.SELECTED_COMPONENTS, [])
         if not components:
             details.append("None")
         else:
             for i, comp in enumerate(components):
                 c_obj = comp.get('component')
-                c_name = c_obj.name if c_obj else "Unknown Component"
+                if c_obj:
+                    # Plain-language name (e.g. "Erosion & Sediment Transport"),
+                    # matching what the picker/table show -- not the raw
+                    # internal Landlab class name (e.g. "SpaceComponent").
+                    c_name = c_obj.display_name or humanize_pascal_case(c_obj.name)
+                else:
+                    c_name = "Unknown Process"
                 details.append(f"{i+1}. {c_name}")
 
                 params = comp.get('params', {})

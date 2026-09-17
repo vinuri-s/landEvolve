@@ -1,6 +1,5 @@
-import re
-
 from app.services.component_service import ComponentService
+from app.core.text_utils import humanize_pascal_case
 
 
 class ComponentController:
@@ -21,7 +20,7 @@ class ComponentController:
         """Turns a PascalCase component name like 'VegetationComponent' into
         'Vegetation Component' for display -- the stored/matched name is
         untouched, this is presentation only."""
-        return re.sub(r'(?<!^)(?=[A-Z])', ' ', name)
+        return humanize_pascal_case(name)
 
     @classmethod
     def prerequisite_badge(cls, component):
