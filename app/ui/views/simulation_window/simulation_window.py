@@ -63,7 +63,7 @@ class SimulationWindow(QMainWindow):
         
     def on_view_simulation_clicked(self):
         if not self.table_manager.get_components():
-            QMessageBox.warning(self, "No Components", "Please add at least one component before viewing the simulation.")
+            QMessageBox.warning(self, "No Processes Selected", "Please add at least one earth surface process before running the simulation.")
             return
         
         sim_params = self.collect_simulation_params()
@@ -108,7 +108,10 @@ class SimulationWindow(QMainWindow):
         self._toggle_feature_tracking(False)
 
         self.ui.showDemBoundaryToggle.setChecked(False)
-        self.map_widget.show_placeholder("Select an input DEM to preview it here")
+        self.map_widget.show_placeholder(
+            "No DEM selected yet",
+            "Browse for a GeoTIFF (.tif) above and its location will preview here."
+        )
 
     @log_action("Opened Add Component Window")
     def add_component(self):
@@ -133,10 +136,10 @@ class SimulationWindow(QMainWindow):
     def _update_add_button_state(self):
         if self._remaining_component_types():
             self.ui.addComponentBtn.setEnabled(True)
-            self.ui.addComponentBtn.setToolTip("Add Component")
+            self.ui.addComponentBtn.setToolTip("Add Process")
         else:
             self.ui.addComponentBtn.setEnabled(False)
-            self.ui.addComponentBtn.setToolTip("All components already added")
+            self.ui.addComponentBtn.setToolTip("All processes already added")
 
     def edit_component_at_index(self, index):
         comp_data = self.table_manager.get_component_at_index(index)
@@ -210,7 +213,11 @@ class SimulationWindow(QMainWindow):
         except Exception as e:
             from app.core.logging.manager import LogManager
             LogManager.get_logger("ui").error(f"Failed to preview input DEM: {e}")
-            self.map_widget.show_placeholder("Could not preview the selected DEM")
+            self.map_widget.show_placeholder(
+                "Couldn't preview this DEM",
+                "Make sure the file is a valid GeoTIFF, then try selecting it again.",
+                is_error=True
+            )
 
     def _on_toggle_dem_boundary(self, checked):
         if not checked:
@@ -240,17 +247,23 @@ class SimulationWindow(QMainWindow):
         if info.get("min_elev") is not None:
             elev = f"{info['min_elev']}–{info['max_elev']} m"
 
+        # Pixels aren't guaranteed square -- show both dimensions when they
+        # differ instead of silently reporting only the X resolution (the
+        # simulation itself uses both, so the preview should match).
+        res_x, res_y = info["resolution"], info.get("resolution_y", info["resolution"])
+        resolution = f"{res_x} m" if res_x == res_y else f"{res_x}×{res_y} m"
+
         # Compact single line, but each value is labelled so the user knows what
         # it is (e.g. "Resolution: 1.0 m" rather than a bare "1.0 m").
         self.ui.demInfoLabel.setText(
             f"Size: {info['width']}×{info['height']} px "
-            f"&nbsp;·&nbsp; Resolution: {info['resolution']} m "
+            f"&nbsp;·&nbsp; Resolution: {resolution} "
             f"&nbsp;·&nbsp; CRS: {info['crs']} "
             f"&nbsp;·&nbsp; Elevation: {elev}"
         )
         self.ui.demInfoLabel.setToolTip(
             f"Size: {info['width']} × {info['height']} px\n"
-            f"Resolution: {info['resolution']} (CRS units)\n"
+            f"Resolution: {resolution} (CRS units)\n"
             f"CRS: {info['crs']}\n"
             f"Elevation: {elev} (mean {info.get('mean_elev')} m)"
         )

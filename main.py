@@ -94,10 +94,13 @@ def main():
     # tables are empty. This regenerates a working DB from source, so the
     # SQLite binary does not need to be committed.
     db_manager.create_tables()
-    from app.data.seed import seed_database
+    from app.data.seed import seed_database, backfill_component_metadata
     session = db_manager.get_session()
     try:
         seed_database(session)
+        # Fills in columns added by a schema migration (e.g. display_name)
+        # for a database seeded by an older version of the app.
+        backfill_component_metadata(session)
     finally:
         session.close()
 

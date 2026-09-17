@@ -4,6 +4,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 
 from app.controllers.component_controller import ComponentController
+from app.ui.widgets.badge import make_badge
 
 
 class ComponentTypePickerDialog(QDialog):
@@ -17,7 +18,7 @@ class ComponentTypePickerDialog(QDialog):
         super().__init__(parent)
         self.selected_component = None
 
-        self.setWindowTitle("Add Component")
+        self.setWindowTitle("Add Process")
         self.setMinimumSize(560, 420)
         self.resize(560, 460)
 
@@ -25,7 +26,7 @@ class ComponentTypePickerDialog(QDialog):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(8)
 
-        instructions = QLabel("Select a component to add:")
+        instructions = QLabel("Select an earth surface process to add:")
         instructions.setStyleSheet("font-weight: 600;")
         layout.addWidget(instructions)
 
@@ -64,9 +65,18 @@ class ComponentTypePickerDialog(QDialog):
         text_layout = QVBoxLayout()
         text_layout.setSpacing(3)
 
-        name_label = QLabel(ComponentController.humanize_name(component.name))
+        name_row = QHBoxLayout()
+        name_row.setSpacing(6)
+        name_label = QLabel(ComponentController.display_name(component))
         name_label.setStyleSheet("font-weight: 600; font-size: 13px; background: transparent;")
-        text_layout.addWidget(name_label)
+        name_row.addWidget(name_label)
+
+        badge = ComponentController.prerequisite_badge(component)
+        if badge:
+            name_row.addWidget(make_badge(*badge))
+
+        name_row.addStretch()
+        text_layout.addLayout(name_row)
 
         if component.description:
             desc_label = QLabel(component.description)

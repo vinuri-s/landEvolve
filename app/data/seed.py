@@ -15,14 +15,24 @@ from app.data.models import (
 )
 
 COMPONENTS = [
-    {'id': 6, 'name': 'FlowAccumulatorComponent', 'description': 'Routes water across the terrain: computes flow directions, drainage area and river discharge from the runoff field. Required for the erosion components to do anything.'},
-    {'id': 8, 'name': 'SpaceComponent', 'description': 'SPACE eroder: erodes bedrock and entrains, transports and deposits sediment along rivers based on water discharge and slope, while tracking a soil layer over bedrock.'},
-    {'id': 11, 'name': 'SpaceLargeScaleEroderComponent', 'description': 'Large-scale, more numerically robust version of the SPACE eroder (bedrock erosion plus sediment transport and deposition). Preferred for large grids and long runs.'},
-    {'id': 12, 'name': 'DepthDependentDiffuserComponent', 'description': 'Hillslope soil creep: gradually moves soil downslope to smooth hillslopes, with transport that weakens as the soil thins toward bedrock.'},
-    {'id': 13, 'name': 'VegetationComponent', 'description': 'Applies vegetation cover effects via user-defined classes. Each class sets multipliers for erodibility (K_sed, K_br), hillslope diffusivity, and runoff. Supports Static mode (one class for the whole simulation) and Transition mode (scheduled class changes at specified timesteps).'},
-    {'id': 14, 'name': 'LithoLayersComponent', 'description': 'Defines layered rock types with depth so erodibility varies vertically. As erosion strips material and deeper layers are exposed, the rock erodibility (K) used by the SPACE eroder updates to match the currently exposed rock.'},
-    {'id': 15, 'name': 'PrecipitationComponent', 'description': 'Sets runoff from precipitation (feeds Flow Accumulator). Modes: Uniform (constant), Spatial (rainfall raster), Stochastic (inter-period climate variability), Trend (linear climate change). Vegetation runoff multipliers compose on top.'},
-    {'id': 16, 'name': 'TectonicsComponent', 'description': 'Applies rock uplift each step (the tectonic forcing that builds relief against erosion). Uplifts core nodes only, keeping base level fixed. Modes: Uniform (constant block uplift) and Spatial (per-node uplift rate from a raster).'},
+    {'id': 6, 'name': 'FlowAccumulatorComponent', 'display_name': 'Water Flow Routing',
+     'description': "Figures out which way water flows and how much collects in each spot. Both Erosion processes need this to run.",
+     'prerequisite_badge': 'Required',
+     'prerequisite_tooltip': 'Needed by Erosion & Sediment Transport and Erosion (Large-Scale) to run.'},
+    {'id': 8, 'name': 'SpaceComponent', 'display_name': 'Erosion & Sediment Transport',
+     'description': "Wears away bedrock and carries loose sediment downhill, based on water flow and slope."},
+    {'id': 11, 'name': 'SpaceLargeScaleEroderComponent', 'display_name': 'Erosion (Large-Scale)',
+     'description': "Same as Erosion & Sediment Transport, but faster and more stable for large maps or long runs."},
+    {'id': 12, 'name': 'DepthDependentDiffuserComponent', 'display_name': 'Hillslope Soil Creep',
+     'description': "Slowly moves soil down slopes over time, smoothing out hills and ridges."},
+    {'id': 13, 'name': 'VegetationComponent', 'display_name': 'Vegetation Cover',
+     'description': "Adds plant cover, which affects erosion and runoff based on vegetation type. Cover can stay constant or change over the simulation."},
+    {'id': 14, 'name': 'LithoLayersComponent', 'display_name': 'Rock Layers',
+     'description': "Sets bedrock types at different depths, so erosion speed changes as deeper layers get exposed."},
+    {'id': 15, 'name': 'PrecipitationComponent', 'display_name': 'Rainfall & Runoff',
+     'description': "Controls rainfall and runoff, which drive erosion. Can stay steady, vary by location, or change over time."},
+    {'id': 16, 'name': 'TectonicsComponent', 'display_name': 'Tectonic Uplift',
+     'description': "Slowly raises the land, like real geological uplift, to build terrain back up against erosion."},
 ]
 
 COMPONENT_PARAMS = [
@@ -97,7 +107,15 @@ def seed_database(session):
     seeded = False
 
     if session.query(Component).count() == 0:
-        session.add_all(Component(id=r["id"], name=r["name"], description=r["description"]) for r in COMPONENTS)
+        session.add_all(
+            Component(
+                id=r["id"], name=r["name"], description=r["description"],
+                display_name=r.get("display_name"),
+                prerequisite_badge=r.get("prerequisite_badge"),
+                prerequisite_tooltip=r.get("prerequisite_tooltip"),
+            )
+            for r in COMPONENTS
+        )
         session.add_all(
             ComponentParam(
                 id=r["id"], component_id=r["component_id"], label=r["key"],
@@ -119,3 +137,29 @@ def seed_database(session):
     if seeded:
         session.commit()
     return seeded
+
+
+def backfill_component_metadata(session):
+    """Fills in `display_name`/`prerequisite_*` for Component rows that
+    predate those columns -- i.e. a database seeded by an older version of
+    this app, before `Database._sync_schema()` added them. Only ever touches
+    rows where `display_name IS NULL`, so it can run on every startup without
+    risk of overwriting a user's own edits to a component's `description`.
+    Safe to call even on a fully fresh (already-seeded-with-the-new-columns)
+    database -- there, every row already has `display_name` set and this is
+    a no-op.
+    """
+    by_name = {r["name"]: r for r in COMPONENTS}
+    changed = False
+    for comp in session.query(Component).filter(Component.display_name.is_(None)).all():
+        r = by_name.get(comp.name)
+        if not r:
+            continue
+        comp.display_name = r.get("display_name")
+        comp.prerequisite_badge = r.get("prerequisite_badge")
+        comp.prerequisite_tooltip = r.get("prerequisite_tooltip")
+        changed = True
+
+    if changed:
+        session.commit()
+    return changed

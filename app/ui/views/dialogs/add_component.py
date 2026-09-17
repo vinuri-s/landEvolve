@@ -23,7 +23,7 @@ class AddComponentDlg(QDialog):
         self.initial_params = initial_params
         self.dynamic_form = None
 
-        display_name = ComponentController.humanize_name(component.name)
+        display_name = ComponentController.display_name(component)
         is_edit = initial_params is not None
         if is_edit:
             self.setWindowTitle(f"Edit {display_name}")

@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 from app.core.constants import DynamicFormConsts
+from app.ui.widgets.info_icon import make_info_icon
 
 
 class LithologyPickerWidget(QWidget):
@@ -310,7 +311,8 @@ class DynamicFormWidget(QWidget):
 
     def _param_row_label(self, item):
         """Build a form-row label from DB metadata: layman name on top, the
-        technical key + units beneath, and the description as a tooltip."""
+        technical key + units beneath, and a hoverable info icon (instead of a
+        tooltip on the plain text, which gives no hint that it's there)."""
         key = item.get("label", "")
         name = item.get("display_name") or key
         units = item.get("units") or ""
@@ -322,9 +324,17 @@ class DynamicFormWidget(QWidget):
             f'{name} &nbsp;<span style="color:#9aa0a6; font-size:10px;">({sub})</span>'
         )
         lbl.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        if desc:
-            lbl.setToolTip(desc)
-        return lbl
+
+        if not desc:
+            return lbl
+
+        row = QWidget()
+        row_layout = QHBoxLayout(row)
+        row_layout.setContentsMargins(0, 0, 0, 0)
+        row_layout.setSpacing(4)
+        row_layout.addWidget(lbl)
+        row_layout.addWidget(make_info_icon(desc))
+        return row
 
     def _set_row_visible(self, field_key, visible):
         """Show/hide a form row (widget + its label) by field key, handling the

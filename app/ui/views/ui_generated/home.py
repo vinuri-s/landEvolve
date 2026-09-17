@@ -32,7 +32,7 @@ class Ui_Home(object):
             "rock type, and tectonic uplift.</p>"
             "<p>What you can do:</p>"
             "<ul>"
-            "<li>Assemble a simulation from interchangeable process components</li>"
+            "<li>Assemble a simulation from interchangeable earth surface processes</li>"
             "<li>Drive erosion with precipitation, vegetation, lithology, and uplift scenarios</li>"
             "<li>Explore results as 2D maps, an interactive 3D surface, and a scrubbable erosion timeline</li>"
             "<li>Analyze erosion/deposition patterns, drainage networks, soil thickness, and sediment budgets</li>"

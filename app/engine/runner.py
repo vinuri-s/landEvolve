@@ -534,7 +534,10 @@ class SimulationRunner:
             "change_events_plot": change_events_plot,
         }
 
-        diag = diagnose_space_regime(diff)
+        # Use the uplift-corrected signal here too (like every other diagnostic
+        # above) -- otherwise uniform tectonic uplift reads as near-universal
+        # "deposition" and swamps the actual erosion/deposition regime.
+        diag = diagnose_space_regime(signal_diff)
 
         tracker_csv = None
         tracker_plot = None

@@ -174,7 +174,7 @@ class SimulationService:
                     data[data == src.nodata] = np.nan
 
                 valid = data[~np.isnan(data)]
-                res_x, _ = src.res  # DEMs are square-pixel; only res_x is reported
+                res_x, res_y = src.res  # pixels aren't guaranteed square -- report both
 
                 # Prefer a compact "EPSG:xxxx" code. Some DEMs only embed a full
                 # WKT projection string; resolve it to its EPSG code, else fall
@@ -191,6 +191,7 @@ class SimulationService:
                     "width": src.width,
                     "height": src.height,
                     "resolution": round(float(res_x), 4),
+                    "resolution_y": round(float(res_y), 4),
                     "crs": crs,
                     "min_elev": round(float(np.min(valid)), 2) if valid.size else None,
                     "max_elev": round(float(np.max(valid)), 2) if valid.size else None,
