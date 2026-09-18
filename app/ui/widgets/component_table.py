@@ -1,6 +1,8 @@
-from PyQt6.QtWidgets import QTableWidget, QTableWidgetItem, QWidget, QHBoxLayout, QPushButton
+from PyQt6.QtWidgets import QTableWidget, QTableWidgetItem, QWidget, QHBoxLayout, QLabel, QPushButton
 from typing import List, Dict, Callable
 from app.core.constants import ComponentDataKeys
+from app.controllers.component_controller import ComponentController
+from app.ui.widgets.badge import make_badge
 
 class ComponentTableManager:
     """
@@ -64,7 +66,18 @@ class ComponentTableManager:
         for i, comp_data in enumerate(self.added_components):
             component = comp_data[ComponentDataKeys.COMPONENT]
             self.table_widget.insertRow(i)
-            self.table_widget.setItem(i, 0, QTableWidgetItem(component.name))
+
+            name_widget = QWidget()
+            name_layout = QHBoxLayout(name_widget)
+            name_layout.setContentsMargins(4, 0, 4, 0)
+            name_layout.setSpacing(6)
+            name_layout.addWidget(QLabel(ComponentController.display_name(component)))
+            badge = ComponentController.prerequisite_badge(component)
+            if badge:
+                name_layout.addWidget(make_badge(*badge))
+            name_layout.addStretch()
+            self.table_widget.setCellWidget(i, 0, name_widget)
+
             self.table_widget.setItem(i, 1, QTableWidgetItem(component.description or "No description"))
             
             # Action Buttons Layout

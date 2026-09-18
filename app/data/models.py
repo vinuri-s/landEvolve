@@ -16,7 +16,13 @@ class Component(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False) # python class name
     description = Column(Text)
-    
+
+    # Presentation metadata for the UI (layman-friendly), mirroring the same
+    # pattern ComponentParam already uses below.
+    display_name = Column(String, nullable=True)          # e.g. "Water Flow Routing"
+    prerequisite_badge = Column(String, nullable=True)     # short badge text, e.g. "Required"
+    prerequisite_tooltip = Column(Text, nullable=True)     # why it's required, shown on hover
+
     # Parameters required by this component (configured in UI)
     params = relationship("ComponentParam", back_populates="component")
 

@@ -1,6 +1,5 @@
-import re
-
 from app.services.component_service import ComponentService
+from app.core.text_utils import humanize_pascal_case
 
 
 class ComponentController:
@@ -21,7 +20,24 @@ class ComponentController:
         """Turns a PascalCase component name like 'VegetationComponent' into
         'Vegetation Component' for display -- the stored/matched name is
         untouched, this is presentation only."""
-        return re.sub(r'(?<!^)(?=[A-Z])', ' ', name)
+        return humanize_pascal_case(name)
+
+    @classmethod
+    def prerequisite_badge(cls, component):
+        """(label, tooltip) pair if this process is one other processes
+        depend on, else None. Reads the Component row's own
+        `prerequisite_badge`/`prerequisite_tooltip` columns."""
+        if not component.prerequisite_badge:
+            return None
+        return (component.prerequisite_badge, component.prerequisite_tooltip or "")
+
+    @classmethod
+    def display_name(cls, component) -> str:
+        """Plain-language process name for the UI, e.g. 'SpaceComponent' ->
+        'Erosion & Sediment Transport'. Reads the Component row's own
+        `display_name` column, falling back to the humanized class name for
+        any component that doesn't have one set."""
+        return component.display_name or cls.humanize_name(component.name)
 
     def get_dynamic_form_config(self, component_params):
         config = []

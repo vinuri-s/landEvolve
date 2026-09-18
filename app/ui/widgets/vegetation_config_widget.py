@@ -162,7 +162,7 @@ class VegetationConfigWidget(QWidget):
         trans_layout = QVBoxLayout(self._transition_group)
 
         self._trans_table = QTableWidget(0, 3)
-        self._trans_table.setHorizontalHeaderLabels(["Timestep", "From Class", "To Class"])
+        self._trans_table.setHorizontalHeaderLabels(["Year", "From Class", "To Class"])
         self._trans_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._trans_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._trans_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
@@ -310,10 +310,10 @@ class VegetationConfigWidget(QWidget):
         row = self._trans_table.rowCount()
         self._trans_table.insertRow(row)
 
-        step_spin = QSpinBox()
-        step_spin.setRange(1, 9_999_999)
-        step_spin.setValue(100)
-        self._trans_table.setCellWidget(row, 0, step_spin)
+        year_spin = QSpinBox()
+        year_spin.setRange(1, 9_999_999)
+        year_spin.setValue(100)
+        self._trans_table.setCellWidget(row, 0, year_spin)
         self._trans_table.setCellWidget(row, 1, self._make_class_combo(classes))
         self._trans_table.setCellWidget(row, 2, self._make_class_combo(classes))
 
@@ -330,12 +330,12 @@ class VegetationConfigWidget(QWidget):
 
         transitions = []
         for row in range(self._trans_table.rowCount()):
-            step_w = self._trans_table.cellWidget(row, 0)
+            year_w = self._trans_table.cellWidget(row, 0)
             src_w = self._trans_table.cellWidget(row, 1)
             tgt_w = self._trans_table.cellWidget(row, 2)
-            if step_w and src_w and tgt_w:
+            if year_w and src_w and tgt_w:
                 transitions.append({
-                    'timestep': step_w.value(),
+                    'year': year_w.value(),
                     'source_class_id': src_w.currentData(),
                     'target_class_id': tgt_w.currentData(),
                 })
@@ -376,10 +376,10 @@ class VegetationConfigWidget(QWidget):
             row = self._trans_table.rowCount()
             self._trans_table.insertRow(row)
 
-            step_spin = QSpinBox()
-            step_spin.setRange(1, 9_999_999)
-            step_spin.setValue(int(t.get('timestep', 1)))
-            self._trans_table.setCellWidget(row, 0, step_spin)
+            year_spin = QSpinBox()
+            year_spin.setRange(1, 9_999_999)
+            year_spin.setValue(int(t.get('year', 1)))
+            self._trans_table.setCellWidget(row, 0, year_spin)
             self._trans_table.setCellWidget(
                 row, 1,
                 self._make_class_combo(classes, t.get('source_class_id'))

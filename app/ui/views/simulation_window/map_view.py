@@ -232,14 +232,30 @@ class MapViewWidget:
         script = f"if (typeof removeGeoJsonLayer !== 'undefined') removeGeoJsonLayer('{layer_id}');"
         self.web_view.page().runJavaScript(script)
 
-    def show_placeholder(self, message: str):
-        """Renders a simple placeholder message when no valid coordinates are provided."""
+    def show_placeholder(self, message: str, subtitle: str = "", is_error: bool = False):
+        """Renders a friendly empty/error state instead of a blank page --
+        shown before a DEM is selected, or if the selected one fails to
+        preview. A plain grey-on-grey message read as a broken/blank screen,
+        so this uses a centred card with an icon to make it read as an
+        intentional state instead."""
+        icon = "⚠️" if is_error else "\U0001f5fa️"
+        subtitle_html = (
+            f'<p style="margin:8px 0 0 0;font-size:12.5px;color:#8a8a8a;line-height:1.5;">{subtitle}</p>'
+            if subtitle else ""
+        )
         html = f"""
         <!DOCTYPE html>
         <html>
+        <head><meta charset="utf-8"></head>
         <body style="margin:0;padding:0;background-color:#f0f0f0;">
-            <div style="display:flex;justify-content:center;align-items:center;height:100%;">
-                <p style="font-family:Arial;color:#666;">{message}</p>
+            <div style="display:flex;justify-content:center;align-items:center;height:100%;box-sizing:border-box;padding:24px;">
+                <div style="text-align:center;max-width:300px;padding:28px 26px;background:#ffffff;
+                            border:1px solid #e2e2e2;border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,0.07);
+                            font-family:-apple-system,'Segoe UI',Arial,sans-serif;">
+                    <div style="font-size:34px;line-height:1;margin-bottom:10px;">{icon}</div>
+                    <p style="margin:0;font-size:14.5px;font-weight:600;color:#333333;">{message}</p>
+                    {subtitle_html}
+                </div>
             </div>
         </body>
         </html>

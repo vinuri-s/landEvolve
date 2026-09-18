@@ -1,294 +1,122 @@
 # LandEvolve
 
-LandEvolve is a desktop application for simulating and visualizing landscape evolution. It is powered by the **Landlab Landscape Evolution Model** to provide accurate geological modeling, combining a robust scientific engine with a modern, user-friendly interface.
+LandEvolve is a desktop application for simulating and visualizing landscape evolution. It's powered by the **Landlab Landscape Evolution Model**, combining a scientific engine with a PyQt6 desktop interface.
 
 ## 🚀 Getting Started
 
 ### Prerequisites
-*   Python 3.10 or higher (the codebase uses `X | Y` union type hints, a 3.10+ syntax; CI builds against 3.10)
+*   Python 3.10 or higher
 
 ### Installation & Running
 
 #### macOS / Linux
 ```bash
-# 1. Create a virtual environment
 python -m venv qt_env
-
-# 2. Activate the environment
 source qt_env/bin/activate
-
-# 3. Install dependencies
 pip install -r requirements.txt
-
-# 4. Run the application
 python main.py
 ```
 
 #### Windows
 ```powershell
-# 1. Create a virtual environment
 python -m venv qt_env
-
-# 2. Activate the environment
 qt_env\Scripts\activate
-
-# 3. Install dependencies
 pip install -r requirements.txt
-
-# 4. Run the application
 python main.py
 ```
 
-> On first launch the app **creates and seeds its SQLite database automatically**: `Database.create_tables()` builds the schema and `app/data/seed.py` populates the reference data (components, lithologies, vegetation classes) if the tables are empty. Input DEMs are not seeded — they are browsed from the user's filesystem at run time. `app/data/db/app_data.db` is git-ignored and never committed — it's generated fresh wherever the app runs (dev checkout or packaged build), so there's no binary file that can drift out of sync with `app/data/seed.py`. Seeding remains idempotent — your edits and runs are never overwritten, and the seed source in `app/data/seed.py` stays the source of truth.
+> On first launch the app creates and seeds its SQLite database automatically (`app/data/db/app_data.db`, git-ignored). Input DEMs aren't seeded — you browse for them at run time. Seeding is idempotent, so re-running never overwrites your data.
 
 ## ▶️ Usage
 
-1. **Browse for an input DEM** (`Browse...`) in *Input Setup*. Once selected, the satellite *Location Preview* centres on the DEM and a labelled details line beneath the map shows its metadata — size, **resolution (m)**, CRS, and elevation range. The boundary toggle overlays the DEM's extent on the map.
-2. **Choose an output folder** in the same *Input Setup* section — pre-filled with the app's default outputs location (or whichever folder you picked last time), overridable via `Browse...`. Each run writes to a `simulation_<N>/` subfolder here, numbered independently per output folder.
-3. **Set the run length**: *Total Duration* (total time) and *Time Step* (`dt`).
-4. *(Optional)* Enable **Track Interested Landscape Feature** and supply a polygon shapefile to monitor a specific area over time. Optionally set the **First-Effect Threshold (m)** (default `0.01`) — the amount of geomorphic change at which the feature is reported as "first affected".
-5. **Add components**: click **+ Add Component**, pick a type from the list (each shown with its description), then fill in its parameters in the dialog that opens — e.g. `FlowAccumulatorComponent`, a SPACE eroder, `DepthDependentDiffuserComponent`, `PrecipitationComponent`, `VegetationComponent`, `LithoLayersComponent`. Added components appear in the table with their own **Edit**/**Remove**; the picker only offers types not already added. Precipitation requires a Flow Accumulator to take effect.
-6. **Run Simulation**. Progress is shown live; the UI stays responsive (runs on a background thread).
-7. **Explore results** across the tabs: 2D maps, 3D map, Terrain Evolution, Erosion Timeline, Feature Tracking Map (only if a feature was tracked), and Analysis plots. Use *Show Statistics* for performance/diagnostic metrics.
+Every field in *Input Setup*, the process picker, and each process's own parameters has a small **ⓘ** info icon — hover it for a plain-language explanation.
+
+1. **Browse for an input DEM** in *Input Setup*. The *Location Preview* map centres on it and shows its size, resolution, CRS, and elevation range.
+2. **Set the run length**: *Total Duration* and *Time Step* (`dt`).
+3. *(Optional)* Enable **Track Interested Landscape Feature** and supply a polygon shapefile to monitor a specific area — see below.
+4. **Select earth surface processes**: click **+ Add Process** and pick from the 8 available — e.g. *Water Flow Routing*, *Erosion & Sediment Transport*, *Hillslope Soil Creep*, *Rainfall & Runoff*, *Vegetation Cover*, *Rock Layers*, *Tectonic Uplift*. *Water Flow Routing* is flagged **Required**, since the Erosion processes need it to run.
+5. **Choose an output folder** — its own step at the end of setup. Each run writes to a numbered `simulation_<N>/` subfolder there.
+6. **Run Simulation** — runs on a background thread, so the UI stays responsive.
+7. **Explore results**: 2D maps, 3D map, Terrain Evolution, Erosion Timeline, Feature Tracking Map (if used), and Analysis plots.
 
 ### Tracking a Feature of Interest
 
-If you care about a *specific* place in the DEM — a fan, terrace, archaeological site, road, channel reach — you can have LandEvolve monitor just that area through the run and tell you **when the evolving landscape first reaches it**.
+Have LandEvolve monitor a specific place — a fan, terrace, road, channel reach — and report **when the evolving landscape first reaches it**.
 
-1. **Prepare a polygon shapefile** (`.shp`) outlining the area of interest. Any CRS is fine — it's automatically reprojected to match the DEM; the polygon is rasterized into a boolean mask so only pixels strictly inside it are monitored. (Provide the full shapefile set — `.shp`, `.shx`, `.dbf`, and ideally `.prj` — in the same folder.)
-2. In *Input Setup*, tick **Track Interested Landscape Feature**. A **Feature Shapefile** browse field appears — select your `.shp`. The polygon is drawn on the preview map so you can confirm placement.
-3. *(Optional)* Set the **First-Effect Threshold (m)** — how much geomorphic change counts as the feature being "first affected" (default `0.01 m`).
-4. Configure components and **Run Simulation** as usual.
-5. Open the **Feature Tracking Map** tab in the results. It's an interactive, scrubbable heatmap animation cropped to just the tracked polygon (plus a little surrounding context), with the **first-change** (cyan circle) and **biggest-change** (gold star) events marked directly on the map — each labelled with when it happened, the magnitude, and its location. If a first effect was detected, the animation opens on the frame nearest that time instead of the blank starting frame.
-    *   The full time series behind that map is also written to the run's output folder: `feature_tracking.csv` (columns: time, mean/max/min elevation, mean change, max absolute change, volume change) and `feature_tracking.png` — a two-panel elevation / erosion-deposition plot over time, for further analysis outside the app.
+1. Prepare a polygon shapefile (`.shp` + `.shx`/`.dbf`/`.prj`). Any CRS works — it's reprojected to match the DEM automatically.
+2. Tick **Track Interested Landscape Feature** and browse to it. It's drawn on the preview map to confirm placement.
+3. *(Optional)* Set the **First-Effect Threshold (m)** — how much change counts as "first affected" (default `0.01 m`).
+4. Run as usual, then open the **Feature Tracking Map** tab: a scrubbable animation cropped to the feature, with the first-change and biggest-change moments marked. The same data is written to `feature_tracking.csv`/`.png`.
 
-> **How "first effect" is determined:** each timestep the engine measures the **peak absolute geomorphic change** inside the feature mask (peak, so it catches the moment the erosion/deposition front first touches *any* edge), excludes tectonic uplift, and reports the earliest time that change crosses the threshold — linearly interpolated between steps for sub-timestep precision. See [First-Effect Detection](#b-the-simulation-engine) further down for the rationale.
+> First effect is measured as peak change inside the feature, excluding tectonic uplift, interpolated between steps for sub-timestep precision.
 
 ### Outputs
-Each run is written to `simulation_<N>/` inside the output folder chosen in *Input Setup* (`resources/outputs/` by default), including:
-*   `init.png`, `final.png`, `diff.png` — 2D elevation and difference maps
-*   `init.tif`, `final.tif`, `diff.tif` — GeoTIFFs of the initial/final surface and total change
-*   `mask.tif`, `drainage_network.tif`, `soil_thickness.tif` — GeoTIFFs of the erosion/deposition categories, drainage area, and soil depth, for use in GIS software
-*   `view_3d_comparison.html`, `terrain_timeline.html`, `sediment_timeline.html` — interactive 3D view + the Terrain Evolution and Erosion Timeline animations
-*   `dem_snapshots/`, `difference_snapshots/` — the same snapshots behind the two timeline animations above, saved as individual PNGs (one DEM + one difference-map image per captured timestep) for offline viewing/sharing without opening the HTML player
-*   analysis plots (`mask.png`, `change_events.png`, `soil_thickness.png`, `flux.png`, `drainage_network.png`)
-*   `feature_tracking.csv`, `feature_tracking.png` — only when a feature was tracked (see [Tracking a Feature of Interest](#tracking-a-feature-of-interest))
-*   `simulation_details.txt` — parameters, components, and diagnostics for the run
+Each run writes to `simulation_<N>/` inside the chosen output folder (`resources/outputs/` by default):
+*   `init.png` / `final.png` / `diff.png` and matching `.tif` GeoTIFFs — elevation and change maps
+*   `mask.tif`, `drainage_network.tif`, `soil_thickness.tif` — for use in GIS software
+*   `view_3d_comparison.html`, `terrain_timeline.html`, `sediment_timeline.html` — interactive views
+*   `dem_snapshots/`, `difference_snapshots/` — the timeline frames as individual PNGs
+*   Analysis plots (`mask.png`, `change_events.png`, `soil_thickness.png`, `flux.png`, `drainage_network.png`)
+*   `feature_tracking.csv`/`.png` — only if a feature was tracked
+*   `simulation_details.txt` — parameters, processes, and diagnostics for the run
 
-## 📦 Packaging (Executable Generation)
+## 📦 Packaging
 
-You can package LandEvolve into a standalone executable that includes all dependencies (LandLab, Rasterio, PyQt6, etc.) using PyInstaller.
-
-### 1. Build the Executable
-Run the dedicated build script from the project root:
+Build a standalone executable (bundles Landlab, Rasterio, PyQt6, etc.) with PyInstaller:
 ```bash
 python build_executable.py
 ```
-
-> [!NOTE]
-> The build uses `build_executable.py` (the equivalent `LandEvolve.spec` is kept in sync for `pyinstaller LandEvolve.spec`). Only **read-only runtime assets** are bundled:
-> - `resources/about.jpg` — the home-screen image
->
-> The SQLite database is **not** bundled either — the packaged app creates and seeds it the same way a dev checkout does, on first launch (see above), from `app/data/seed.py`. Input DEMs are browsed from the user's own filesystem at run time, so they are **not** bundled. Also deliberately **not** bundled: `resources/outputs/` (writable, generated per run beside the executable), the empty `app/resources/` directory, dev docs, and the transient SQLite `-wal`/`-shm` files. This keeps the bundle lean and avoids shipping run artifacts.
-
-### 2. Run the Executable
-
-#### macOS
-The build generates an `.app` bundle and a directory in `dist/LandEvolve`.
-```bash
-./dist/LandEvolve/LandEvolve
-```
-
-#### Windows / Linux
-Run the executable from the generated `dist` folder:
-```powershell
-.\dist\LandEvolve\LandEvolve.exe
-```
-
-> [!NOTE]
-> On the first run, the application will initialize a `logs/` directory and a `app/data/db/` directory beside the executable for writable data.
+The database and input DEMs are never bundled — the packaged app creates/seeds its DB on first launch just like a dev checkout, and DEMs are always browsed from the user's filesystem. Run the result from `dist/LandEvolve/` (`.app` on macOS, `.exe` on Windows).
 
 ## 🏗️ Project Structure
 
-The project follows a strict layered architecture to ensure separation of concerns and maintainability:
-
-*   **`app/ui`**: Handles the user interface (Views). Built with PyQt6.
-*   **`app/controllers`**: Handlers linking the UI interactions to the services.
-*   **`app/services`**: Business logic layer that orchestrates operations between the UI, Data, and Engine layers.
-*   **`app/engine`**: The core simulation engine powered by `landlab`. This layer is pure logic and isolated from the UI and Database.
-*   **`app/data`**: Manages data persistence using SQLAlchemy. Handles database models and repositories.
-*   **`app/core`**: Contains core configurations, constants, and shared utilities.
+A layered architecture: `app/ui` (PyQt6 views) → `app/controllers` (thin UI-to-service handlers) → `app/services` (business logic bridging UI, data, and engine) → `app/engine` (pure simulation logic, isolated from UI/DB) and `app/data` (SQLAlchemy models/repositories) in parallel, with `app/core` (config, constants, shared utilities) underneath everything.
 
 ## 🛠️ Technologies & Stack
 
-### Core
-*   **Language**: Python 3.10+
-*   **GUI Framework**: PyQt6 (Desktop interface)
-*   **Web Integration**: PyQt6-WebEngine (Embedding web content)
+*   **Core**: Python 3.10+, PyQt6, PyQt6-WebEngine
+*   **Simulation**: Landlab, NumPy, Rasterio, GeoPandas, Fiona; Numba optionally accelerates a corrected SPACE inner loop (falls back safely if absent)
+*   **Visualization**: Matplotlib (2D), Plotly (interactive 3D)
+*   **Data**: SQLAlchemy (SQLite)
 
-### Simulation & Science
-*   **Landlab**: The core landscape evolution modeling library.
-*   **NumPy**: High-performance numerical computing.
-*   **Numba**: JIT-compiles a corrected, drop-in replacement for a buggy Landlab inner loop (see `SpaceLargeScaleEroderComponent` below). Optional — falls back to Landlab's original code, still protected by a statistical outlier guard, if not installed.
-*   **Rasterio**: Geospatial raster data (GeoTIFF) handling.
-*   **GeoPandas**: Geospatial vector data (Shapefile) handling.
-*   **Fiona**: Reading and writing geospatial data formats.
+## 🧩 Key Modules
 
-### Visualization
-*   **Matplotlib**: Static 2D plotting (Topography, Change Maps).
-*   **Plotly**: Interactive 3D surface visualization.
+*   **UI** (`app/ui`) — `HomeWindow` (landing screen), `SimulationWindow` (setup screen), `SimulationResultsWindow` (tabbed results — 2D, 3D, Terrain Evolution, Erosion Timeline, Feature Tracking, Analysis; see [Visualizations & Plots](#-visualizations--plots)), `SimulationWorker` (background thread).
+*   **Controllers** (`app/controllers`) — thin handlers between views and services. `ComponentController` resolves each process's plain-language display name and "Required" badge from the database (see Data Layer).
+*   **Services** (`app/services`) — `SimulationService`, `ComponentService`, `ShapefileService`, `LithologyService`, `VegetationService`: business logic bridging the UI to data and the engine.
+*   **Engine** (`app/engine`) — the scientific core. `SimulationRunner` drives the timestep loop; `RasterModel` loads a DEM into a Landlab grid. Each process in `components.py` wraps a Landlab class or (for precipitation, vegetation, and tectonic uplift, which Landlab has no equivalent for) custom logic. They communicate only through shared grid fields, in a fixed order each step:
 
-### Data & System
-*   **SQLAlchemy**: ORM for database management (SQLite).
-*   **Psutil**: System monitoring (RAM usage tracking).
+    ```
+    Precipitation → Vegetation → FlowAccumulator → DepthDependentDiffuser → SPACE → LithoLayers → Tectonics
+    ```
 
-## 🧩 Key Modules & Functions
-
-Following the same layer order as [Project Structure](#-project-structure) above:
-
-### 1. User Interface (`app/ui`)
-A modern, responsive PyQt6 interface.
-*   **`HomeWindow`**: The landing dashboard.
-*   **`SimulationWindow`**: The main setup screen for configuring simulation parameters, selecting components, browsing for an input DEM file, and choosing an output folder (both from the user's own filesystem). A satellite **Location Preview** map (centred on the selected DEM) can overlay its boundary, and a labelled details line beneath the map shows the DEM's metadata — size, **resolution (m)**, CRS, and elevation range.
-*   **`SimulationResultsWindow`**: Displays simulation progress and final results, as tabs in this order:
-    *   **2D Visualization**: Carousel view of Initial, Final, and Difference maps. **Ctrl+scroll zooms to native resolution, click-drag pans, double-click resets to fit** — the same zoomable viewer is used in the Analysis tab.
-    *   **3D Map**: Interactive 3D terrain viewer.
-    *   **Terrain Evolution**: Animated, scrubbable view of the actual elevation surface evolving over time.
-    *   **Erosion Timeline**: Animated, scrubbable view of cumulative erosion/deposition over time.
-    *   **Feature Tracking Map**: An interactive, scrubbable view cropped to the tracked feature's polygon (only present if a feature was tracked), with the **first-change** and **biggest-change** events marked directly on the map. See [Tracking a Feature of Interest](#tracking-a-feature-of-interest) earlier in this doc.
-    *   **Analysis**: Scientific plots (erosion/deposition mask, onset and peak of change, soil thickness, sediment budget, drainage network) shown one at a time. See the [Visualizations & Plots](#-visualizations--plots) section for details.
-*   **`SimulationWorker`**: A background thread worker (`QThread`) that ensures the UI remains responsive while the heavy simulation runs.
-
-### 2. Controllers (`app/controllers`)
-Thin handlers that translate a UI action straight into a Service call, so views never import a Service directly.
-*   **`SimulationController`**: Backs `SimulationWindow` — runs the simulation, resolves the next simulation number for the chosen output folder, and looks up GeoTIFF/shapefile metadata for the map preview.
-*   **`ComponentController`**: Backs the component picker/add dialogs — lists available components and builds the config-dialog field layout from a component's parameters.
-*   **`VegetationController`** / **`LithologyController`**: Back their respective config widgets — list/create/update/delete vegetation classes, and list lithologies.
-*   Each owns one DB session (via its Service) for as long as its window/dialog is open, and exposes a `close()` releasing it — called when that window/dialog closes.
-
-### 3. Services (`app/services`)
-Business logic layer acting as a bridge between UI and Data/Engine.
-*   **`SimulationService`**: Prepares simulation data, merges user parameters with database defaults, reads GeoTIFF metadata (bounds, resolution) for the input DEM the user browsed for, and triggers the engine.
-*   **`ComponentService`**: Retrieves component definitions (Landlab-based and custom) and their user-configurable parameters.
-*   **`ShapefileService`**: Parses geographic shapefiles into GeoJSON for the map UI, and builds DEM-boundary GeoJSON.
-*   **`LithologyService`**: Provides rock-type (lithology) definitions and erodibility values.
-*   **`VegetationService`**: Manages vegetation classes and their geomorphic multipliers (create / read / update / delete).
-
-### 4. Application Engine (`app/engine`)
-The heart of the application, responsible for the actual scientific computation.
-*   **`SimulationRunner`**: The main driver that orchestrates the simulation loop, time-stepping, and component execution.
-*   **`RasterModel`**: Manages the simulation grid, loading DEMs (Digital Elevation Models) into a Landlab `RasterModelGrid` and initializing the `topographic__elevation` field (plus an optional `geology__type` field from a rock-type raster). Soil/sediment fields are created by the erosion components themselves.
-*   **`Components`** (`app/engine/components.py`): each is a thin wrapper exposing a Landlab process to the app, or custom logic layered on top.
-
-    **Landlab-based components** (wrap a Landlab class directly):
-    *   `FlowAccumulatorComponent` → Landlab `FlowAccumulator`: routes flow and computes `drainage_area` + `surface_water__discharge` from the runoff field. Internal depressions are rerouted each step by a `LakeMapperBarnes` priority-flood pass (see "Important Notes" below).
-    *   `SpaceComponent` → Landlab `Space`: SPACE sediment-transport + bedrock eroder (uses discharge).
-    *   `SpaceLargeScaleEroderComponent` → Landlab `SpaceLargeScaleEroder`: large-scale, more robust SPACE variant.
-    *   **SPACE numerical safety net** (`SpaceComponent` + `SpaceLargeScaleEroderComponent`): Landlab's SPACE update has a confirmed upstream bug — an *exact* floating-point equality check meant to catch a math singularity misses nodes merely very close to it (common on gently-sloping terrain), producing bogus multi-billion-metre elevation spikes. Two defences: **(1) root-cause fix** (`SpaceLargeScaleEroderComponent` only, `app/engine/space_fix.py`) — a Numba-JIT reimplementation of Landlab's inner loop with the check corrected to a proper tolerance test; requires `numba`, logged once at startup. **(2) statistical outlier guard** (`_clamp_space_outliers`, both components, always on) — reverts any node whose per-step change is orders of magnitude beyond that step's own 99.9th-percentile change.
-    *   `DepthDependentDiffuserComponent` → Landlab `DepthDependentDiffuser`: hillslope soil creep (depth-dependent linear diffusion). Vegetation cover is applied as a **domain-mean** diffusivity multiplier (Landlab stores diffusivity as one scalar, not per-node like SPACE's erodibility). **Numerical stability:** Landlab's diffuser has no built-in stability check — it's only stable when `dt ≤ cell_size² / (4 × diffusivity)` (the standard 2D-diffusion limit). At fine resolutions with a large `dt`, an unguarded step can exceed that limit and make elevation oscillate/diverge, corrupting the drainage network. This component computes the stable step size and **substeps** internally (capped at 10,000, logged if hit) so results stay correct regardless of the `dt`/resolution the user picks.
-    *   `LithoLayersComponent` → Landlab `LithoLayers`: tracks layered rock types and refreshes the `K_sp` erodibility field as layers are exposed.
-
-    **Custom components** (custom logic, not a single Landlab class):
-    *   `VegetationComponent`: applies per-class multipliers to erodibility (`K_sed`, `K_br`), hillslope diffusivity, and runoff. Supports **Static** (one class throughout) and **Transition** (scheduled class changes at given timesteps) modes.
-    *   `PrecipitationComponent`: sets the runoff field (`water__unit_flux_in`) that FlowAccumulator turns into discharge, so climate controls erosion. Runs **before** FlowAccumulator/Vegetation; vegetation runoff multipliers compose on top. Modes are tailored to **long-term** timesteps (≫ storm scale), representing *effective* climate forcing:
-        *   **Uniform** — constant effective precipitation = `precipitation × runoff_coefficient`.
-        *   **Spatial** — per-node runoff resampled from a mean-annual rainfall GeoTIFF (orographic gradients).
-        *   **Stochastic** — inter-period variability: each step draws a mean from a gamma distribution (CV = `variability`) → wet/dry periods.
-        *   **Trend** — climate change: precipitation ramps linearly from `precipitation` to `final_precipitation` over the run.
-        *   Units match FlowAccumulator's `runoff_rate` (default `1.0` = prior behaviour), so existing `K` calibration stays valid.
-    *   `TectonicsComponent`: applies **rock uplift** each step — the tectonic forcing that competes with erosion to build relief. Landlab has no dedicated uplift component (the idiom is to add `uplift_rate × dt` to the elevation field), so this is custom logic. Only **core nodes** are uplifted (boundary/outlet nodes stay fixed as base level, so relief grows); when a bedrock field is present, **both `bedrock__elevation` and `topographic__elevation`** are raised to keep the SPACE soil/bedrock budget consistent. Runs at the end of each step (erode, then uplift). Modes: **Uniform** (constant block uplift) and **Spatial** (per-node uplift rate from a raster, for differential/tilted uplift).
-*   **`IO` & `Visualization`**: Handles reading/writing GeoTIFFs and generating 2D/3D result plots.
-
-#### How the components work together
-You assemble a simulation by selecting components; the `SimulationRunner` builds and runs them in a fixed, physically-meaningful **order each timestep**:
-
-```
-Precipitation → Vegetation → FlowAccumulator → DepthDependentDiffuser → SPACE → LithoLayers → Tectonics
-   (set runoff)   (modulate)     (route water)      (hillslope creep)     (river erosion)  (rock K)   (uplift)
-```
-
-They are decoupled but communicate through shared Landlab grid fields, not direct calls:
-
-*   **Climate → water → erosion.** `Precipitation` writes the runoff field `water__unit_flux_in`; `Vegetation` multiplies it; `FlowAccumulator` turns it into `surface_water__discharge`; **SPACE** uses that discharge (with slope) to erode bedrock and move sediment. So changing precipitation propagates all the way to erosion.
-*   **Rock & vegetation → erodibility.** Each step, the effective `K_sed`/`K_br` pushed into the SPACE eroder is built from the lithology field `K_sp` (maintained by `LithoLayers` as layers are exposed) and the per-node vegetation multipliers — preserving the modeller's configured K_sed:K_br ratio.
-*   **Uplift vs. erosion.** `Tectonics` raises core nodes (bedrock + surface together) after erosion each step; relief reflects the competition between uplift and the erosion the other components produce. Boundary/outlet nodes stay fixed as base level.
-*   **Ordering guarantees.** Runoff is set before flow routing; vegetation/lithology K is applied before SPACE reads it; `LithoLayers` refreshes `K_sp` after erosion so the next step sees the newly exposed rock. A FlowAccumulator is required for the erosion components to receive discharge.
-
-### 5. Geospatial Logic, Data Processing & Engine Workflow
-LandEvolve operates on a strict, decoupled pipeline that handles complex geospatial transformations from user input down to scientific simulation and finally to visual output.
-
-#### A. Input & Pre-Processing
-*   **DEM Parsing (GeoTIFF)**: The workflow begins by reading the user's selected Digital Elevation Model (DEM) GeoTIFF file. The engine uses `rasterio` to parse the geographical bounds, resolution, and raw elevation pixel data. A DEM in a **geographic CRS (degrees)** is auto-reprojected to the appropriate metre-based UTM zone first, and the Landlab grid is built at the origin `(0, 0)` to keep flow routing numerically stable (see the *Coordinate system handling* note below).
-*   **Coordinate Matching (CRS)**: When users load custom Shapefiles (for map overlays or feature tracking), `GeoPandas` automatically parses and transforms their Coordinate Reference System (CRS) to align perfectly with the DEM grid. For the UI map, boundaries are projected to WGS84 (EPSG:4326) so polygons accurately overlay on the interactive Leaflet map via `rasterio.warp`.
-*   **Feature Mask Generation**: If a user chooses to track a specific landscape feature, the engine utilizes `geopandas` and `rasterio.features.geometry_mask` to create a strict, mathematically precise 2D boolean mask over the grid, ensuring only pixels strictly inside the target polygon are monitored.
-
-#### B. The Simulation Engine
-*   **Native Resolution Processing**: The parsed elevation data is injected directly into a Landlab `RasterModelGrid`. **The simulation engine always processes the topography mathematically at 100% full, native resolution.** No data is lost or downsampled during the physical simulation steps.
-*   **Time-Series Metric Tracking**: During the simulation loop, if Feature Tracking is enabled, the engine isolates the masked region at every time step to record localized Maximum Elevation, Minimum Elevation, Mean Elevation, and Volumetric Change metrics.
-*   **First-Effect Detection**: Alongside the history, the tracker detects *when the feature is first meaningfully affected* by the evolving landscape. It monitors the **peak absolute geomorphic change** within the feature each step (peak, not mean, so it catches the moment the erosion/deposition front first reaches any edge of the feature) and reports the earliest time that change crosses a threshold (`first_effect_threshold`, default `0.01 m`), **linearly interpolated** between time steps for sub-step precision. Tectonic **uplift is excluded** from this measure (change is computed as `elevation − cumulative_uplift`), so a uniform uplift signal doesn't mask the true onset of erosion/deposition. The result is shown in the app, marked on the tracking plot, and written to the engine log.
-
-#### C. Post-Processing & Visualization
-*   **Dynamic Downsampling**: *After* the simulation completes, high-resolution output GeoTIFFs (`final.tif`, `diff.tif`) are dynamically downsampled using `NumPy` striding *only* before being passed to the 3D renderer. This ensures scientific accuracy is completely uncompromised while preventing WebGL memory exhaustion in the desktop UI.
-*   **Difference Map Auto-Scaling**: To visualize erosion vs. deposition accurately, the engine calculates the *absolute maximum change* across the entire grid. It then applies a mathematically **symmetric scale** (e.g., `-8.5m` to `+8.5m`). This guarantees that `0.0m` of change (stable ground) sits dead-center in the diverging Red-Blue colormap (pure white), avoiding false coloration of unchanged terrain.
-*   **3D Mesh Generation**: Instead of relying on heavy, internet-dependent globe engines (like Cesium), LandEvolve reads the processed elevation arrays into Plotly (`go.Surface`) to generate a standalone HTML WebGL object. This interactive 3D mesh is natively embedded into the desktop app via `QWebEngineView`, ensuring offline capability and extreme performance.
-
-### 6. Data Layer (`app/data`)
-Manages data persistence.
-*   **`Database`** (instance `db_manager`): Handles SQLite connection and session management.
-*   **Models**: `Component`/`ComponentParam`, `Lithology`, and `VegetationClass`. (Input DEMs are **not** stored in the database — the user browses for a GeoTIFF on their own filesystem at run time.) Each `ComponentParam` carries presentation metadata (`display_name`, `units`, `description`) so the configuration dialog shows a layman-friendly name and units beside the technical key, with the description as a tooltip.
-*   **Repositories**: Data access for `Component`, `Lithology`, and `VegetationClass`.
+    Water Flow Routing (`FlowAccumulator`) is required by both Erosion processes to receive discharge, but *not* by Hillslope Soil Creep, which computes its own slope independently.
+*   **Data** (`app/data`) — `Database.create_tables()` creates the schema and additively migrates existing databases forward (adds any column a model has that an existing table doesn't — safe for a packaged build's DB surviving an app upgrade). `Component`/`ComponentParam` carry presentation metadata (`display_name`, units, descriptions, prerequisite badges) so technical Landlab names never reach the UI; `seed.py` backfills it for databases from an older version.
 
 ## 📊 Visualizations & Plots
 
-The results window groups outputs into tabs. Each plot below lists **what it shows** and **the logic behind it**. Analysis plots are defensive: if a required field is missing for a given run, the plot is skipped rather than failing.
+Spatial plots share a common treatment: drawn over a shaded-relief hillshade for topographic context, with change maps on a symmetric red/blue scale (0 = white) so unchanged ground is never miscoloured. On **Tectonics** runs, a "Remove tectonic uplift" toggle (on by default) switches change maps and the Erosion/Deposition mask to the geomorphic signal instead of the uplift-swamped total.
 
-### 2D Visualization (`app/engine/io.py`)
-*   **Input / Final Elevation** — The terrain before and after the run, rendered as **shaded relief**: an earth-tone elevation colormap (green lowland → olive → brown → pale tan highland) blended with a sun-angle hillshade (`matplotlib.LightSource`), so it reads like a natural aerial/satellite photo rather than a flat elevation map.
-*   **Difference Map** — *Where and how much* the surface eroded (red) or aggraded (blue). Computed as `final − initial` on a **symmetric** diverging Red-Blue scale so stable ground (0 m) is pure white. It is **draped over a shaded-relief hillshade** of the final terrain (`matplotlib.LightSource`) so change is read in its topographic context. A **symlog** toggle is available so faint erosion stays visible when deposition dominates the range. When a **Tectonics** run is detected, a **"Remove tectonic uplift"** toggle appears (on by default): it switches to the geomorphic change `final − initial − cumulative_uplift`, so the erosion/deposition signal is visible instead of being swamped by uniform uplift. (The erosion/deposition mask is likewise based on the uplift-removed signal when tectonics is used.)
+*   **2D Visualization** — Initial/Final elevation and the Difference map, zoomable/pannable.
+*   **3D Map** — interactive Plotly surface, Input/Output/Difference modes.
+*   **Terrain Evolution** / **Erosion Timeline** — scrubbable animations of the surface, or cumulative change, over time (one frame per timestep, capped at 300 for long runs).
+*   **Feature Tracking Map** — the Erosion Timeline animation cropped to the tracked polygon, with first-change and biggest-change marked.
+*   **Analysis** — erosion/deposition mask, onset & peak of change, soil thickness, sediment budget over time, and a cleaned-up drainage network (channel cells only, by drainage area).
 
-### 3D Map (`app/engine/visualization.py`)
-*   **Interactive 3D surface** with Input / Output / Difference modes (Plotly `go.Surface`, embedded WebGL). Input/Output use the same earth-tone colorscale as the 2D terrain plots, with realistic raking-light shading computed live by WebGL — so relief stays correctly lit as you rotate the model, rather than a baked-in texture. The difference mode colors the final surface by `final − initial` (same lighting on the geometry, RdBu still drives the erosion/deposition color). The z-axis is **pinned to the true elevation range** so the scale matches the 2D maps, and the y-axis is reversed to keep north at the top. On **Tectonics** runs a **"Remove tectonic uplift"** toggle (on by default) subtracts the cumulative uplift from the difference surface, so it shows the geomorphic signal rather than uniform uplift — mirroring the 2D difference map.
+## ⚠️ Input DEM Requirements
 
-### Terrain Evolution (`app/engine/visualization.py`)
-*   **Animated, scrubbable heatmap** of the actual elevation surface (earth-tone colorscale, shared range across all frames) evolving over time — the landscape itself rising and eroding, not just the change map. A snapshot of `elevation` is captured at **every timestep** (`dt`), so the slider's times line up exactly with the run's own time steps; for a run with more than 300 steps, snapshots are instead spaced evenly so the animation never exceeds 300 frames. Each frame is draped over a shaded-relief hillshade computed from **that same frame's own elevation** (not one backdrop for the whole animation), so relief shading always matches the terrain at that exact timestep — including on early frames, before much relief has formed.
+Violating these produces physically meaningless output (typically a runaway "deposition" spike):
 
-### Erosion Timeline (`app/engine/visualization.py`)
-*   **Animated, scrubbable heatmap** of *cumulative* erosion/deposition through time, same snapshot cadence as Terrain Evolution above (one frame per timestep, capped at 300 for long runs). Plotly renders them as time-slider frames (`zsmooth` interpolation) sharing one symmetric color scale, so you can watch sediment migrate. Drawn semi-transparently over a shaded-relief hillshade of **that same frame's own elevation** (matching Terrain Evolution's per-frame treatment, not a single backdrop borrowed from the final terrain), same drape-over-hillshade treatment as the 2D Difference Map. On **Tectonics** runs the cumulative uplift is subtracted from each snapshot, so the animation shows sediment movement rather than the land rising.
+*   **One DEM = one catchment.** The tile must contain a single watershed draining to one outlet, with NoData properly set outside it — a multi-basin tile or missing NoData routes flow into the void. If several edge cells tie for lowest elevation, the engine falls back to the pour point (largest drainage area) rather than failing.
+*   **You don't need to pre-fill pits.** Internal depressions are rerouted automatically each step (adds real per-step cost on large grids).
+*   **Runs at full native resolution** — only the 3D viewer downsamples, for rendering only. Clip/coarsen a very large tile if a run is too heavy.
+*   **Works in metres, at the origin.** A geographic (degrees) DEM is auto-reprojected to UTM; the compute grid sits at `(0, 0)` regardless of the DEM's real-world location (avoids floating-point precision loss in flow routing), but output GeoTIFFs keep correct real-world georeferencing. Non-square pixels are handled correctly.
+*   **Long-term time scale.** Time steps represent effective, long-term forcing, not individual storms.
 
-### Feature Tracking Map (`app/engine/visualization.py`)
-*   Only present when a feature was tracked. The same cumulative erosion/deposition animation as the Erosion Timeline above, but **cropped to just the tracked polygon** (plus a little surrounding context for orientation) so a small feature isn't lost as a few pixels in the full-grid view. The **first-change** (cyan circle) and **biggest-change** (gold star) events — both scoped to the feature, not the whole grid — are marked directly on the map, each labelled with its time, magnitude, and location; if a first effect was detected, the animation opens on the nearest frame to that time instead of the blank starting frame.
+## 🛡️ Reliability
 
-### Analysis (`app/engine/science_plots.py`)
-All spatial Analysis plots below are drawn semi-transparently over a shaded-relief hillshade of the final terrain, same treatment as the 2D Difference Map, so patterns are read in their topographic context.
-*   **Erosion / Deposition Map (mask)** — *Where* material left vs. arrived, ignoring magnitude. A 3-category map (erosion / no-change / deposition) thresholded near zero — answers "where does deposition go" even when magnitudes are lopsided.
-*   **Onset and Peak of Landscape Change** — *When and where the landscape first changed, and where it changed most.* Cumulative change map with the first-crossing and biggest-change events marked (cyan circle / gold star respectively, explained in a legend below the map), each annotated with when it happened, the magnitude, and its location.
-*   **Soil / Alluvium Thickness** — *Where sediment is stored vs. bedrock is exposed, after simulation.* Maps the landlab `soil__depth` field (mobile sediment above bedrock) at the end of the run, which SPACE conserves and redistributes each timestep.
-*   **Sediment Budget Over Time** — *Transient vs. equilibrating system.* Cumulative eroded, deposited, and net-change **volumes** (m³) through time, derived from the timeline snapshots × cell area (tectonic uplift removed on Tectonics runs, so uplift isn't counted as deposition).
-*   **Drainage Network** — *Where the rivers are.* A `log₁₀(drainage_area)` map showing channel cells only (top 2% by drainage area). Excluded from consideration: boundary nodes and the ring of cells touching them (that fringe gets an artificially inflated drainage area from how the flow router resolves ties at the domain edge, which otherwise reads as long fake "channels" hugging the perimeter). What's left is also cleaned up by shape: on this D4/D8-routed grid a real channel is at most ~1-2 cells wide, so any wide/blobby patch of above-threshold cells (a flat/tied patch that crossed the threshold together, not a channel) is stripped out via morphological opening, and any remaining speckle smaller than 4 connected cells is dropped too — leaving the genuinely thin, connected channel network. This is the same threshold-based channel-extraction technique standard in geomorphology, not an arbitrary cosmetic cutoff.
-
-> **Routing note:** before the Drainage Network plot, flow is re-routed on the final topography with the **same flow director the run was actually configured with** (falls back to `FlowDirectorSteepest`/D4 if none was set), **followed by a `LakeMapperBarnes` priority-flood pass**, mirroring the simulation loop. Using a different director than the run actually used would show a network that doesn't match what really drove the erosion. Internal depressions are rerouted automatically (the fill is written to a scratch surface, never to `topographic__elevation`), so the analysis isn't distorted by pits even on unfilled DEMs.
-
-## ⚠️ Important Notes (Input DEM Requirements)
-
-These assumptions are baked into the engine. Inputs that violate them produce physically meaningless output (typically a runaway "deposition" spike that flattens the colour scale on the result maps).
-
-*   **One DEM = one catchment (single outlet).** At startup the engine excludes all **NoData** cells (the void surrounding an irregular/clipped tile) by setting them to closed boundaries, then drains the catchment through its **single lowest edge outlet** (`set_watershed_boundary_condition`). This assumes the tile contains **one watershed**. A multi-basin tile would be forced through one outlet and give wrong results — clip such inputs into separate single-catchment DEMs first.
-    *   *Why this matters:* if NoData is left in the domain (e.g. it was loaded as `0` or a real elevation), those cells become active terrain, all flow and sediment route into the void, and you get an impossible multi-thousand-metre deposition spike. Always supply DEMs with a **properly defined NoData value** for cells outside the catchment.
-    *   *Tied-outlet fallback:* if several edge cells **tie for the lowest elevation** (a wide/flat outlet, or a not-cleanly-clipped tile), Landlab cannot pick a single outlet and would normally abort. Rather than crash, the engine selects the **pour point** — the edge cell with the **largest drainage area** (found via an initial flow-accumulation pass with depression rerouting) — and sets it as the outlet, logging which node it chose. Fixing the input (clipping to a single-outlet catchment) is still the most accurate option; the fallback just keeps an imperfect tile runnable.
-*   **Internal depressions are handled automatically.** Each step the `FlowAccumulator` runs a `LakeMapperBarnes` priority-flood pass that reroutes flow across pits/sinks, so the eroded sediment reaches the outlet instead of piling into a depression (the cause of the runaway "deposition" spike). The depression fill is written to a **scratch surface**, never to `topographic__elevation`, so it does not inject fake sediment into the terrain SPACE erodes. You therefore **do not need to pre-fill your DEM** — though a reasonably conditioned, lightly-smoothed input still runs faster (fewer pits to reroute). Note this adds real per-step cost — measured at roughly two minutes per depression-fill pass on a real ~9.4M-node grid — which scales with the number of timesteps and is the dominant cost on large grids.
-*   **The simulation runs at full native resolution.** Elevation data is never downsampled during the physical steps — only the **3D viewer** downsamples afterward, purely for rendering. A very large, fine-resolution tile therefore drives both runtime and RAM; clip/coarsen the input if a run is too heavy.
-*   **Coordinate system handling (metres, built at the origin).** The simulation physics (slopes, drainage area, sediment volumes, SPACE) works in **metres**, and the compute grid is always built at the origin `(0, 0)` regardless of the DEM's real-world location:
-    *   **Projected CRSs (metre-based — UTM, MGA, NZTM, etc.)** are used directly. The grid is *not* offset by the DEM's true corner coordinates: those run to millions of metres, and at that magnitude landlab's steepest-descent flow routing loses floating-point precision — flow dead-ends, drainage area collapses to a single cell, and SPACE piles the whole sediment load into one runaway "deposition" spike. Building at the origin avoids this entirely.
-    *   **Geographic CRSs (degrees — e.g. EPSG:4326 lat/long)** are **auto-reprojected to the appropriate UTM zone** (chosen from the DEM centroid) on load, so pixel spacing becomes metres instead of degrees. A geology raster, if supplied, is warped onto the same grid so all fields stay aligned.
-    *   **Output georeferencing is preserved.** The real-world transform/CRS (after any reprojection) is stored separately and applied when writing `final.tif`/`diff.tif`, so results overlay correctly in QGIS/ArcGIS even though the internal grid sits at the origin.
-    *   *Assumption:* square pixels (a single `dx = dy` spacing). Standard DEMs satisfy this.
-*   **Long-term (geomorphic) time scale.** Time steps represent **effective, long-term forcing** (≫ individual storms). Precipitation modes model *effective* climate, not weather events, and the default `K` calibration assumes this regime.
-
-## 🛡️ Reliability & Diagnostics
-
-*   **Crash/hang diagnostics.** A native crash (segfault in GDAL, rasterio, matplotlib, etc.) kills the process instantly with no Python traceback — normally zero evidence to debug from. `main.py` installs `faulthandler` at startup, writing every thread's stack (including the simulation's background `QThread`) to `logs/crash.log` on a crash, and every 5 minutes regardless so a hang leaves the same evidence. Git-ignored — a per-run artifact.
-*   **Windows conda/Qt DLL fix.** Conda's DLL search path can shadow PyQt6's bundled Qt6 DLLs on Windows, causing `ImportError: DLL load failed`. `main.py` pre-loads the correct DLLs with an isolated search path before any `PyQt6` import. No-op outside conda/Windows.
-*   **Depression-filling recursion risk.** `LakeMapperBarnes`'s depression rerouting recurses once per donor node in a compiled function with no depth guard, deliberately bypassing Python's recursion limit — on a large drainage network this can overflow the native thread stack and crash the process with no traceback. `SimulationWorker` (`app/ui/workers.py`) gives the simulation thread a 128 MB stack (up from the 8 MB needed for GDAL/PROJ) to give this room to run safely.
+*   Crashes and hangs are dumped to `logs/crash.log` (via `faulthandler`), since a native crash otherwise leaves no traceback.
+*   The simulation thread is given a larger stack size to safely absorb deep recursion in Landlab's depression-filling on large grids.
 
 ## 📄 License
 

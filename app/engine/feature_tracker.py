@@ -56,6 +56,10 @@ class FeatureTracker:
         # erosion/deposition effect independently of uniform tectonic uplift.
         self.initial_geomorphic = None
         self.first_effect = None
+        # True once record_step has seen a real (non-None) uplift array, i.e.
+        # tectonics is active for this run -- lets export() skip plotting a
+        # redundant second line when there's nothing to remove.
+        self._has_uplift = False
         self._init_mask()
 
     def _init_mask(self):
@@ -143,11 +147,14 @@ class FeatureTracker:
         # Geomorphic change (uplift removed) drives first-effect detection. The
         # peak |Δz| over the feature catches the moment the erosion/deposition
         # front first reaches *any* part of it — earlier than the mean would.
+        if uplift is not None:
+            self._has_uplift = True
         masked_geo = masked_elev - uplift[self.mask] if uplift is not None else masked_elev
         if self.initial_geomorphic is None:
             self.initial_geomorphic = masked_geo.copy()
         geo_diff = masked_geo - self.initial_geomorphic
         max_abs_change = float(np.max(np.abs(geo_diff))) if len(geo_diff) else 0.0
+        mean_geo_change = float(np.mean(geo_diff)) if len(geo_diff) else 0.0
 
         self.history.append({
             "Time (Years)": time,
@@ -155,6 +162,7 @@ class FeatureTracker:
             "Max Elevation (m)": round(max_elev, 4),
             "Min Elevation (m)": round(min_elev, 4),
             "Mean Change (m)": round(mean_change, 4),
+            "Mean Geomorphic Change (m)": round(mean_geo_change, 4),
             "Max Abs Change (m)": round(max_abs_change, 6),
         })
 
@@ -223,12 +231,14 @@ class FeatureTracker:
 
         df = pd.DataFrame(self.history)
 
-        # Net volume change of the feature = mean change × area of the feature.
+        # Net volume change of the feature = geomorphic mean change × area, i.e.
+        # erosion/deposition only -- using the raw "Mean Change" here would fold
+        # tectonic uplift into a number labelled as erosion/deposition volume.
         n_cells = int(np.count_nonzero(self.mask)) if self.mask is not None else 0
         has_volume = cell_area is not None and n_cells > 0
         if has_volume:
             feature_area = n_cells * float(cell_area)
-            df["Volume Change (m³)"] = (df["Mean Change (m)"] * feature_area).round(2)
+            df["Volume Change (m³)"] = (df["Mean Geomorphic Change (m)"] * feature_area).round(2)
 
         df.to_csv(csv_path, index=False)
 
@@ -250,10 +260,15 @@ class FeatureTracker:
         ax_elev.legend()
         ax_elev.grid(True, linestyle=":", alpha=0.7)
 
-        # Change panel: mean elevation change (erosion negative / deposition positive),
-        # with optional volume on a twin axis.
+        # Change panel: mean geomorphic (erosion/deposition-only) change, with
+        # optional volume on a twin axis. When tectonics ran, the raw total
+        # change (incl. uplift) is also shown as a thin reference line -- a
+        # feature can be net rising here while still eroding underneath it.
         ax_chg.axhline(0.0, color="black", linewidth=0.8, alpha=0.6)
-        ax_chg.plot(df["Time (Years)"], df["Mean Change (m)"], label="Mean Change", color="darkorange", linewidth=2)
+        if self._has_uplift:
+            ax_chg.plot(df["Time (Years)"], df["Mean Change (m)"], label="Total change (incl. uplift)",
+                        color="gray", linestyle=":", linewidth=1.2)
+        ax_chg.plot(df["Time (Years)"], df["Mean Geomorphic Change (m)"], label="Erosion/deposition (mean)", color="darkorange", linewidth=2)
         ax_chg.set_ylabel("Mean Elevation Change (m)", color="black")
         ax_chg.tick_params(axis="y", labelcolor="black")
         _mark_first_effect(ax_chg, label=False)
@@ -266,6 +281,11 @@ class FeatureTracker:
             ax_vol.plot(df["Time (Years)"], df["Volume Change (m³)"], label="Volume Change", color="teal", linestyle=":", linewidth=2)
             ax_vol.set_ylabel("Net Volume Change (m³)", color="black")
             ax_vol.tick_params(axis="y", labelcolor="black")
+            lines1, labels1 = ax_chg.get_legend_handles_labels()
+            lines2, labels2 = ax_vol.get_legend_handles_labels()
+            ax_chg.legend(lines1 + lines2, labels1 + labels2, loc="upper left")
+        else:
+            ax_chg.legend(loc="upper left")
 
         plt.tight_layout()
         plt.savefig(plot_path, dpi=150)

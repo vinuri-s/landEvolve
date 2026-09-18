@@ -462,9 +462,11 @@ class VegetationComponent(SimulationComponent):
     vegetation_mode: 'Static' | 'Transition'
     static_class_id: int  (initial class for Static mode; fallback in Transition mode
                            when no transitions are defined)
-    transitions: list of {source_class_id, target_class_id, timestep}  (Transition mode only).
+    transitions: list of {source_class_id, target_class_id, year}  (Transition mode only).
                  The grid is initialised to the source class of the earliest transition.
-                 All nodes carrying source_class_id flip to target_class_id at the given timestep.
+                 All nodes carrying source_class_id flip to target_class_id once simulated
+                 time reaches `year` -- independent of the run's Time Step, so changing dt
+                 never shifts when a transition actually fires.
     """
 
     def __init__(self, grid, vegetation_classes, **kwargs):
@@ -486,19 +488,24 @@ class VegetationComponent(SimulationComponent):
             {
                 'source_class_id': int(t.get('source_class_id', 0)),
                 'target_class_id': int(t.get('target_class_id', 0)),
-                'timestep': int(t.get('timestep', 0)),
+                'year': float(t.get('year', 0)),
             }
             for t in transitions_raw
         ]
 
         self.current_timestep = 0
+        # Simulated time elapsed (years), not a step count -- transitions are
+        # scheduled by year, so they fire at the right simulated time
+        # regardless of what Time Step the run uses.
+        self._elapsed_time = 0.0
+        self._applied_transitions = set()
 
         n = grid.number_of_nodes
         # In Transition mode the grid starts with the source class of the
         # earliest-scheduled transition (not static_class_id, which is unused
         # in this mode and often left at a default that doesn't match).
         if self.mode == 'Transition' and self.transitions:
-            earliest = min(self.transitions, key=lambda t: t['timestep'])
+            earliest = min(self.transitions, key=lambda t: t['year'])
             initial_class_id = earliest['source_class_id']
         else:
             initial_class_id = self.static_class_id
@@ -544,6 +551,7 @@ class VegetationComponent(SimulationComponent):
 
     def run(self, dt):
         self.current_timestep += 1
+        self._elapsed_time += dt
 
         # On the first step, re-apply multipliers unconditionally so that
         # water__unit_flux_in — which FlowAccumulator adds after this component
@@ -553,14 +561,17 @@ class VegetationComponent(SimulationComponent):
 
         if self.mode == 'Transition':
             changed = False
-            for t in self.transitions:
-                if t['timestep'] == self.current_timestep:
+            for i, t in enumerate(self.transitions):
+                if i in self._applied_transitions:
+                    continue
+                if self._elapsed_time >= t['year']:
                     src = t['source_class_id']
                     tgt = t['target_class_id']
                     mask = self.grid._veg_class_grid == src
                     if mask.any():
                         self.grid._veg_class_grid[mask] = tgt
                         changed = True
+                    self._applied_transitions.add(i)
             if changed:
                 self._update_multipliers()
 

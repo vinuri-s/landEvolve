@@ -61,10 +61,13 @@ class RasterModel:
     def _read_band(self, path, dtype, resampling):
         """Read band 1 of a raster as `dtype`, reprojecting to a metre-based UTM
         CRS if the source is geographic (degrees). Returns
-        (data, transform, crs, xy_spacing). Stores the band's nodata value in
-        `self._last_nodata`. When a destination grid is already fixed (set by the
-        elevation read), subsequent reads (geology) are warped onto that exact
-        grid so all fields stay aligned.
+        (data, transform, crs, xy_spacing), where xy_spacing is an (dx, dy)
+        tuple -- pixels aren't guaranteed square, and collapsing to one value
+        would silently use the wrong cell height for a non-square-pixel DEM,
+        throwing off cell area, slope and drainage-area calculations. Stores
+        the band's nodata value in `self._last_nodata`. When a destination
+        grid is already fixed (set by the elevation read), subsequent reads
+        (geology) are warped onto that exact grid so all fields stay aligned.
         """
         with rasterio.open(path) as src:
             src_crs = src.crs if src.crs else None
@@ -74,7 +77,7 @@ class RasterModel:
 
             if not need_reproject:
                 data = src.read(1).astype(dtype)
-                return data, src.transform, src_crs, src.res[0]
+                return data, src.transform, src_crs, (abs(src.res[0]), abs(src.res[1]))
 
             # Determine the destination grid (UTM). Reuse the elevation grid for
             # geology so the arrays line up cell-for-cell.
@@ -102,4 +105,4 @@ class RasterModel:
                 dst_nodata=dst_nodata,
                 resampling=resampling,
             )
-            return data, dst_transform, dst_crs, abs(dst_transform.a)
+            return data, dst_transform, dst_crs, (abs(dst_transform.a), abs(dst_transform.e))
