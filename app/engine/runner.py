@@ -11,7 +11,17 @@ from app.engine.components import (
     VegetationComponent,
     LithoLayersComponent,
     PrecipitationComponent,
-    TectonicsComponent,
+)
+from app.engine.tectonics import (
+    FaultComponent,
+    EarthquakeComponent,
+    LandslideComponent,
+    TectonicRecorder,
+)
+from app.engine.tectonic_viz import (
+    stride_for,
+    generate_tectonics_timeline_html,
+    generate_fault_section_html,
 )
 from app.engine.io import (
     save_geotiff,
@@ -132,8 +142,12 @@ class SimulationRunner:
             return VegetationComponent(grid, vegetation_classes=veg_classes, **params)
         if name == "PrecipitationComponent":
             return PrecipitationComponent(grid, **params)
-        if name == "TectonicsComponent":
-            return TectonicsComponent(grid, **params)
+        if name == "FaultComponent":
+            return FaultComponent(grid, **params)
+        if name == "EarthquakeComponent":
+            return EarthquakeComponent(grid, **params)
+        if name == "LandslideComponent":
+            return LandslideComponent(grid, **params)
         if name == "FlowAccumulatorComponent":
             return FlowAccumulatorComponent(grid, **params)
         if name == "SpaceComponent":
@@ -204,14 +218,19 @@ class SimulationRunner:
 
         self.log(15, "Building components...")
 
-        precip_conf, veg_conf, flow_conf, hill_conf, ero_conf, lith_conf, tect_conf, other_conf = [], [], [], [], [], [], [], []
+        precip_conf, veg_conf, flow_conf, hill_conf, ero_conf, lith_conf, other_conf = [], [], [], [], [], [], []
+        fault_conf, eq_conf, slide_conf = [], [], []
 
         for c in self.params["selected_components"]:
             name = self._name(c["component"])
             if name == "PrecipitationComponent":
                 precip_conf.append(c)
-            elif name == "TectonicsComponent":
-                tect_conf.append(c)
+            elif name == "FaultComponent":
+                fault_conf.append(c)
+            elif name == "EarthquakeComponent":
+                eq_conf.append(c)
+            elif name == "LandslideComponent":
+                slide_conf.append(c)
             elif name == "VegetationComponent":
                 veg_conf.append(c)
             elif name == "FlowAccumulatorComponent":
@@ -244,7 +263,12 @@ class SimulationRunner:
 
         # Build order: Precipitation before Vegetation so the runoff base exists
         # when Vegetation captures it; Litho before Space so K_sp exists at init.
-        build_confs = precip_conf + veg_conf + flow_conf + lith_conf + hill_conf + ero_conf + tect_conf + other_conf
+        # The fault/earthquake/landslide chain goes last: it needs the soil and
+        # bedrock fields the erosion processes create, and each link needs the
+        # one before it (earthquakes -> the fault, landslides -> the earthquakes
+        # and the flow fields).
+        build_confs = (precip_conf + veg_conf + flow_conf + lith_conf + hill_conf + ero_conf
+                       + fault_conf + eq_conf + slide_conf + other_conf)
 
         built = {}
         for c in build_confs:
@@ -257,9 +281,21 @@ class SimulationRunner:
             if name == "PrecipitationComponent":
                 p["total_time"] = total_time  # needed for the Trend mode ramp
 
+            if name == "EarthquakeComponent":
+                # The catalogue is pre-computed for the whole run.
+                self.log(16, "Generating earthquake catalogue...")
+                p["fault"] = (built.get("FaultComponent") or [None])[0]
+                p["total_time"] = int(total_time / dt) * dt
+                p["dt"] = dt
+
+            if name == "LandslideComponent":
+                p["eq"] = (built.get("EarthquakeComponent") or [None])[0]
+
             inst = self._build(name, grid, p)
             if inst is not None:
                 built.setdefault(name, []).append(inst)
+                if hasattr(inst, "describe"):
+                    self.log(16, f"{name.replace('Component', '')}: {inst.describe()}")
 
         # Run order: Precipitation first (sets runoff) → Vegetation (modulates it)
         # → FlowAccumulator (routes it). LithoLayers AFTER Space so K_sp is
@@ -268,7 +304,7 @@ class SimulationRunner:
                      "DepthDependentDiffuserComponent",
                      "SpaceComponent", "SpaceLargeScaleEroderComponent",
                      "LithoLayersComponent",
-                     "TectonicsComponent"]
+                     "FaultComponent", "EarthquakeComponent", "LandslideComponent"]
         components = []
         for name in run_order:
             components.extend(built.get(name, []))
@@ -308,6 +344,14 @@ class SimulationRunner:
         # so tectonic forcing can be removed from the sediment timeline /
         # budget (which are about erosion, not uplift).
         MAX_TIMELINE_FRAMES = 300
+        # Fault / earthquake animation data (only when Fault Tectonics is used):
+        # sampled on the same frames as the timelines, so they line up exactly.
+        fault_inst = (built.get("FaultComponent") or [None])[0]
+        recorder = TectonicRecorder(grid, fault_inst) if fault_inst is not None else None
+        fault_overlay = fault_inst.overlay_lines(grid) if fault_inst is not None else None
+        if recorder:
+            recorder.record(0.0)
+
         timeline_snapshots = [initial - initial]  # all-zero baseline at t=0
         timeline_uplift = [initial - initial]     # uplift accumulated by t=0 (zero)
         timeline_times = [0.0]
@@ -334,6 +378,8 @@ class SimulationRunner:
                 upl = getattr(grid, "_cumulative_uplift", None)
                 timeline_uplift.append(upl.copy() if upl is not None else (initial - initial))
                 timeline_times.append(t)
+                if recorder:
+                    recorder.record(t)
 
             if i % max(1, steps // 20) == 0:
                 self.log(int(20 + 60 * i / steps), f"Step {i}/{steps}")
@@ -412,7 +458,7 @@ class SimulationRunner:
         timeline_html = str(self.output_dir / "sediment_timeline.html")
         timeline_result = generate_sediment_timeline_html(
             sediment_snapshots, timeline_times, grid.shape, timeline_html,
-            elevation=terrain_snapshots,
+            elevation=terrain_snapshots, overlay_lines=fault_overlay,
         )
         if timeline_result is False:
             timeline_html = None
@@ -424,9 +470,39 @@ class SimulationRunner:
         terrain_timeline_html = str(self.output_dir / "terrain_timeline.html")
         terrain_timeline_result = generate_terrain_timeline_html(
             terrain_snapshots, timeline_times, grid.shape, terrain_timeline_html,
+            overlay_lines=fault_overlay,
         )
         if terrain_timeline_result is False:
             terrain_timeline_html = None
+
+        # Fault animations: the tectonics map (with the earthquake strip) and
+        # the cross-section across the fault.
+        tectonics_timeline_html = None
+        fault_section_html = None
+        if recorder is not None:
+            self.log(91, "Building tectonics animations...")
+            eq_inst = (built.get("EarthquakeComponent") or [None])[0]
+            ls_inst = (built.get("LandslideComponent") or [None])[0]
+            quakes = eq_inst.event_table() if eq_inst is not None else None
+            max_dim = 250
+            slide_frames = slide_counts = None
+            if ls_inst is not None:
+                slide_frames, slide_counts = ls_inst.cumulative_frames(
+                    timeline_times, stride_for(grid.shape, max_dim))
+            section = recorder.section
+            tectonics_timeline_html = str(self.output_dir / "tectonics_timeline.html")
+            if not generate_tectonics_timeline_html(
+                    timeline_times, timeline_uplift, terrain_snapshots, grid.shape,
+                    (float(grid.dx), float(grid.dy)), tectonics_timeline_html,
+                    overlay_lines=fault_overlay, dip_vector=None if section["vertical"] else section["dip_vector"],
+                    trace_mid=section["trace_mid"], arrows=recorder.arrows(), quakes=quakes,
+                    landslide_frames=slide_frames, landslide_counts=slide_counts, max_dim=max_dim):
+                tectonics_timeline_html = None
+            fault_section_html = str(self.output_dir / "fault_section.html")
+            if not generate_fault_section_html(
+                    recorder.times, section, recorder.total_change, recorder.tectonic_change, quakes,
+                    fault_section_html):
+                fault_section_html = None
 
         # Static PNG snapshot of each captured timestep, DEM and difference
         # map in their own folders (same snapshots/cadence as the two
@@ -527,6 +603,20 @@ class SimulationRunner:
             uplift_removed=cumulative_uplift is not None,
             elevation=final)
 
+        # Fault / earthquake / landslide outputs (plots, catalogue and landslide tables).
+        tectonic_outputs = {}
+        if built.get("FaultComponent") or built.get("EarthquakeComponent") or built.get("LandslideComponent"):
+            self.log(98, "Saving fault, earthquake and landslide outputs...")
+            for inst in built.get("FaultComponent", []):
+                tectonic_outputs.update(inst.export(self.output_dir))
+            for inst in built.get("EarthquakeComponent", []):
+                tectonic_outputs.update(inst.export(self.output_dir))
+            for inst in built.get("LandslideComponent", []):
+                tectonic_outputs.update(inst.export(
+                    self.output_dir, shape=grid.shape, reference_tif=tif,
+                    hillshade_elev=final, nodata_mask=self._nodata_mask))
+                self.log(98, f"Landslides: {inst.describe()}")
+
         science_plots = {
             "flux_plot": flux_plot,
             "drainage_network_plot": drainage_network_plot,
@@ -597,6 +687,15 @@ class SimulationRunner:
             "tracker_plot": tracker_plot,
             "tracker_first_effect": tracker_first_effect,
             "tracker_timeline_html": tracker_timeline_html,
+            "fault_plot": tectonic_outputs.get("fault_plot"),
+            "fault_section_plot": tectonic_outputs.get("fault_section_plot"),
+            "earthquake_catalog_plot": tectonic_outputs.get("earthquake_catalog_plot"),
+            "earthquake_ruptures_plot": tectonic_outputs.get("earthquake_ruptures_plot"),
+            "earthquake_catalog_csv": tectonic_outputs.get("earthquake_catalog_csv"),
+            "landslide_plot": tectonic_outputs.get("landslide_plot"),
+            "landslide_csv": tectonic_outputs.get("landslide_csv"),
+            "tectonics_timeline_html": tectonics_timeline_html,
+            "fault_section_html": fault_section_html,
         }
 
 

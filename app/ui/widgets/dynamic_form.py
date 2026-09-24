@@ -16,6 +16,34 @@ from app.core.constants import DynamicFormConsts
 from app.ui.widgets.info_icon import make_info_icon
 
 
+# Fields that only make sense for certain values of other fields:
+# (dependent field, fields it depends on, predicate over {field: current text}).
+# The controlling fields must be combo boxes. Hidden fields are still
+# collected with the form; the engine ignores the ones that don't apply.
+_STABLE = "Stable"
+_VISIBILITY_RULES = [
+    # Fault Tectonics
+    ("dip", ("fault_geometry",), lambda v: v["fault_geometry"].startswith("Dipping")),
+    ("fraction_blunt", ("slip_shape",), lambda v: "blunt" in v["slip_shape"].lower()),
+    # Earthquakes
+    ("max_magnitude", ("catalog_type",), lambda v: v["catalog_type"] == "Realistic mix"),
+    ("size_distribution", ("catalog_type",), lambda v: v["catalog_type"] == "Realistic mix"),
+    ("event_magnitude", ("catalog_type",), lambda v: v["catalog_type"] == "Fixed magnitude"),
+    ("clustering", ("catalog_type",), lambda v: v["catalog_type"] != "Largest possible"),
+    # Coseismic Landslides
+    ("vs30_method", ("gmpe_model",), lambda v: not v["gmpe_model"].startswith(_STABLE)),
+    ("vs30_setting", ("gmpe_model", "vs30_method"),
+     lambda v: not v["gmpe_model"].startswith(_STABLE) and v["vs30_method"].startswith("Slope")),
+    ("vs30_constant", ("gmpe_model", "vs30_method"),
+     lambda v: not v["gmpe_model"].startswith(_STABLE) and v["vs30_method"].startswith("Constant")),
+    ("slab_event_type", ("gmpe_model",), lambda v: v["gmpe_model"].startswith("Subduction")),
+    ("arc_position", ("gmpe_model",), lambda v: v["gmpe_model"].startswith("Subduction")),
+    ("wetness", ("wetness_mode",), lambda v: v["wetness_mode"] == "Constant"),
+    ("hydraulic_conductivity", ("wetness_mode",), lambda v: v["wetness_mode"].startswith("Computed")),
+    ("background_return_time", ("background_landslides",), lambda v: v["background_landslides"] == "Yes"),
+]
+
+
 class LithologyPickerWidget(QWidget):
     """
     Composite widget for K_br: a QComboBox listing all lithologies from the DB
@@ -279,18 +307,28 @@ class DynamicFormWidget(QWidget):
             mode_combo.currentTextChanged.connect(update_precip_visibility)
             update_precip_visibility()
 
-        # Tectonics: show the uplift rate (Uniform) or the uplift raster (Spatial).
-        if DynamicFormConsts.FIELD_TECT_MODE in self.fields and \
-                DynamicFormConsts.FIELD_UPLIFT_RATE in self.fields:
-            tect_mode_combo = self.fields[DynamicFormConsts.FIELD_TECT_MODE]
+        self._apply_visibility_rules()
 
-            def update_tect_visibility():
-                spatial = tect_mode_combo.currentText() == DynamicFormConsts.TECT_MODE_SPATIAL
-                self._set_row_visible(DynamicFormConsts.FIELD_UPLIFT_RATE, not spatial)
-                self._set_row_visible(DynamicFormConsts.FIELD_UPLIFT_RASTER, spatial)
+    def _apply_visibility_rules(self):
+        """Shows each dependent field only when the fields that govern it
+        (see _VISIBILITY_RULES) have a value that makes it relevant, and
+        re-evaluates whenever one of them changes."""
+        rules = [r for r in _VISIBILITY_RULES
+                 if r[0] in self.fields and all(c in self.fields for c in r[1])]
+        if not rules:
+            return
 
-            tect_mode_combo.currentTextChanged.connect(update_tect_visibility)
-            update_tect_visibility()
+        def refresh():
+            values = {}
+            for _, controllers, _ in rules:
+                for c in controllers:
+                    values[c] = self.fields[c].currentText()
+            for dependent, _, predicate in rules:
+                self._set_row_visible(dependent, bool(predicate(values)))
+
+        for controllers in {c for _, cs, _ in rules for c in cs}:
+            self.fields[controllers].currentTextChanged.connect(lambda _text: refresh())
+        refresh()
 
     @staticmethod
     def _decimals_for(*values):

@@ -120,6 +120,10 @@ class SimulationResultsWindow(QMainWindow):
         # --- Tab 4: Erosion Timeline (Interactive Plotly slider) ---
         self._add_timeline_tab()
 
+        # --- Tabs for faults / earthquakes / landslides (only when Fault Tectonics ran) ---
+        self._add_html_tab(SimulationResultKeys.TECTONICS_TIMELINE_HTML, SimulationResultsWindowConsts.TAB_TECTONICS)
+        self._add_html_tab(SimulationResultKeys.FAULT_SECTION_HTML, SimulationResultsWindowConsts.TAB_FAULT_SECTION)
+
         # --- Tab 5: Feature Tracking Map (interactive, only when a feature was tracked) ---
         self._add_feature_tracking_map_tab()
 
@@ -165,6 +169,23 @@ class SimulationResultsWindow(QMainWindow):
             layout.addWidget(lbl)
 
         self.tabs.addTab(container, SimulationResultsWindowConsts.TAB_TIMELINE)
+
+    def _add_html_tab(self, result_key, title):
+        """Adds a tab showing one interactive HTML animation -- but only if the
+        run produced it (so runs without a fault never show an empty tab)."""
+        from PyQt6.QtWebEngineWidgets import QWebEngineView
+        from PyQt6.QtCore import QUrl
+
+        html = self.image_paths.get(result_key)
+        if not html or not os.path.exists(html):
+            return
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        web_view = QWebEngineView()
+        web_view.setUrl(QUrl.fromLocalFile(html))
+        layout.addWidget(web_view)
+        self.tabs.addTab(container, title)
 
     def _add_terrain_timeline_tab(self):
         """Adds the interactive terrain-elevation evolution (Plotly slider) tab."""
@@ -223,6 +244,12 @@ class SimulationResultsWindow(QMainWindow):
             ("Soil / Alluvium Thickness", self.image_paths.get(SimulationResultKeys.SOIL_THICKNESS_PLOT)),
             ("Sediment Budget Over Time", self.image_paths.get(SimulationResultKeys.FLUX_PLOT)),
             ("Drainage Network", self.image_paths.get(SimulationResultKeys.DRAINAGE_NETWORK_PLOT)),
+            # Only present when Fault Tectonics / Earthquakes / Landslides ran.
+            ("Fault Geometry (map)", self.image_paths.get(SimulationResultKeys.FAULT_PLOT)),
+            ("Fault Geometry (cross-section)", self.image_paths.get(SimulationResultKeys.FAULT_SECTION_PLOT)),
+            ("Earthquake Catalogue", self.image_paths.get(SimulationResultKeys.EARTHQUAKE_CATALOG_PLOT)),
+            ("Earthquake Ruptures", self.image_paths.get(SimulationResultKeys.EARTHQUAKE_RUPTURES_PLOT)),
+            ("Coseismic Landslides", self.image_paths.get(SimulationResultKeys.LANDSLIDE_PLOT)),
         ]
 
         gallery = AnalysisGalleryWidget(plots)

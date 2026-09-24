@@ -408,8 +408,30 @@ def _hillshade_data_uri(elevation, shape, target_shape):
     return f"data:image/png;base64,{b64}"
 
 
+def _grid_stride(shape, max_dim):
+    """(row step, column step) the timelines use to thin a big grid; (1, 1) when small."""
+    if shape[0] > max_dim or shape[1] > max_dim:
+        return max(1, shape[0] // max_dim), max(1, shape[1] // max_dim)
+    return 1, 1
+
+
+def _add_overlay_lines(fig, overlay_lines, shape, max_dim):
+    """Lay static lines (e.g. the fault) over a timeline map. The lines are in
+    full-resolution cell coordinates (column, row); the map's axes are the
+    thinned grid's indices, so they are divided by the thinning step."""
+    if not overlay_lines:
+        return
+    sx, sy = _grid_stride(shape, max_dim)
+    for ln in overlay_lines:
+        fig.add_trace(go.Scatter(
+            x=np.asarray(ln["x"], dtype=float) / sy, y=np.asarray(ln["y"], dtype=float) / sx, mode="lines",
+            name=ln["name"], legendgroup=ln["name"], showlegend=ln.get("legend_first", True),
+            line=dict(color=ln["color"], width=ln["width"], dash=ln["dash"]), hoverinfo="skip"))
+    fig.update_layout(legend=dict(orientation="h", yanchor="bottom", y=1.0, x=0.0, font=dict(size=11)))
+
+
 def generate_sediment_timeline_html(snapshots, times, shape, output_html_path,
-                                    vmin=None, vmax=None, max_dim=400, elevation=None):
+                                    vmin=None, vmax=None, max_dim=400, elevation=None, overlay_lines=None):
     """Build an interactive, scrubbable heatmap animation of cumulative
     erosion/deposition over simulation time.
 
@@ -505,6 +527,7 @@ def generate_sediment_timeline_html(snapshots, times, shape, output_html_path,
             frames.append(go.Frame(**frame_kwargs))
 
         fig = go.Figure(data=[heatmap(frames_data[0])], frames=frames)
+        _add_overlay_lines(fig, overlay_lines, shape, max_dim)
 
         slider_steps = [
             dict(
@@ -575,7 +598,7 @@ def generate_sediment_timeline_html(snapshots, times, shape, output_html_path,
 # -----------------------------
 # Terrain-elevation timeline animation (Plotly slider)
 # -----------------------------
-def generate_terrain_timeline_html(snapshots, times, shape, output_html_path, max_dim=400):
+def generate_terrain_timeline_html(snapshots, times, shape, output_html_path, max_dim=400, overlay_lines=None):
     """Build an interactive, scrubbable heatmap animation of the actual
     terrain elevation surface evolving over time.
 
@@ -667,6 +690,7 @@ def generate_terrain_timeline_html(snapshots, times, shape, output_html_path, ma
             frames.append(go.Frame(**frame_kwargs))
 
         fig = go.Figure(data=[heatmap(frames_data[0])], frames=frames)
+        _add_overlay_lines(fig, overlay_lines, shape, max_dim)
 
         slider_steps = [
             dict(

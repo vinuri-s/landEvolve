@@ -34,10 +34,24 @@ Every field in *Input Setup*, the process picker, and each process's own paramet
 1. **Browse for an input DEM** in *Input Setup*. The *Location Preview* map centres on it and shows its size, resolution, CRS, and elevation range.
 2. **Set the run length**: *Total Duration* and *Time Step* (`dt`).
 3. *(Optional)* Enable **Track Interested Landscape Feature** and supply a polygon shapefile to monitor a specific area — see below.
-4. **Select earth surface processes**: click **+ Add Process** and pick from the 8 available — e.g. *Water Flow Routing*, *Erosion & Sediment Transport*, *Hillslope Soil Creep*, *Rainfall & Runoff*, *Vegetation Cover*, *Rock Layers*, *Tectonic Uplift*. *Water Flow Routing* is flagged **Required**, since the Erosion processes need it to run.
+4. **Select earth surface processes**: click **+ Add Process** and pick from the 10 available — e.g. *Water Flow Routing*, *Erosion & Sediment Transport*, *Hillslope Soil Creep*, *Rainfall & Runoff*, *Vegetation Cover*, *Rock Layers*, *Fault Tectonics*, *Earthquakes*, *Coseismic Landslides*. *Water Flow Routing* is flagged **Required**, since the Erosion processes need it to run.
 5. **Choose an output folder** — its own step at the end of setup. Each run writes to a numbered `simulation_<N>/` subfolder there.
 6. **Run Simulation** — runs on a background thread, so the UI stays responsive.
 7. **Explore results**: 2D maps, 3D map, Terrain Evolution, Erosion Timeline, Feature Tracking Map (if used), and Analysis plots.
+
+### Faults, Earthquakes & Landslides
+
+Three processes, built on the **EFEL** model (see [Credits](#-credits)), replace the old uniform-uplift process:
+
+*   **Fault Tectonics** — an elastic fault (dipping thrust/normal, or vertical strike-slip with optional bends) that pushes the land up *and sideways* as it creeps. Set its position, strike, dip, width, slip rates and seismogenic zone; leave the position blank to run the fault through the middle of the DEM. With the slip rates at zero, the **Background uplift rate** gives plain uniform uplift, which is what the old *Tectonic Uplift* process did.
+*   **Earthquakes** *(needs Fault Tectonics)* — a pre-computed catalogue (realistic size mix, fixed size, or largest-possible) whose displacements are applied on the fault in the steps they happen, optionally clustered and with aftershocks. Needs a whole-number time step.
+*   **Coseismic Landslides** *(needs Earthquakes and Water Flow Routing)* — shaking (ground-motion model + soil stiffness) is turned into a Newmark sliding displacement; cells that slide more than the threshold fail, and the debris is routed downslope.
+
+Coordinates are in **map terms**: position is metres from the DEM's west edge and north edge, strike is a compass azimuth (clockwise from north, the fault dips to its right), and slip is *Thrust/Normal* and *Right-lateral/Left-lateral*. (Internally LandEvolve's grid is a north-south mirror image of the map, so these are converted — see `FaultComponent`.) Fault geometry the model would reject (e.g. a fault too shallow to reach below the seismogenic zone) is corrected automatically.
+
+Extra outputs: `fault_geometry.png`/`fault_section.png`, `earthquake_catalog.csv`/`.png`, `earthquake_ruptures.png`, `landslides.csv`/`.png`/`.tif`. The erosion/deposition maps stay meaningful because tectonic change — vertical *and* horizontal — is removed with a passive reference surface that is deformed identically but never eroded.
+
+> These processes need the compiled `okada4py` package (installed by `requirements.txt`; requires `git` and a C++ compiler). Without it the app still runs — only these three processes are unavailable, with a message explaining how to install it.
 
 ### Tracking a Feature of Interest
 
@@ -84,24 +98,24 @@ A layered architecture: `app/ui` (PyQt6 views) → `app/controllers` (thin UI-to
 *   **UI** (`app/ui`) — `HomeWindow` (landing screen), `SimulationWindow` (setup screen), `SimulationResultsWindow` (tabbed results — 2D, 3D, Terrain Evolution, Erosion Timeline, Feature Tracking, Analysis; see [Visualizations & Plots](#-visualizations--plots)), `SimulationWorker` (background thread).
 *   **Controllers** (`app/controllers`) — thin handlers between views and services. `ComponentController` resolves each process's plain-language display name and "Required" badge from the database (see Data Layer).
 *   **Services** (`app/services`) — `SimulationService`, `ComponentService`, `ShapefileService`, `LithologyService`, `VegetationService`: business logic bridging the UI to data and the engine.
-*   **Engine** (`app/engine`) — the scientific core. `SimulationRunner` drives the timestep loop; `RasterModel` loads a DEM into a Landlab grid. Each process in `components.py` wraps a Landlab class or (for precipitation, vegetation, and tectonic uplift, which Landlab has no equivalent for) custom logic. They communicate only through shared grid fields, in a fixed order each step:
+*   **Engine** (`app/engine`) — the scientific core. `SimulationRunner` drives the timestep loop; `RasterModel` loads a DEM into a Landlab grid. Each process in `components.py` wraps a Landlab class or (for precipitation and vegetation, which Landlab has no equivalent for) custom logic; the fault / earthquake / landslide processes live in `tectonics.py` and wrap the vendored EFEL model in `app/engine/efel/`. They communicate only through shared grid fields, in a fixed order each step:
 
     ```
-    Precipitation → Vegetation → FlowAccumulator → DepthDependentDiffuser → SPACE → LithoLayers → Tectonics
+    Precipitation → Vegetation → FlowAccumulator → DepthDependentDiffuser → SPACE → LithoLayers → Fault → Earthquakes → Landslides
     ```
 
     Water Flow Routing (`FlowAccumulator`) is required by both Erosion processes to receive discharge, but *not* by Hillslope Soil Creep, which computes its own slope independently.
-*   **Data** (`app/data`) — `Database.create_tables()` creates the schema and additively migrates existing databases forward (adds any column a model has that an existing table doesn't — safe for a packaged build's DB surviving an app upgrade). `Component`/`ComponentParam` carry presentation metadata (`display_name`, units, descriptions, prerequisite badges) so technical Landlab names never reach the UI; `seed.py` backfills it for databases from an older version.
+*   **Data** (`app/data`) — `Database.create_tables()` creates the schema and additively migrates existing databases forward (adds any column a model has that an existing table doesn't — safe for a packaged build's DB surviving an app upgrade). `Component`/`ComponentParam` carry presentation metadata (`display_name`, units, descriptions, prerequisite badges) so technical Landlab names never reach the UI; `seed.py` backfills it for databases from an older version, and `sync_component_catalog` adds newly introduced processes to (and removes replaced ones from) an existing database on startup.
 
 ## 📊 Visualizations & Plots
 
-Spatial plots share a common treatment: drawn over a shaded-relief hillshade for topographic context, with change maps on a symmetric red/blue scale (0 = white) so unchanged ground is never miscoloured. On **Tectonics** runs, a "Remove tectonic uplift" toggle (on by default) switches change maps and the Erosion/Deposition mask to the geomorphic signal instead of the uplift-swamped total.
+Spatial plots share a common treatment: drawn over a shaded-relief hillshade for topographic context, with change maps on a symmetric red/blue scale (0 = white) so unchanged ground is never miscoloured. On runs with **Fault Tectonics**, a "Remove tectonic uplift" toggle (on by default) switches change maps and the Erosion/Deposition mask to the geomorphic signal instead of the uplift-swamped total.
 
 *   **2D Visualization** — Initial/Final elevation and the Difference map, zoomable/pannable.
 *   **3D Map** — interactive Plotly surface, Input/Output/Difference modes.
 *   **Terrain Evolution** / **Erosion Timeline** — scrubbable animations of the surface, or cumulative change, over time (one frame per timestep, capped at 300 for long runs).
 *   **Feature Tracking Map** — the Erosion Timeline animation cropped to the tracked polygon, with first-change and biggest-change marked.
-*   **Analysis** — erosion/deposition mask, onset & peak of change, soil thickness, sediment budget over time, and a cleaned-up drainage network (channel cells only, by drainage area).
+*   **Analysis** — erosion/deposition mask, onset & peak of change, soil thickness, sediment budget over time, and a cleaned-up drainage network (channel cells only, by drainage area); with faults/earthquakes/landslides also the fault geometry, earthquake catalogue and ruptures, and the landslide map.
 
 ## ⚠️ Input DEM Requirements
 
@@ -117,6 +131,10 @@ Violating these produces physically meaningless output (typically a runaway "dep
 
 *   Crashes and hangs are dumped to `logs/crash.log` (via `faulthandler`), since a native crash otherwise leaves no traceback.
 *   The simulation thread is given a larger stack size to safely absorb deep recursion in Landlab's depression-filling on large grids.
+
+## 🙏 Credits
+
+Faults, earthquakes and landslides use **EFEL** (Forte, *EFEL 1.0*, Geosci. Model Dev., in review; [github.com/amforte/elastic_fault_earthquake_and_landslide](https://github.com/amforte/elastic_fault_earthquake_and_landslide), MIT) with the **okada4py** elastic-dislocation solver (Jolivet, [github.com/jolivetr/okada4py](https://github.com/jolivetr/okada4py), GPL-3.0) and Landlab's `BedrockLandslider` (Campforts et al., 2020). Please cite these if you publish results that use these processes; the full reference list is in `app/engine/efel/`.
 
 ## 📄 License
 

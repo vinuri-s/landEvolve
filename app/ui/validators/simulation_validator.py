@@ -64,6 +64,12 @@ class SimulationValidator:
             QMessageBox.warning(parent_window, "Invalid Input", "Please enter valid positive numbers for time parameters")
             return None
             
+        # 2b. Processes that build on others
+        prereq_error = SimulationValidator._check_process_prerequisites(components_list, time_step)
+        if prereq_error:
+            QMessageBox.warning(parent_window, "Missing Process", prereq_error)
+            return None
+
         # 3. Add components and meta
         sim_obj[SimulationParamKeys.SIMULATION_NUMBER] = simulation_number
         
@@ -98,3 +104,29 @@ class SimulationValidator:
             sim_obj[SimulationParamKeys.FEATURE_SHAPEFILE] = None
 
         return sim_obj
+
+    @staticmethod
+    def _check_process_prerequisites(components_list, time_step):
+        """Earthquakes need a fault to rupture, and landslides need earthquakes
+        to trigger them plus flow routing to carry the debris. Returns a
+        user-facing message describing what's missing, or None if all is well."""
+        names = {c[ComponentDataKeys.COMPONENT].name for c in components_list}
+
+        if "EarthquakeComponent" in names:
+            if "FaultComponent" not in names:
+                return ("Earthquakes happen on a fault. Please add the Fault Tectonics process "
+                        "(or remove Earthquakes).")
+            if abs(time_step - round(time_step)) > 1e-9 or time_step < 1:
+                return ("Earthquakes need the time step to be a whole number of years "
+                        "(for example 1, 5 or 10). Please change the Time Step.")
+
+        if "LandslideComponent" in names:
+            missing = []
+            if "EarthquakeComponent" not in names:
+                missing.append("Earthquakes (they trigger the landslides)")
+            if "FlowAccumulatorComponent" not in names:
+                missing.append("Water Flow Routing (it carries the debris downhill)")
+            if missing:
+                return "Coseismic Landslides also need:\n\n• " + "\n• ".join(missing)
+
+        return None

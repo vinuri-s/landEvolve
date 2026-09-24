@@ -68,6 +68,13 @@ class SimulationResultKeys:
     DIAG_MAX_EROSION = "diag_max_erosion"
     DIAG_NET_CHANGE = "diag_net_change"
     DIAG_REGIME_LABEL = "diag_regime_label"
+    FAULT_PLOT = "fault_plot"
+    FAULT_SECTION_PLOT = "fault_section_plot"
+    EARTHQUAKE_CATALOG_PLOT = "earthquake_catalog_plot"
+    EARTHQUAKE_RUPTURES_PLOT = "earthquake_ruptures_plot"
+    LANDSLIDE_PLOT = "landslide_plot"
+    TECTONICS_TIMELINE_HTML = "tectonics_timeline_html"
+    FAULT_SECTION_HTML = "fault_section_html"
 
 
 class SimulationStatsKeys:
@@ -92,6 +99,8 @@ class SimulationResultsWindowConsts:
     TAB_TIMELINE = "Erosion Timeline"
     TAB_TERRAIN_TIMELINE = "Terrain Evolution"
     TAB_ANALYSIS = "Analysis"
+    TAB_TECTONICS = "Tectonics"
+    TAB_FAULT_SECTION = "Fault Section"
     TAB_FEATURE_TRACKING_MAP = "Feature Tracking Map"
     LBL_TIMELINE_NOT_AVAILABLE = "Erosion timeline not available for this simulation."
     LBL_TERRAIN_TIMELINE_NOT_AVAILABLE = "Terrain evolution animation not available for this simulation."
@@ -190,12 +199,6 @@ class DynamicFormConsts:
     PRECIP_MODE_SPATIAL = "Spatial"
     PRECIP_MODE_STOCHASTIC = "Stochastic"
     PRECIP_MODE_TREND = "Trend"
-
-    # Tectonics mode-conditional fields
-    FIELD_TECT_MODE = "mode"
-    FIELD_UPLIFT_RATE = "uplift_rate"
-    FIELD_UPLIFT_RASTER = "uplift_raster"
-    TECT_MODE_SPATIAL = "Spatial"
 
 
 class ThreeDViewConsts:

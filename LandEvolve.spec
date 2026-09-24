@@ -11,8 +11,12 @@ from PyInstaller.utils.hooks import collect_all, collect_submodules, collect_dyn
 # files are also excluded.
 datas = [('resources/about.jpg', 'resources')]
 binaries = []
-hiddenimports = ['landlab', 'rasterio', 'sklearn.utils._cython_blas', 'PyQt6.QtWebEngineCore', 'app.engine.components', 'scipy.special.cython_special', 'landlab.grid.gradients', 'landlab.grid.divergence', 'landlab.grid.mappers', 'landlab.grid.raster', 'landlab.grid.create', 'landlab.grid.diagonals', 'landlab.grid.hex', 'landlab.grid.network', 'landlab.grid.radial', 'landlab.grid.voronoi', 'landlab.grid.raster_funcs', 'landlab.grid.raster_divergence', 'landlab.grid.raster_gradients', 'landlab.grid.raster_mappers', 'landlab.grid.raster_set_status', 'landlab.grid.raster_mappers', 'landlab.grid.raster_aspect', 'app.core.logging', 'app.core.config', 'app.ui.validators.simulation_validator', 'app.engine.runner']
+hiddenimports = ['landlab', 'rasterio', 'sklearn.utils._cython_blas', 'PyQt6.QtWebEngineCore', 'app.engine.components', 'scipy.special.cython_special', 'landlab.grid.gradients', 'landlab.grid.divergence', 'landlab.grid.mappers', 'landlab.grid.raster', 'landlab.grid.create', 'landlab.grid.diagonals', 'landlab.grid.hex', 'landlab.grid.network', 'landlab.grid.radial', 'landlab.grid.voronoi', 'landlab.grid.raster_funcs', 'landlab.grid.raster_divergence', 'landlab.grid.raster_gradients', 'landlab.grid.raster_mappers', 'landlab.grid.raster_set_status', 'landlab.grid.raster_mappers', 'landlab.grid.raster_aspect', 'app.core.logging', 'app.core.config', 'app.ui.validators.simulation_validator', 'app.engine.runner', 'app.engine.tectonics', 'app.engine.efel', 'okada4py']
 tmp_ret = collect_all('rasterio')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+# okada4py: compiled elastic-dislocation solver for the fault / earthquake /
+# landslide processes; imported lazily, so bundle its binary explicitly.
+tmp_ret = collect_all('okada4py')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 # landlab: submodules + binaries only, NOT collect_all's data half -- that
 # swept in ~97MB of landlab's own .pyx/.c Cython sources (shipped alongside

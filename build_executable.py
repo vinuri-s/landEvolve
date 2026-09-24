@@ -50,6 +50,9 @@ def build_app():
         "--hidden-import=app.core.config",
         "--hidden-import=app.ui.validators.simulation_validator",
         "--hidden-import=app.engine.runner",
+        "--hidden-import=app.engine.tectonics",  # fault / earthquake / landslide processes
+        "--hidden-import=app.engine.efel",       # vendored EFEL model
+        "--hidden-import=okada4py",              # compiled elastic-dislocation solver
     ]
 
     # Data to include (Source : Destination in Bundle)
@@ -124,6 +127,9 @@ def build_app():
         "--name", app_name,
         "--onedir", # Directory output (easier for debugging assets)
         "--collect-all=rasterio",
+        # okada4py is a compiled extension imported lazily (only when a fault
+        # process runs), so make sure its binary is bundled.
+        "--collect-all=okada4py",
     ] + landlab_collect + hidden_imports + exclude_modules + add_data + [main_script]
 
     # 4. Run PyInstaller
