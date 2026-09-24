@@ -261,6 +261,12 @@ class SimulationRunner:
             for c in flow_conf:
                 c.get("params", {}).pop("runoff_rate", None)
 
+        if slide_conf and flow_conf and "steepest" in str(
+                flow_conf[0].get("params", {}).get("flow_director", "")).lower():
+            self.log(15, "Note: landslide debris follows the flow director. FlowDirectorSteepest moves it "
+                         "along the grid axes only, which leaves straight streaks in the landslide and "
+                         "soil-thickness maps; FlowDirectorD8 is recommended with Coseismic Landslides.")
+
         # Build order: Precipitation before Vegetation so the runoff base exists
         # when Vegetation captures it; Litho before Space so K_sp exists at init.
         # The fault/earthquake/landslide chain goes last: it needs the soil and
@@ -496,7 +502,8 @@ class SimulationRunner:
                     (float(grid.dx), float(grid.dy)), tectonics_timeline_html,
                     overlay_lines=fault_overlay, dip_vector=None if section["vertical"] else section["dip_vector"],
                     trace_mid=section["trace_mid"], arrows=recorder.arrows(), quakes=quakes,
-                    landslide_frames=slide_frames, landslide_counts=slide_counts, max_dim=max_dim):
+                    landslide_frames=slide_frames, landslide_counts=slide_counts, max_dim=max_dim,
+                    valid_mask=recorder.interior_mask):
                 tectonics_timeline_html = None
             fault_section_html = str(self.output_dir / "fault_section.html")
             if not generate_fault_section_html(

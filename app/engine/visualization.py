@@ -418,7 +418,12 @@ def _grid_stride(shape, max_dim):
 def _add_overlay_lines(fig, overlay_lines, shape, max_dim):
     """Lay static lines (e.g. the fault) over a timeline map. The lines are in
     full-resolution cell coordinates (column, row); the map's axes are the
-    thinned grid's indices, so they are divided by the thinning step."""
+    thinned grid's indices, so they are divided by the thinning step.
+
+    Must run after the figure's layout is set: it pins the axes to the map's own
+    extent. Without that, a line that runs well beyond the DEM (a 20 km fault
+    across a 0.5 km DEM) makes the axes auto-zoom out to fit it and squeezes the
+    map into a sliver."""
     if not overlay_lines:
         return
     sx, sy = _grid_stride(shape, max_dim)
@@ -427,6 +432,9 @@ def _add_overlay_lines(fig, overlay_lines, shape, max_dim):
             x=np.asarray(ln["x"], dtype=float) / sy, y=np.asarray(ln["y"], dtype=float) / sx, mode="lines",
             name=ln["name"], legendgroup=ln["name"], showlegend=ln.get("legend_first", True),
             line=dict(color=ln["color"], width=ln["width"], dash=ln["dash"]), hoverinfo="skip"))
+    ncols, nrows = -(-shape[1] // sy), -(-shape[0] // sx)
+    fig.update_xaxes(range=[-0.5, ncols - 0.5], autorange=False)
+    fig.update_yaxes(range=[nrows - 0.5, -0.5], autorange=False)
     fig.update_layout(legend=dict(orientation="h", yanchor="bottom", y=1.0, x=0.0, font=dict(size=11)))
 
 
@@ -527,7 +535,6 @@ def generate_sediment_timeline_html(snapshots, times, shape, output_html_path,
             frames.append(go.Frame(**frame_kwargs))
 
         fig = go.Figure(data=[heatmap(frames_data[0])], frames=frames)
-        _add_overlay_lines(fig, overlay_lines, shape, max_dim)
 
         slider_steps = [
             dict(
@@ -580,6 +587,7 @@ def generate_sediment_timeline_html(snapshots, times, shape, output_html_path,
             margin=dict(l=65, r=50, b=65, t=90),
         )
 
+        _add_overlay_lines(fig, overlay_lines, shape, max_dim)
         fig.write_html(
             output_html_path,
             full_html=True,
@@ -690,7 +698,6 @@ def generate_terrain_timeline_html(snapshots, times, shape, output_html_path, ma
             frames.append(go.Frame(**frame_kwargs))
 
         fig = go.Figure(data=[heatmap(frames_data[0])], frames=frames)
-        _add_overlay_lines(fig, overlay_lines, shape, max_dim)
 
         slider_steps = [
             dict(
@@ -739,6 +746,7 @@ def generate_terrain_timeline_html(snapshots, times, shape, output_html_path, ma
             margin=dict(l=65, r=50, b=65, t=90),
         )
 
+        _add_overlay_lines(fig, overlay_lines, shape, max_dim)
         fig.write_html(
             output_html_path,
             full_html=True,

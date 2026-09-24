@@ -90,10 +90,55 @@ def _arrow_segments(rows, cols, dx_m, dy_m, cell, scale, head=0.28):
     return xs, ys
 
 
+def _locate_ruptures(quakes, overlay_lines, cell_size, extent):
+    """Where each earthquake sits on the map. An earthquake's rupture centre is
+    usually deep down the fault plane -- often off the DEM altogether -- so it is
+    shown where the fault trace passes closest to it: a marker on the trace plus a
+    segment of the trace as long as the rupture. ``extent`` is (ncols, nrows).
+    Returns per-quake arrays: marker (col, row), whether it lies inside the map, the
+    rupture segment's two end points, and the marker position clamped onto the map."""
+    segs = []
+    for ln in overlay_lines or []:
+        if ln["name"].startswith("Fault trace"):
+            x, y = np.asarray(ln["x"], float), np.asarray(ln["y"], float)
+            for k in range(len(x) - 1):
+                segs.append((x[k], y[k], x[k + 1], y[k + 1]))
+    m = len(quakes["t"])
+    out = dict(px=np.zeros(m), py=np.zeros(m), inside=np.zeros(m, bool), cx=np.zeros(m), cy=np.zeros(m),
+               x0=np.zeros(m), y0=np.zeros(m), x1=np.zeros(m), y1=np.zeros(m), ok=np.zeros(m, bool))
+    if not segs or m == 0:
+        return out
+    ncols, nrows = extent
+    qx, qy = quakes["x"] / cell_size[0], quakes["y"] / cell_size[1]
+    half = quakes.get("length", np.zeros(m)) / cell_size[0] / 2.0
+    for i in range(m):
+        best = None
+        for (ax, ay, bx, by) in segs:
+            dx, dy = bx - ax, by - ay
+            ll = dx * dx + dy * dy
+            u = 0.0 if ll == 0 else float(np.clip(((qx[i] - ax) * dx + (qy[i] - ay) * dy) / ll, 0.0, 1.0))
+            px, py = ax + u * dx, ay + u * dy
+            d = (qx[i] - px) ** 2 + (qy[i] - py) ** 2
+            if best is None or d < best[0]:
+                best = (d, px, py, dx, dy)
+        _, px, py, dx, dy = best
+        norm = np.hypot(dx, dy) or 1.0
+        ux, uy = dx / norm, dy / norm
+        out["px"][i], out["py"][i] = px, py
+        out["x0"][i], out["y0"][i] = px - ux * half[i], py - uy * half[i]
+        out["x1"][i], out["y1"][i] = px + ux * half[i], py + uy * half[i]
+        inside = -0.5 <= px <= ncols - 0.5 and -0.5 <= py <= nrows - 0.5
+        out["inside"][i] = inside
+        out["cx"][i] = float(np.clip(px, 2, ncols - 3))
+        out["cy"][i] = float(np.clip(py, 2, nrows - 3))
+        out["ok"][i] = True
+    return out
+
+
 def generate_tectonics_timeline_html(times, tectonic_change, terrain, shape, cell_size, output_html_path,
                                      overlay_lines=None, dip_vector=None, trace_mid=None,
                                      arrows=None, quakes=None, landslide_frames=None,
-                                     landslide_counts=None, max_dim=250):
+                                     landslide_counts=None, max_dim=250, valid_mask=None):
     """Build the tectonics map animation. Returns True on success, else False.
 
     times            frame times (years); ``tectonic_change[i]`` / ``terrain[i]`` are the
@@ -112,7 +157,13 @@ def generate_tectonics_timeline_html(times, tectonic_change, terrain, shape, cel
         sx, sy = stride_for(shape, max_dim)
         nrows_full, ncols_full = shape
 
-        frames_z = [np.asarray(a, dtype=np.float32).reshape(shape)[::sx, ::sy] for a in tectonic_change]
+        def prep(a):
+            a = np.asarray(a, dtype=np.float32).copy()
+            if valid_mask is not None:
+                a[~valid_mask] = np.nan          # hide the boundary-artefact strip
+            return a.reshape(shape)[::sx, ::sy]
+
+        frames_z = [prep(a) for a in tectonic_change]
         xs_axis = np.arange(frames_z[0].shape[1]) * sy
         ys_axis = np.arange(frames_z[0].shape[0]) * sx
 
@@ -174,39 +225,56 @@ def generate_tectonics_timeline_html(times, tectonic_change, terrain, shape, cel
             return go.Scatter(x=xs, y=ys, mode="lines", line=dict(color="black", width=1.6),
                               name="Ground motion (arrows)", showlegend=True, hoverinfo="skip")
 
+        has_quakes = quakes is not None and len(quakes["t"]) > 0
+        rup = _locate_ruptures(quakes, overlay_lines, cell_size, (ncols_full, nrows_full)) if has_quakes else None
+        size = lambda m: np.clip(8 + 6 * (np.asarray(m) - 4.0), 7, 42)
+
         def quake_traces(i):
-            if quakes is None or len(quakes["t"]) == 0:
-                empty = dict(x=[], y=[], mode="markers")
-                return go.Scatter(name="Earlier earthquakes", showlegend=False, **empty), \
-                    go.Scatter(name="Earthquake this step", showlegend=False, **empty)
+            """Earlier earthquakes (open circles), this step's earthquakes (stars) and this
+            step's rupture (a red stretch of the fault trace). An earthquake whose nearest
+            point on the fault lies beyond the map edge is pinned to the edge (diamond)."""
+            empty = lambda nm: go.Scatter(x=[], y=[], mode="markers", name=nm, showlegend=False)
+            if not has_quakes or not rup["ok"].any():
+                return empty("Earlier earthquakes"), empty("Earthquake this step"), \
+                    go.Scatter(x=[], y=[], mode="lines", name="Rupture", showlegend=False)
             t, t_prev = times[i], times[i - 1] if i > 0 else -np.inf
             past = np.where(quakes["t"] <= t_prev + 1e-9)[0]
             now = np.where((quakes["t"] > t_prev + 1e-9) & (quakes["t"] <= t + 1e-9))[0]
-            size = lambda m: np.clip(8 + 6 * (np.asarray(m) - 4.0), 7, 42)
-            cx, cy = quakes["x"] / cell_size[0], quakes["y"] / cell_size[1]
-            earlier = go.Scatter(
-                x=cx[past], y=cy[past], mode="markers", name="Earlier earthquakes", showlegend=True,
-                marker=dict(symbol="circle-open", size=size(quakes["mw"][past]), color="#ff7f0e", line=dict(width=1.5)),
-                hovertemplate="Mw %{customdata:.1f}<extra>earlier earthquake</extra>", customdata=quakes["mw"][past])
-            current = go.Scatter(
-                x=cx[now], y=cy[now], mode="markers", name="Earthquake this step", showlegend=True,
-                marker=dict(symbol="star", size=size(quakes["mw"][now]) + 6, color="red", line=dict(width=1.5, color="white")),
-                hovertemplate="Mw %{customdata:.1f}<extra>earthquake</extra>", customdata=quakes["mw"][now])
-            return earlier, current
+
+            def markers(idx, name, base_symbol, off_symbol, color, extra, show):
+                ins = rup["inside"][idx]
+                px = np.where(ins, rup["px"][idx], rup["cx"][idx])
+                py = np.where(ins, rup["py"][idx], rup["cy"][idx])
+                sym = np.where(ins, base_symbol, off_symbol)
+                text = [f"Mw {quakes['mw'][k]:.1f}" + ("" if rup["inside"][k] else " — nearest fault point is off the map")
+                        for k in idx]
+                return go.Scatter(x=px, y=py, mode="markers", name=name, showlegend=show, text=text,
+                                  hovertemplate="%{text}<extra>" + name + "</extra>",
+                                  marker=dict(symbol=list(sym), size=size(quakes["mw"][idx]) + extra, color=color,
+                                              line=dict(width=1.5, color="white" if base_symbol == "star" else color)))
+
+            earlier = markers(past, "Earlier earthquakes", "circle-open", "diamond-open", "#ff7f0e", 0, True)
+            current = markers(now, "Earthquake this step", "star", "star-diamond", "red", 6, True)
+            xs, ys = [], []
+            for k in now:
+                xs += [rup["x0"][k], rup["x1"][k], None]
+                ys += [rup["y0"][k], rup["y1"][k], None]
+            rupture = go.Scatter(x=xs, y=ys, mode="lines", name="Rupture (this step)", showlegend=True,
+                                 line=dict(color="red", width=7), opacity=0.75, hoverinfo="skip")
+            return earlier, current, rupture
 
         # -- layout: map on top, timeline strip below -------------------------------
-        has_quakes = quakes is not None and len(quakes["t"]) > 0
         fig = make_subplots(rows=2, cols=1, row_heights=[0.77, 0.23], vertical_spacing=0.09,
                             specs=[[{}], [{"secondary_y": has_quakes}]])
 
         def dynamic(i):
-            earlier, current = quake_traces(i)
+            earlier, current, rupture = quake_traces(i)
             slide = slide_trace(landslide_frames[i]) if has_slides else \
                 go.Heatmap(x=[0], y=[0], z=[[np.nan]], showscale=False, showlegend=False, name="Landslides")
-            return [tect_trace(frames_z[i]), slide, arrow_trace(i), earlier, current]
+            return [tect_trace(frames_z[i]), slide, arrow_trace(i), earlier, current, rupture]
 
         for tr in dynamic(0):
-            fig.add_trace(tr, row=1, col=1)          # trace indices 0..4 are the animated ones
+            fig.add_trace(tr, row=1, col=1)          # trace indices 0..5 are the animated ones
 
         # static fault overlay
         for ln in overlay_lines or []:
@@ -247,7 +315,7 @@ def generate_tectonics_timeline_html(times, tectonic_change, terrain, shape, cel
                 shapes=[dict(type="line", xref="x2", yref="y2 domain", x0=t, x1=t, y0=0, y1=1,
                              line=dict(color="black", width=2, dash="dot"))],
                 **({"images": [bg_image(uris[i])]} if uris else {}))
-            frames.append(go.Frame(data=dynamic(i), traces=[0, 1, 2, 3, 4], name=f"{i}", layout=layout))
+            frames.append(go.Frame(data=dynamic(i), traces=[0, 1, 2, 3, 4, 5], name=f"{i}", layout=layout))
         fig.frames = frames
 
         buttons, slider = _slider_and_buttons(times)
@@ -263,7 +331,7 @@ def generate_tectonics_timeline_html(times, tectonic_change, terrain, shape, cel
                                     text="<b>fault dips<br>this way</b>", showarrow=False, font=dict(size=11),
                                     xanchor="left" if vx >= 0 else "right", bgcolor="rgba(255,255,255,0.7)"))
         if arrow_scale is not None:
-            annotations.append(dict(xref="paper", yref="paper", x=1.01, y=0.19, xanchor="left", yanchor="top",
+            annotations.append(dict(xref="paper", yref="paper", x=1.075, y=0.115, xanchor="left", yanchor="top",
                                     showarrow=False, align="left", font=dict(size=11, color="#444"),
                                     text=f"Arrows show sideways ground motion<br>since the start. Longest arrow at<br>the end = {max_disp:.2f} m."))
         fig.update_layout(
@@ -328,7 +396,8 @@ def generate_fault_section_html(times, section, total_change, tectonic_change, q
         allv = np.concatenate([np.concatenate([np.asarray(a), np.asarray(b)]) for a, b in
                                zip(total_change, tectonic_change)])
         allv = allv[np.isfinite(allv)]
-        lo, hi = (float(allv.min()), float(allv.max())) if allv.size else (-1.0, 1.0)
+        # Percentiles, not min/max: a single odd cell shouldn't set the scale.
+        lo, hi = (float(np.percentile(allv, 0.5)), float(np.percentile(allv, 99.5))) if allv.size else (-1.0, 1.0)
         pad = max(0.1 * (hi - lo), 1e-3)
         ylo, yhi = min(lo, 0.0) - pad, max(hi, 0.0) + pad
 
@@ -401,16 +470,17 @@ def generate_fault_section_html(times, section, total_change, tectonic_change, q
         # Erosion and landslides can dwarf the tectonic signal; let the viewer zoom to either.
         tv = np.concatenate([np.asarray(a)[np.isfinite(a)] for a in tectonic_change])
         if tv.size and float(tv.max() - tv.min()) > 0:
-            tpad = 0.15 * (float(tv.max()) - float(tv.min())) + 1e-6
-            tect_range = [float(min(tv.min(), 0.0)) - tpad, float(max(tv.max(), 0.0)) + tpad]
+            tlo, thi = float(np.percentile(tv, 0.5)), float(np.percentile(tv, 99.5))
+            tpad = 0.2 * (thi - tlo) + 1e-6
+            tect_range = [min(tlo, 0.0) - tpad, max(thi, 0.0) + tpad]
         else:
             tect_range = [ylo, yhi]
         zoom = dict(type="buttons", direction="right", x=1.0, y=1.13, xanchor="right", yanchor="top",
                     buttons=[dict(label="Zoom: tectonics", method="relayout", args=[{"yaxis.range": tect_range}]),
                              dict(label="Zoom: everything", method="relayout", args=[{"yaxis.range": [ylo, yhi]}])])
         fig.update_layout(title=dict(text="Fault cross-section", x=0.01), autosize=True, updatemenus=[buttons, zoom],
-                          sliders=[slider], legend=dict(orientation="h", yanchor="bottom", y=1.03, x=0.0),
-                          margin=dict(l=70, r=40, b=65, t=130), plot_bgcolor="white")
+                          sliders=[slider], legend=dict(orientation="h", yanchor="bottom", y=1.09, x=0.0),
+                          margin=dict(l=70, r=40, b=65, t=140), plot_bgcolor="white")
         fig.write_html(output_html_path, full_html=True, config={"responsive": True},
                        default_width="100%", default_height="100%", post_script=_RESPONSIVE_FILL_SCRIPT)
         return True

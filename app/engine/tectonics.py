@@ -623,6 +623,7 @@ class EarthquakeComponent(SimulationComponent):
             x=np.asarray(ev["Center_X"], dtype=float)[ok],
             y=np.asarray(ev["Center_Y"], dtype=float)[ok],
             ids=np.asarray(ev["Event_ID"]).astype(int)[ok],
+            length=np.asarray(ev["Length"], dtype=float)[ok],
         )
 
     def describe(self):
@@ -786,7 +787,7 @@ class LandslideComponent(SimulationComponent):
             allow_non_seismogenic_LS=allow_background,
             landslides_return_time=float(p.get("background_return_time", 1e5)),
             Mw_min=mw_min,
-            store_LS_dict=True, include_landslide_locations=True,
+            store_LS_dict=True, include_landslide_locations=False,
             random=random_shaking, seed=None if seed is None else int(seed),
         )
         self.csl = efel.CoseismicLandslider(grid, eq.eq, **kwargs)
@@ -794,15 +795,27 @@ class LandslideComponent(SimulationComponent):
             grid.at_node["vs__30"][:] = float(p.get("vs30_constant", 400.0))
         self.eq_comp = eq
         self.allow_background = allow_background
+        # What the landslides actually did to the terrain, recorded from the elevation change
+        # around each landslide step. (Landlab's own per-cell erosion record is overwritten when
+        # one cell slides twice in the same earthquake, so it under-counts scar depth.)
+        self._time = 0.0
+        self._changes = []      # (time, node indices, elevation change) for each step with landslides
 
     def run(self, dt):
         if dt <= 0:
             return
+        self._time += dt
         events = getattr(self.eq_comp.eq, "events_to_occur", [])
         if len(events) == 0 and not self.allow_background:
             return
         _sync_hill_flow_fields(self.grid)
+        z = self.grid.at_node["topographic__elevation"]
+        before = z.copy()
         self.csl.run_one_step(dt)
+        delta = z - before
+        idx = np.nonzero(delta)[0]
+        if idx.size:
+            self._changes.append((self._time, idx.astype(np.int64), delta[idx].astype(np.float32)))
 
     def _landslide_totals(self):
         ls = self.csl.Landslides
@@ -816,37 +829,32 @@ class LandslideComponent(SimulationComponent):
 
     def cumulative_frames(self, times, stride=(1, 1)):
         """For each animation frame time, the net elevation change caused by all
-        landslides triggered up to then (NaN where nothing happened, so it can
-        be overlaid transparently), already down-sampled by ``stride`` (rows,
-        cols); plus the running count of landslides.
+        landslides up to then (NaN where nothing happened, so it can be overlaid
+        transparently), already down-sampled by ``stride`` (rows, cols); plus the
+        running count of landslides.
 
-        An earthquake at time tau is applied in the step that ends at or after
-        tau, so a frame at time t includes every event with tau <= t."""
+        Built from the elevation change recorded around each landslide step, so
+        scars and debris are both exact. A frame at time t includes every step
+        that ended at or before t; the count uses each earthquake's own time."""
         ls = self.csl.Landslides
         eq_events = self.eq_comp.eq.Events
         tau = dict(zip(np.asarray(eq_events["Event_ID"]).astype(int),
                        np.asarray(eq_events["Cumulative_Time"], dtype=float)))
-        records = []
-        for i, eid in enumerate(ls["Event_ID"]):
-            records.append((tau.get(int(np.squeeze(eid)), np.inf), i))
-        records.sort()
-
+        counts_by_time = sorted((tau.get(int(np.squeeze(eid)), np.inf), len(np.atleast_1d(ls["Areas"][i])))
+                                for i, eid in enumerate(ls["Event_ID"]))
         shape = self.grid.shape
         sx, sy = stride
         acc = np.zeros(self.grid.number_of_nodes, dtype=float)
         frames, counts = [], []
-        count, k = 0, 0
+        count, k, c = 0, 0, 0
+        changes = sorted(self._changes, key=lambda item: item[0])
         for t in times:
-            while k < len(records) and records[k][0] <= t + 1e-9:
-                i = records[k][1]
-                src = np.asarray(ls["Landslide_Source_Nodes"][i], dtype=int)
-                rnt = np.asarray(ls["Landslide_Runout_Nodes"][i], dtype=int)
-                if src.size:
-                    acc[src] -= np.asarray(ls["Landslide_Erosion"][i], dtype=float)
-                if rnt.size:
-                    acc[rnt] += np.asarray(ls["Landslide_Deposition"][i], dtype=float)
-                count += len(np.atleast_1d(ls["Areas"][i]))
+            while k < len(changes) and changes[k][0] <= t + 1e-9:
+                acc[changes[k][1]] += changes[k][2]
                 k += 1
+            while c < len(counts_by_time) and counts_by_time[c][0] <= t + 1e-9:
+                count += counts_by_time[c][1]
+                c += 1
             frame = acc.reshape(shape)[::sx, ::sy].copy()
             frame[frame == 0] = np.nan
             frames.append(frame)
@@ -874,18 +882,11 @@ class LandslideComponent(SimulationComponent):
         except Exception as e:
             print(f"LandslideComponent: couldn't write landslides.csv ({e}).")
 
-        # Net change from landslides: source cells lose material, runout cells gain it.
+        # Net change from landslides (scars lose material, runout cells gain it): the real
+        # elevation change recorded around each landslide step.
         net = np.zeros(n, dtype=float)
-        try:
-            for i in range(len(ls["Event_ID"])):
-                src = np.asarray(ls["Landslide_Source_Nodes"][i], dtype=int)
-                rnt = np.asarray(ls["Landslide_Runout_Nodes"][i], dtype=int)
-                if src.size:
-                    net[src] -= np.asarray(ls["Landslide_Erosion"][i], dtype=float)
-                if rnt.size:
-                    net[rnt] += np.asarray(ls["Landslide_Deposition"][i], dtype=float)
-        except Exception as e:
-            print(f"LandslideComponent: couldn't accumulate landslide changes ({e}).")
+        for _, idx, delta in self._changes:
+            net[idx] += delta
 
         self.net_change = net
         if shape is not None and np.any(net != 0):
@@ -939,7 +940,17 @@ class TectonicRecorder:
         sr = np.clip(np.rint(self.section["rows"]).astype(int), 0, rows - 1)
         sc = np.clip(np.rint(self.section["cols"]).astype(int), 0, cols - 1)
         self._profile_nodes = sr * cols + sc
-        self._profile_valid = grid.status_at_node[self._profile_nodes] != grid.BC_NODE_IS_CLOSED
+        # Right beside a boundary (the grid edge, or the no-data void) the fixed boundary
+        # meets moving terrain and produces artefacts far larger than the real signal, so
+        # keep a few cells clear of it when drawing profiles and maps.
+        from scipy import ndimage
+        core = (grid.status_at_node == grid.BC_NODE_IS_CORE).reshape(grid.shape)
+        margin = 6
+        interior = ndimage.binary_erosion(core, iterations=margin, border_value=0)
+        if interior.sum() < 0.25 * core.sum():        # tiny or thin DEM: don't hide most of it
+            interior = core
+        self.interior_mask = interior.ravel()
+        self._profile_valid = self.interior_mask[self._profile_nodes]
 
         self.times, self.disp_x, self.disp_y = [], [], []
         self.total_change, self.tectonic_change = [], []

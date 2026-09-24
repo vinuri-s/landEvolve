@@ -49,7 +49,7 @@ Three processes, built on the **EFEL** model (see [Credits](#-credits)), replace
 
 Coordinates are in **map terms**: position is metres from the DEM's west edge and north edge, strike is a compass azimuth (clockwise from north, the fault dips to its right), and slip is *Thrust/Normal* and *Right-lateral/Left-lateral*. (Internally LandEvolve's grid is a north-south mirror image of the map, so these are converted — see `FaultComponent`.) Fault geometry the model would reject (e.g. a fault too shallow to reach below the seismogenic zone) is corrected automatically.
 
-Extra outputs: `fault_geometry.png`/`fault_section.png`, `earthquake_catalog.csv`/`.png`, `earthquake_ruptures.png`, `landslides.csv`/`.png`/`.tif`. The erosion/deposition maps stay meaningful because tectonic change — vertical *and* horizontal — is removed with a passive reference surface that is deformed identically but never eroded.
+Extra outputs: `fault_geometry.png`/`fault_section.png`, `earthquake_catalog.csv`/`.png`, `earthquake_ruptures.png`, `landslides.csv`/`.png`/`.tif`, and the interactive `tectonics_timeline.html` / `fault_section.html`. The erosion/deposition maps stay meaningful because tectonic change — vertical *and* horizontal — is removed with a passive reference surface that is deformed identically but never eroded.
 
 > These processes need the compiled `okada4py` package (installed by `requirements.txt`; requires `git` and a C++ compiler). Without it the app still runs — only these three processes are unavailable, with a message explaining how to install it.
 
@@ -95,7 +95,7 @@ A layered architecture: `app/ui` (PyQt6 views) → `app/controllers` (thin UI-to
 
 ## 🧩 Key Modules
 
-*   **UI** (`app/ui`) — `HomeWindow` (landing screen), `SimulationWindow` (setup screen), `SimulationResultsWindow` (tabbed results — 2D, 3D, Terrain Evolution, Erosion Timeline, Feature Tracking, Analysis; see [Visualizations & Plots](#-visualizations--plots)), `SimulationWorker` (background thread).
+*   **UI** (`app/ui`) — `HomeWindow` (landing screen), `SimulationWindow` (setup screen), `SimulationResultsWindow` (tabbed results — 2D, 3D, Terrain Evolution, Erosion Timeline, Tectonics, Fault Section, Feature Tracking, Analysis; see [Visualizations & Plots](#-visualizations--plots)), `SimulationWorker` (background thread).
 *   **Controllers** (`app/controllers`) — thin handlers between views and services. `ComponentController` resolves each process's plain-language display name and "Required" badge from the database (see Data Layer).
 *   **Services** (`app/services`) — `SimulationService`, `ComponentService`, `ShapefileService`, `LithologyService`, `VegetationService`: business logic bridging the UI to data and the engine.
 *   **Engine** (`app/engine`) — the scientific core. `SimulationRunner` drives the timestep loop; `RasterModel` loads a DEM into a Landlab grid. Each process in `components.py` wraps a Landlab class or (for precipitation and vegetation, which Landlab has no equivalent for) custom logic; the fault / earthquake / landslide processes live in `tectonics.py` and wrap the vendored EFEL model in `app/engine/efel/`. They communicate only through shared grid fields, in a fixed order each step:
@@ -115,6 +115,9 @@ Spatial plots share a common treatment: drawn over a shaded-relief hillshade for
 *   **3D Map** — interactive Plotly surface, Input/Output/Difference modes.
 *   **Terrain Evolution** / **Erosion Timeline** — scrubbable animations of the surface, or cumulative change, over time (one frame per timestep, capped at 300 for long runs).
 *   **Feature Tracking Map** — the Erosion Timeline animation cropped to the tracked polygon, with first-change and biggest-change marked.
+*   **Tectonics** *(with Fault Tectonics)* — a scrubbable map of what the fault does: land raised (blue) or lowered (red) by tectonics, arrows for sideways ground motion, the fault trace and its dip direction, earthquake epicentres (a star flashes in the frame a quake happens), and landslide scars (brown) and debris (green) building up. Click a name in the legend to hide or show that layer. A strip below plots every earthquake by time and magnitude with a moving "now" marker; click a quake to jump to it. (Colours use a robust scale, since a few edge cells where a fixed boundary meets moving terrain can be much larger than the real signal.)
+*   **Fault Section** *(with Fault Tectonics)* — the change in ground height along a profile across the fault, animated: tectonics alone versus the actual surface (tectonics plus erosion and landslides), beside a sketch of the fault plane. **Zoom: tectonics / everything** switches the vertical scale, since erosion can dwarf the tectonic signal.
+*   The fault trace is also drawn on **Terrain Evolution** and **Erosion Timeline**.
 *   **Analysis** — erosion/deposition mask, onset & peak of change, soil thickness, sediment budget over time, and a cleaned-up drainage network (channel cells only, by drainage area); with faults/earthquakes/landslides also the fault geometry, earthquake catalogue and ruptures, and the landslide map.
 
 ## ⚠️ Input DEM Requirements
