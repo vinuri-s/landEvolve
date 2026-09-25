@@ -1649,7 +1649,7 @@ class CoseismicLandslider:
         if self.vs30_setting=='active_tectonic':
             g_bns = np.array([3e-4,3.5e-3,0.01,0.024,0.08,0.14,0.2])
         elif self.vs30_setting=='stable_continent':
-            g_bins = np.array([1e-4,4.5e-3,8.5e-3,0.013,0.022,0.03,0.04])
+            g_bns = np.array([1e-4,4.5e-3,8.5e-3,0.013,0.022,0.03,0.04])
         
         # The right and left bin edges are defined as <180 or >760 respectively, 
         # so the values for data that falls in those bins are set such that the 
