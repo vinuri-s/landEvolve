@@ -105,6 +105,81 @@ _RESPONSIVE_FILL_SCRIPT = """
 """
 
 
+# Frame player for the animated timelines (sediment, terrain, feature tracking,
+# tectonics, fault section). Plotly's own Play/slider (Plots.animate with
+# redraw=True) tears the whole plot down and rebuilds it on every frame, so parts
+# of it (heatmaps, the timeline strip below the map) vanish for a moment each
+# frame -- visible as flashing, and worse on slow or software-rendered browsers.
+# The Play/Pause buttons and slider are therefore declared with method="skip" and
+# driven from here: each frame updates only the traces that change (restyle) plus
+# the title/shapes/images (relayout), with the plot left in place.
+_FRAME_PLAYER_SCRIPT = """
+(function() {
+    var gd = document.getElementsByClassName('plotly-graph-div')[0];
+    if (!gd || !gd._transitionData || !gd._transitionData._frames) return;
+    var FRAME_MS = __FRAME_MS__;
+    var frames = function() { return gd._transitionData._frames; };
+    var hasSlider = !!(gd.layout.sliders && gd.layout.sliders.length);
+    var cur = hasSlider ? (gd.layout.sliders[0].active || 0) : 0;
+    var playing = false, token = 0, chain = Promise.resolve(), want = null;
+
+    function show(i) {
+        var f = frames()[i];
+        if (!f) return Promise.resolve();
+        var idx = f.traces || f.data.map(function(_, k) { return k; });
+        var upd = {};
+        f.data.forEach(function(tr, k) {
+            Object.keys(tr).forEach(function(key) {
+                if (key === 'type' || key === 'colorbar' || key === 'colorscale') return;
+                var v = tr[key], now = gd.data[idx[k]] && gd.data[idx[k]][key];
+                if (v !== null && typeof v !== 'object' && v === now) return;
+                if (!upd[key]) upd[key] = new Array(idx.length).fill(undefined);
+                upd[key][k] = v;
+            });
+        });
+        var lay = Object.assign({}, f.layout || {});
+        if (hasSlider) lay['sliders[0].active'] = i;
+        cur = i;
+        return Plotly.update(gd, upd, lay, idx);
+    }
+    function run(fn) { chain = chain.then(fn, fn); return chain; }
+    function pause() { playing = false; token++; }
+    function goto(i) {
+        pause();
+        want = i;
+        return run(function() { if (want === null) return; var k = want; want = null; return show(k); });
+    }
+    async function play() {
+        if (playing) return;
+        playing = true;
+        var my = ++token, n = frames().length;
+        for (var i = (cur >= n - 1 ? 0 : cur + 1); i < n && playing && my === token; i++) {
+            var t0 = performance.now();
+            await run(function() { return show(i); });
+            var wait = Math.max(0, FRAME_MS - (performance.now() - t0));
+            await new Promise(function(r) { setTimeout(r, wait); });
+        }
+        if (my === token) playing = false;
+    }
+    gd.on('plotly_buttonclicked', function(e) {
+        var label = (e.button && e.button.label) || '';
+        if (label.indexOf('Play') >= 0) play();
+        else if (label.indexOf('Pause') >= 0) pause();
+    });
+    gd.on('plotly_sliderchange', function(e) {
+        var i = e.slider && e.slider.steps ? e.slider.steps.indexOf(e.step) : -1;
+        if (i < 0 && e.slider) i = e.slider.active;
+        goto(i);
+    });
+    window.__landPlayer = {play: play, pause: pause, goto: goto, show: show};
+})();
+"""
+
+
+def _frame_player_script(frame_ms=300):
+    return _FRAME_PLAYER_SCRIPT.replace("__FRAME_MS__", str(int(frame_ms)))
+
+
 # -----------------------------
 # SPACE regime diagnostic tool
 # -----------------------------
@@ -538,7 +613,7 @@ def generate_sediment_timeline_html(snapshots, times, shape, output_html_path,
 
         slider_steps = [
             dict(
-                method="animate",
+                method="skip",
                 args=[[f"{i}"],
                       dict(mode="immediate",
                            frame=dict(duration=0, redraw=True),
@@ -566,11 +641,11 @@ def generate_sediment_timeline_html(snapshots, times, shape, output_html_path,
                 x=0.0, y=-0.02, xanchor="left", yanchor="top",
                 pad=dict(t=5, r=10),
                 buttons=[
-                    dict(label="▶ Play", method="animate",
+                    dict(label="▶ Play", method="skip",
                          args=[None, dict(frame=dict(duration=300, redraw=True),
                                           fromcurrent=True,
                                           transition=dict(duration=0))]),
-                    dict(label="⏸ Pause", method="animate",
+                    dict(label="⏸ Pause", method="skip",
                          args=[[None], dict(mode="immediate",
                                             frame=dict(duration=0, redraw=False),
                                             transition=dict(duration=0))]),
@@ -594,7 +669,7 @@ def generate_sediment_timeline_html(snapshots, times, shape, output_html_path,
             config={"responsive": True},
             default_width="100%",
             default_height="100%",
-            post_script=_RESPONSIVE_FILL_SCRIPT,
+            post_script=_RESPONSIVE_FILL_SCRIPT + _frame_player_script(300),
         )
         return max(abs(cmin), abs(cmax))
 
@@ -701,7 +776,7 @@ def generate_terrain_timeline_html(snapshots, times, shape, output_html_path, ma
 
         slider_steps = [
             dict(
-                method="animate",
+                method="skip",
                 args=[[f"{i}"],
                       dict(mode="immediate",
                            frame=dict(duration=0, redraw=True),
@@ -726,11 +801,11 @@ def generate_terrain_timeline_html(snapshots, times, shape, output_html_path, ma
                 x=0.0, y=-0.02, xanchor="left", yanchor="top",
                 pad=dict(t=5, r=10),
                 buttons=[
-                    dict(label="▶ Play", method="animate",
+                    dict(label="▶ Play", method="skip",
                          args=[None, dict(frame=dict(duration=300, redraw=True),
                                           fromcurrent=True,
                                           transition=dict(duration=0))]),
-                    dict(label="⏸ Pause", method="animate",
+                    dict(label="⏸ Pause", method="skip",
                          args=[[None], dict(mode="immediate",
                                             frame=dict(duration=0, redraw=False),
                                             transition=dict(duration=0))]),
@@ -753,7 +828,7 @@ def generate_terrain_timeline_html(snapshots, times, shape, output_html_path, ma
             config={"responsive": True},
             default_width="100%",
             default_height="100%",
-            post_script=_RESPONSIVE_FILL_SCRIPT,
+            post_script=_RESPONSIVE_FILL_SCRIPT + _frame_player_script(300),
         )
         return True
 
@@ -915,7 +990,7 @@ def generate_feature_tracking_timeline_html(snapshots, times, shape, mask, outpu
 
         slider_steps = [
             dict(
-                method="animate",
+                method="skip",
                 args=[[f"{i}"],
                       dict(mode="immediate",
                            frame=dict(duration=0, redraw=True),
@@ -938,11 +1013,11 @@ def generate_feature_tracking_timeline_html(snapshots, times, shape, mask, outpu
                 x=0.0, y=-0.02, xanchor="left", yanchor="top",
                 pad=dict(t=5, r=10),
                 buttons=[
-                    dict(label="▶ Play", method="animate",
+                    dict(label="▶ Play", method="skip",
                          args=[None, dict(frame=dict(duration=300, redraw=True),
                                           fromcurrent=True,
                                           transition=dict(duration=0))]),
-                    dict(label="⏸ Pause", method="animate",
+                    dict(label="⏸ Pause", method="skip",
                          args=[[None], dict(mode="immediate",
                                             frame=dict(duration=0, redraw=False),
                                             transition=dict(duration=0))]),
@@ -964,7 +1039,7 @@ def generate_feature_tracking_timeline_html(snapshots, times, shape, mask, outpu
             config={"responsive": True},
             default_width="100%",
             default_height="100%",
-            post_script=_RESPONSIVE_FILL_SCRIPT,
+            post_script=_RESPONSIVE_FILL_SCRIPT + _frame_player_script(300),
         )
         return True
 

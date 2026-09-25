@@ -23,7 +23,7 @@ import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from app.engine.visualization import _hillshade_data_uri, _RESPONSIVE_FILL_SCRIPT
+from app.engine.visualization import _hillshade_data_uri, _RESPONSIVE_FILL_SCRIPT, _frame_player_script
 
 _LANDSLIDE_COLORSCALE = [[0.0, "#8B4513"], [0.5, "rgba(0,0,0,0)"], [1.0, "#1a9850"]]
 _STRIP_NAME = "Earthquakes (height = magnitude)"
@@ -37,7 +37,7 @@ def stride_for(shape, max_dim):
 
 
 def _slider_and_buttons(times, frame_ms=350):
-    steps = [dict(method="animate",
+    steps = [dict(method="skip",
                   args=[[f"{i}"], dict(mode="immediate", frame=dict(duration=0, redraw=True),
                                        transition=dict(duration=0))],
                   label=f"{t:.0f}") for i, t in enumerate(times)]
@@ -45,10 +45,10 @@ def _slider_and_buttons(times, frame_ms=350):
         type="buttons", direction="left", x=0.0, y=-0.02, xanchor="left", yanchor="top",
         pad=dict(t=5, r=10),
         buttons=[
-            dict(label="▶ Play", method="animate",
+            dict(label="▶ Play", method="skip",
                  args=[None, dict(frame=dict(duration=frame_ms, redraw=True), fromcurrent=True,
                                   transition=dict(duration=0))]),
-            dict(label="⏸ Pause", method="animate",
+            dict(label="⏸ Pause", method="skip",
                  args=[[None], dict(mode="immediate", frame=dict(duration=0, redraw=False),
                                     transition=dict(duration=0))]),
         ])
@@ -414,16 +414,14 @@ def generate_tectonics_timeline_html(times, tectonic_change, terrain, shape, cel
             var d = Math.abs(times[i] - p.x);
             if (d < bestd) { bestd = d; best = i; }
         }
-        Plotly.animate(gd, [String(best)], {mode: 'immediate', frame: {duration: 0, redraw: true},
-                                            transition: {duration: 0}});
-        Plotly.relayout(gd, {'sliders[0].active': best});
+        window.__landPlayer.goto(best);
     });
 })();
 """ % (json.dumps([float(t) for t in times]), json.dumps(_STRIP_NAME))
 
         fig.write_html(output_html_path, full_html=True, auto_play=False, config={"responsive": True},
                        default_width="100%", default_height="100%",
-                       post_script=_RESPONSIVE_FILL_SCRIPT + jump_script)
+                       post_script=_RESPONSIVE_FILL_SCRIPT + _frame_player_script(350) + jump_script)
         return True
     except Exception as e:
         import traceback
@@ -531,7 +529,8 @@ def generate_fault_section_html(times, section, total_change, tectonic_change, q
                           sliders=[slider], legend=dict(orientation="v", yanchor="top", y=1.0, xanchor="left", x=1.01, font=dict(size=11)),
                           margin=dict(l=70, r=200, b=65, t=100), plot_bgcolor="white")
         fig.write_html(output_html_path, full_html=True, auto_play=False, config={"responsive": True},
-                       default_width="100%", default_height="100%", post_script=_RESPONSIVE_FILL_SCRIPT)
+                       default_width="100%", default_height="100%",
+                       post_script=_RESPONSIVE_FILL_SCRIPT + _frame_player_script(350))
         return True
     except Exception as e:
         import traceback
