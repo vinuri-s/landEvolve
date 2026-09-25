@@ -1002,7 +1002,10 @@ class TectonicRecorder:
             self._z0, self._ref0 = z.copy(), ref.copy()
         self.times.append(float(t))
         self.total_change.append(np.where(self._profile_valid, z - self._z0, np.nan))
-        self.tectonic_change.append(np.where(self._profile_valid, ref - self._ref0, np.nan))
+        # the fault's vertical push only -- the same quantity the map layer shows. (ref - ref0 also
+        # contains the terrain's own relief carried sideways, which spikes on steep slopes.)
+        tz = g.at_node["total_z__displacement"][self._profile_nodes].astype(float)
+        self.tectonic_change.append(np.where(self._profile_valid, tz, np.nan))
         sx, sy = self._map_stride
         self.vertical_uplift.append(
             g.at_node["total_z__displacement"].reshape(g.shape)[::sx, ::sy].astype(np.float32).copy())

@@ -196,7 +196,7 @@ def generate_tectonics_timeline_html(times, tectonic_change, terrain, shape, cel
         def symlog(a):
             return np.sign(a) * np.log10(1.0 + np.abs(a) / v0) / norm_
 
-        frames_c = [np.clip(symlog(f), -1, 1).astype(np.float32) for f in frames_z]
+        frames_c = [symlog(f).astype(np.float32) for f in frames_z]
         cmax_i = []
         for f in frames_z:
             av = np.abs(f[~np.isnan(f)])
@@ -368,6 +368,11 @@ def generate_tectonics_timeline_html(times, tectonic_change, terrain, shape, cel
         fig.frames = frames
 
         buttons, slider = _slider_and_buttons(times)
+        colour_menu = dict(type="buttons", direction="left", x=0.0, y=1.0, xanchor="left", yanchor="bottom",
+                           pad=dict(t=0, b=6, r=6), active=0, font=dict(size=11),
+                           buttons=[dict(label="Colour: log scale", method="skip"),
+                                    dict(label="Colour: linear (whole run)", method="skip"),
+                                    dict(label="Colour: linear (each frame)", method="skip")])
         annotations = []
         if dip_vector is not None and trace_mid is not None:
             vx, vy = dip_vector
@@ -382,12 +387,12 @@ def generate_tectonics_timeline_html(times, tectonic_change, terrain, shape, cel
         if arrow_scale is not None:
             annotations.append(dict(xref="paper", yref="paper", x=1.075, y=0.115, xanchor="left", yanchor="top",
                                     showarrow=False, align="left", font=dict(size=11, color="#444"),
-                                    text="Colour uses one fixed log-like<br>scale and arrow length one fixed<br>square-root scale for the whole run,<br>so early change stays visible and<br>frames can be compared. The title<br>gives the real sizes."))
+                                    text="<b>Colour scale</b> (buttons above the map)<br>log: one fixed scale, early change<br>stays visible (default)<br>linear (whole run): true proportions,<br>early frames look faint<br>linear (each frame): re-fitted every<br>frame, colours not comparable<br><b>Arrows</b>: fixed square-root length<br>scale; the title gives real sizes."))
         fig.update_layout(
             title=dict(text="Tectonics", x=0.01), autosize=True, annotations=annotations,
-            images=[bg_image(uris[0])] if uris else [], updatemenus=[buttons], sliders=[slider],
+            images=[bg_image(uris[0])] if uris else [], updatemenus=[buttons, colour_menu], sliders=[slider],
             legend=dict(orientation="v", yanchor="top", y=0.66, xanchor="left", x=1.01, font=dict(size=11)),
-            margin=dict(l=65, r=340, b=65, t=70, autoexpand=False), plot_bgcolor="white")
+            margin=dict(l=65, r=340, b=150, t=95, autoexpand=False), plot_bgcolor="white")
         fig.update_xaxes(range=[-0.5, ncols_full - 0.5], constrain="domain", title="Easting (columns)",
                          showgrid=False, row=1, col=1)
         fig.update_yaxes(range=[nrows_full - 0.5, -0.5], scaleanchor="x", constrain="domain",
@@ -400,6 +405,62 @@ def generate_tectonics_timeline_html(times, tectonic_change, terrain, shape, cel
                              row=2, col=1)
         else:
             fig.update_yaxes(title="Typical peak change (m)", rangemode="tozero", row=2, col=1)
+
+        colour_script = """
+(function() {
+    var gd = document.getElementsByClassName('plotly-graph-div')[0];
+    if (!gd || !window.__landPlayer) return;
+    var V0 = %s, NORM = %s, VMAX = %s, CM = %s, LOG_T = %s;
+    var mode = 'log', applied = null;
+    function decode(spec) {
+        var bin = atob(spec.bdata), u = new Uint8Array(bin.length);
+        for (var k = 0; k < bin.length; k++) u[k] = bin.charCodeAt(k);
+        return new Float32Array(u.buffer);
+    }
+    function fmt(v) { return String(parseFloat(v.toPrecision(2))); }
+    function ticks(top) {
+        var vals = [-1, -0.5, 0, 0.5, 1];
+        return {vals: vals, text: vals.map(function(t) { return t === 0 ? '0' : fmt(t * top); })};
+    }
+    window.__landHook = function(i, f, upd, idx) {
+        var k = idx.indexOf(0);
+        if (k < 0) return;
+        var key = mode === 'each' ? 'each' + i : mode;
+        if (mode !== 'log' && f.data[k] && f.data[k].z && f.data[k].z.bdata) {
+            var z = decode(f.data[k].z), shape = String(f.data[k].z.shape).split(',').map(Number), c = shape[1];
+            var top = mode === 'each' ? CM[i] : VMAX, out = new Array(shape[0]);
+            for (var r = 0; r < shape[0]; r++) {
+                var row = new Float32Array(c);
+                for (var q = 0; q < c; q++) {
+                    var v = z[r * c + q];
+                    row[q] = (Math.sign(v) * V0 * (Math.pow(10, Math.abs(v) * NORM) - 1)) / top;
+                }
+                out[r] = row;
+            }
+            upd.z = upd.z || new Array(idx.length).fill(undefined);
+            upd.z[k] = out;
+        }
+        if (applied !== key) {
+            var t = mode === 'log' ? LOG_T : ticks(mode === 'each' ? CM[i] : VMAX);
+            var title = 'Vertical<br>change (m)<br>(' + (mode === 'log' ? 'log scale' : 'linear') + ')';
+            [['colorbar.tickvals', t.vals], ['colorbar.ticktext', t.text], ['colorbar.title.text', title]].forEach(function(p) {
+                upd[p[0]] = new Array(idx.length).fill(undefined);
+                upd[p[0]][k] = p[1];
+            });
+            applied = key;
+        }
+    };
+    gd.on('plotly_buttonclicked', function(e) {
+        var label = (e.button && e.button.label) || '';
+        if (label.indexOf('Colour:') !== 0) return;
+        mode = label.indexOf('log') >= 0 ? 'log' : (label.indexOf('each') >= 0 ? 'each' : 'whole');
+        applied = null;
+        window.__landPlayer.show(window.__landPlayer.current());
+    });
+})();
+""" % (json.dumps(float(v0)), json.dumps(float(norm_)), json.dumps(float(vmax)),
+       json.dumps([float(c) if c > 0 else float(vmax) for c in cmax_i]),
+       json.dumps(dict(vals=[float(x) for x in tickvals], text=ticktext)))
 
         jump_script = """
 (function() {
@@ -421,7 +482,7 @@ def generate_tectonics_timeline_html(times, tectonic_change, terrain, shape, cel
 
         fig.write_html(output_html_path, full_html=True, auto_play=False, config={"responsive": True},
                        default_width="100%", default_height="100%",
-                       post_script=_RESPONSIVE_FILL_SCRIPT + _frame_player_script(350) + jump_script)
+                       post_script=_RESPONSIVE_FILL_SCRIPT + _frame_player_script(350) + colour_script + jump_script)
         return True
     except Exception as e:
         import traceback
@@ -450,7 +511,7 @@ def generate_fault_section_html(times, section, total_change, tectonic_change, q
 
         def lines(i):
             return [
-                go.Scatter(x=d, y=tectonic_change[i], mode="lines", name="Tectonics alone",
+                go.Scatter(x=d, y=tectonic_change[i], mode="lines", name="Tectonics alone (vertical push)",
                            line=dict(color="#1f77b4", width=3),
                            hovertemplate="%{x:.0f} m: %{y:.3f} m<extra>tectonics alone</extra>"),
                 go.Scatter(x=d, y=total_change[i], mode="lines", name="Actual surface (tectonics + erosion)",

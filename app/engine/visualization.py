@@ -140,6 +140,7 @@ _FRAME_PLAYER_SCRIPT = """
         var lay = Object.assign({}, f.layout || {});
         if (hasSlider) lay['sliders[0].active'] = i;
         cur = i;
+        if (window.__landHook) window.__landHook(i, f, upd, idx);
         return Plotly.update(gd, upd, lay, idx);
     }
     function run(fn) { chain = chain.then(fn, fn); return chain; }
@@ -171,7 +172,7 @@ _FRAME_PLAYER_SCRIPT = """
         if (i < 0 && e.slider) i = e.slider.active;
         goto(i);
     });
-    window.__landPlayer = {play: play, pause: pause, goto: goto, show: show};
+    window.__landPlayer = {play: play, pause: pause, goto: goto, show: show, current: function() { return cur; }};
 })();
 """
 

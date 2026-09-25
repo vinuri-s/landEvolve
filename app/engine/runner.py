@@ -443,6 +443,19 @@ class SimulationRunner:
             save_geotiff(str(self.output_dir / "diff_geomorphic.tif"), geomorphic_diff, tif)
             # Cumulative uplift raster, so the 3D view can subtract it on demand.
             save_geotiff(str(self.output_dir / "uplift.tif"), cumulative_uplift, tif)
+            # uplift.tif is the tectonic change of the surface at each fixed cell: the fault's
+            # vertical push PLUS the terrain's own relief carried sideways (a slope moved 1 m
+            # sideways changes height by up to 1 m, so steep slopes show large values). Split it
+            # into its two exact parts so the vertical uplift can be read on its own.
+            if "total_z__displacement" in grid.at_node:
+                vertical = np.asarray(grid.at_node["total_z__displacement"], dtype=float).reshape(np.shape(cumulative_uplift))
+                lateral = np.asarray(cumulative_uplift, dtype=float) - vertical
+                # boundary cells are never displaced, so they read 0 rather than "unknown"
+                fixed = (grid.status_at_node != grid.BC_NODE_IS_CORE).reshape(vertical.shape)
+                vertical[fixed] = np.nan
+                lateral[fixed] = np.nan
+                save_geotiff(str(self.output_dir / "uplift_vertical.tif"), vertical, tif)
+                save_geotiff(str(self.output_dir / "uplift_lateral.tif"), lateral, tif)
 
         # Sediment timeline and budget are about erosion/deposition, so strip the
         # tectonic uplift from each snapshot when tectonics ran.
