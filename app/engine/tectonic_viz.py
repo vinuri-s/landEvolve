@@ -36,6 +36,35 @@ def stride_for(shape, max_dim):
     return max(1, shape[0] // max_dim), max(1, shape[1] // max_dim)
 
 
+def _deferred_fit_script(min_w, min_h):
+    """The figure is first drawn at a fixed, generous size (autosize off) and only switched
+    to the real container size once that is big enough. QtWebEngine creates a results tab at a
+    small size before it is shown; the wide fixed margins of these figures then leave no plot area,
+    Plotly throws "Something went wrong with axis scaling" on the first draw, and everything
+    scheduled after it (the frame player, the resize handler) never runs -- a blank plot that
+    never recovers."""
+    return """
+(function() {
+    var gd = document.getElementsByClassName('plotly-graph-div')[0];
+    if (!gd) return;
+    var MINW = %d, MINH = %d, done = false, timer;
+    function fit() {
+        if (done) return;
+        var de = document.documentElement;
+        if (de.clientWidth < MINW || de.clientHeight < MINH) return;
+        done = true;
+        // write_html gives the wrapper the layout's fixed pixel size; hand it back to the viewport
+        [gd.parentNode, gd].forEach(function(el) { el.style.width = '100%%'; el.style.height = '100%%'; });
+        try { Plotly.relayout(gd, {autosize: true}); } catch (e) {}
+    }
+    function later() { clearTimeout(timer); timer = setTimeout(fit, 120); }
+    window.addEventListener('resize', later);
+    setInterval(fit, 1000);
+    fit();
+})();
+""" % (min_w, min_h)
+
+
 def _slider_and_buttons(times, frame_ms=350):
     steps = [dict(method="skip",
                   args=[[f"{i}"], dict(mode="immediate", frame=dict(duration=0, redraw=True),
@@ -389,7 +418,7 @@ def generate_tectonics_timeline_html(times, tectonic_change, terrain, shape, cel
                                     showarrow=False, align="left", font=dict(size=11, color="#444"),
                                     text="<b>Colour scale</b> (buttons above the map)<br>log: one fixed scale, early change<br>stays visible (default)<br>linear (whole run): true proportions,<br>early frames look faint<br>linear (each frame): re-fitted every<br>frame, colours not comparable<br><b>Arrows</b>: fixed square-root length<br>scale; the title gives real sizes."))
         fig.update_layout(
-            title=dict(text="Tectonics", x=0.01), autosize=True, annotations=annotations,
+            title=dict(text="Tectonics", x=0.01), autosize=False, width=1200, height=800, annotations=annotations,
             images=[bg_image(uris[0])] if uris else [], updatemenus=[buttons, colour_menu], sliders=[slider],
             legend=dict(orientation="v", yanchor="top", y=0.66, xanchor="left", x=1.01, font=dict(size=11)),
             margin=dict(l=65, r=340, b=150, t=95, autoexpand=False), plot_bgcolor="white")
@@ -482,7 +511,8 @@ def generate_tectonics_timeline_html(times, tectonic_change, terrain, shape, cel
 
         fig.write_html(output_html_path, full_html=True, auto_play=False, config={"responsive": True},
                        default_width="100%", default_height="100%",
-                       post_script=_RESPONSIVE_FILL_SCRIPT + _frame_player_script(350) + colour_script + jump_script)
+                       post_script=_RESPONSIVE_FILL_SCRIPT + _frame_player_script(350) + colour_script + jump_script
+                       + _deferred_fit_script(720, 480))
         return True
     except Exception as e:
         import traceback
@@ -586,12 +616,12 @@ def generate_fault_section_html(times, section, total_change, tectonic_change, q
         zoom = dict(type="buttons", direction="right", x=1.0, y=1.13, xanchor="right", yanchor="top",
                     buttons=[dict(label="Zoom: tectonics", method="relayout", args=[{"yaxis.range": tect_range}]),
                              dict(label="Zoom: everything", method="relayout", args=[{"yaxis.range": [ylo, yhi]}])])
-        fig.update_layout(title=dict(text="Fault cross-section", x=0.01), autosize=True, updatemenus=[buttons, zoom],
+        fig.update_layout(title=dict(text="Fault cross-section", x=0.01), autosize=False, width=1100, height=750, updatemenus=[buttons, zoom],
                           sliders=[slider], legend=dict(orientation="v", yanchor="top", y=1.0, xanchor="left", x=1.01, font=dict(size=11)),
                           margin=dict(l=70, r=200, b=65, t=100), plot_bgcolor="white")
         fig.write_html(output_html_path, full_html=True, auto_play=False, config={"responsive": True},
                        default_width="100%", default_height="100%",
-                       post_script=_RESPONSIVE_FILL_SCRIPT + _frame_player_script(350))
+                       post_script=_RESPONSIVE_FILL_SCRIPT + _frame_player_script(350) + _deferred_fit_script(520, 420))
         return True
     except Exception as e:
         import traceback
