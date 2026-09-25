@@ -186,15 +186,25 @@ def generate_tectonics_timeline_html(times, tectonic_change, terrain, shape, cel
         if not np.isfinite(cmax) or cmax < 1e-9:
             cmax = max(float(np.nanmax(np.abs(allv))) if allv.size else 1.0, 1e-6)
 
-        # Colours are rescaled every frame (full colour = the frame's own robust maximum, given in the
-        # frame title and on the colour bar). The change grows from centimetres to metres over the run;
-        # on one fixed scale every early frame is indistinguishable from zero.
+        # One colour scale for the whole run, so frames are comparable and nothing flashes while
+        # playing. It is logarithmic-like (symmetric log): centimetre-sized early change stays
+        # visible next to the metre-sized change at the end. ``cmax_i`` is only for the title.
+        vmax = cmax
+        v0 = vmax / 5000.0
+        norm_ = np.log10(1.0 + vmax / v0)
+
+        def symlog(a):
+            return np.sign(a) * np.log10(1.0 + np.abs(a) / v0) / norm_
+
+        frames_c = [np.clip(symlog(f), -1, 1).astype(np.float32) for f in frames_z]
         cmax_i = []
         for f in frames_z:
             av = np.abs(f[~np.isnan(f)])
-            c = float(np.percentile(av, 97)) if av.size else 0.0
-            cmax_i.append(c if np.isfinite(c) and c > 1e-4 else 1e-4)
-        frames_c = [np.clip(f / c, -1, 1).astype(np.float32) for f, c in zip(frames_z, cmax_i)]
+            cmax_i.append(float(np.percentile(av, 97)) if av.size else 0.0)
+        decades = [t for t in (1e-4, 1e-3, 1e-2, 1e-1, 1.0, 10.0, 100.0) if v0 * 2 <= t <= vmax]
+        tick_pos = [float(symlog(np.array(t))) for t in decades]
+        tickvals = [-p for p in reversed(tick_pos)] + [0.0] + tick_pos
+        ticktext = [f"-{t:g}" for t in reversed(decades)] + ["0"] + [f"{t:g}" for t in decades]
 
         target = frames_z[0].shape
         try:
@@ -216,18 +226,25 @@ def generate_tectonics_timeline_html(times, tectonic_change, terrain, shape, cel
             slide_scale = float(np.percentile(vals, 98)) if vals.size else 1.0
             slide_scale = slide_scale if slide_scale > 1e-9 else 1.0
 
-        # Arrows: every frame is rescaled so its longest arrow spans ~1.6 arrow spacings (a scale
-        # fixed to the final displacement makes the early frames' arrows into dots). The actual
-        # length of the longest arrow is written in each frame's title.
+        # Arrows use one fixed square-root length scale for the whole run (a linear one makes the
+        # early arrows into dots; a log one blows tiny far-field motion up into full-size arrows). The real length of the longest arrow is
+        # written in each frame's title.
         arrow_scale, max_disp = None, 0.0
-        arrow_max_cells, arrow_max_m = [], []
+        arrow_max_m, arrow_dx, arrow_dy = [], [], []
         if arrows is not None and len(arrows["rows"]) > 0:
-            arrow_max_cells = [float(np.hypot(np.asarray(a) / cell_size[0], np.asarray(b) / cell_size[1]).max())
-                               for a, b in zip(arrows["dx"], arrows["dy"])]
             arrow_max_m = [float(np.hypot(np.asarray(a), np.asarray(b)).max()) for a, b in zip(arrows["dx"], arrows["dy"])]
-            if max(arrow_max_cells) > 1e-12:
-                arrow_scale = 1.6 * (float(np.median(np.diff(np.unique(arrows["cols"])))) if len(np.unique(arrows["cols"])) > 1 else 5.0)
-                max_disp = max(arrow_max_m)
+            dmax = max(arrow_max_m)
+            if dmax > 1e-12:
+                for a, b in zip(arrows["dx"], arrows["dy"]):
+                    a, b = np.asarray(a, float), np.asarray(b, float)
+                    m = np.hypot(a, b)
+                    f_ = np.where(m > 1e-15, np.sqrt(np.maximum(m, 0.0) / dmax) * dmax / np.maximum(m, 1e-15), 0.0)
+                    arrow_dx.append(a * f_)
+                    arrow_dy.append(b * f_)
+                longest = max(float(np.hypot(a / cell_size[0], b / cell_size[1]).max()) for a, b in zip(arrow_dx, arrow_dy))
+                spacing = float(np.median(np.diff(np.unique(arrows["cols"])))) if len(np.unique(arrows["cols"])) > 1 else 5.0
+                arrow_scale = 1.6 * spacing / longest
+                max_disp = dmax
 
         # Zero is transparent (not white) so the terrain stays visible where little has changed.
         tect_scale = [[0.0, "rgb(178,24,43)"], [0.25, "rgb(239,138,98)"], [0.5, "rgba(247,247,247,0)"],
@@ -237,9 +254,8 @@ def generate_tectonics_timeline_html(times, tectonic_change, terrain, shape, cel
             return go.Heatmap(x=xs_axis, y=ys_axis, z=z, zmin=-1, zmax=1, colorscale=tect_scale,
                               zsmooth="best", opacity=0.85, name="Land raised (blue) / lowered (red)",
                               showlegend=True, hoverinfo="skip",
-                              colorbar=dict(title="Vertical<br>change (m)", len=0.32, y=0.86, thickness=14,
-                                            tickmode="array", tickvals=[-1, -0.5, 0, 0.5, 1],
-                                            ticktext=[f"{-c:.2g}", f"{-c / 2:.2g}", "0", f"{c / 2:.2g}", f"{c:.2g}"]))
+                              colorbar=dict(title="Vertical<br>change (m)<br>(log scale)", len=0.32, y=0.86, thickness=14,
+                                            tickmode="array", tickvals=tickvals, ticktext=ticktext))
 
         def slide_trace(z):
             return go.Heatmap(x=xs_axis, y=ys_axis, z=z, zmin=-slide_scale, zmax=slide_scale, zsmooth=False,
@@ -248,10 +264,9 @@ def generate_tectonics_timeline_html(times, tectonic_change, terrain, shape, cel
                               hovertemplate="col %{x}<br>row %{y}<br>Landslide change %{z:.2f} m<extra></extra>")
 
         def arrow_trace(i):
-            if arrow_scale is None or arrow_max_cells[i] <= 1e-12:
+            if arrow_scale is None or arrow_max_m[i] <= 1e-12:
                 return go.Scatter(x=[], y=[], mode="lines", name="Ground motion (arrows)", showlegend=(arrow_scale is not None))
-            xs, ys = _arrow_segments(arrows["rows"], arrows["cols"], arrows["dx"][i], arrows["dy"][i],
-                                     cell_size, arrow_scale / arrow_max_cells[i])
+            xs, ys = _arrow_segments(arrows["rows"], arrows["cols"], arrow_dx[i], arrow_dy[i], cell_size, arrow_scale)
             return go.Scatter(x=xs, y=ys, mode="lines", line=dict(color="black", width=1.6),
                               name="Ground motion (arrows)", showlegend=True, hoverinfo="skip")
 
@@ -343,7 +358,7 @@ def generate_tectonics_timeline_html(times, tectonic_change, terrain, shape, cel
             if arrow_scale is not None and arrow_max_m[i] > 1e-9:
                 arrow_txt = f" &nbsp;·&nbsp; arrow {arrow_max_m[i]:.3f} m" if arrow_max_m[i] < 0.1 else f" &nbsp;·&nbsp; arrow {arrow_max_m[i]:.2f} m"
             title = (f"Tectonics — year {t:,.0f}" + (f" &nbsp;·&nbsp; {qtext}" if qtext else "") + slides + arrow_txt
-                     + f" &nbsp;·&nbsp; colour ±{cmax_i[i]:.2g} m")
+                     + f" &nbsp;·&nbsp; typical change {cmax_i[i]:.2g} m")
             layout = go.Layout(
                 title=dict(text=title, x=0.01),
                 shapes=[dict(type="line", xref="x2", yref="y2 domain", x0=t, x1=t, y0=0, y1=1,
@@ -367,12 +382,12 @@ def generate_tectonics_timeline_html(times, tectonic_change, terrain, shape, cel
         if arrow_scale is not None:
             annotations.append(dict(xref="paper", yref="paper", x=1.075, y=0.115, xanchor="left", yanchor="top",
                                     showarrow=False, align="left", font=dict(size=11, color="#444"),
-                                    text="Colours and arrows are rescaled<br>every frame so early change is<br>visible; the title gives the real<br>size: arrow = longest arrow,<br>colour = full colour."))
+                                    text="Colour uses one fixed log-like<br>scale and arrow length one fixed<br>square-root scale for the whole run,<br>so early change stays visible and<br>frames can be compared. The title<br>gives the real sizes."))
         fig.update_layout(
             title=dict(text="Tectonics", x=0.01), autosize=True, annotations=annotations,
             images=[bg_image(uris[0])] if uris else [], updatemenus=[buttons], sliders=[slider],
             legend=dict(orientation="v", yanchor="top", y=0.66, xanchor="left", x=1.01, font=dict(size=11)),
-            margin=dict(l=65, r=250, b=65, t=70), plot_bgcolor="white")
+            margin=dict(l=65, r=340, b=65, t=70, autoexpand=False), plot_bgcolor="white")
         fig.update_xaxes(range=[-0.5, ncols_full - 0.5], constrain="domain", title="Easting (columns)",
                          showgrid=False, row=1, col=1)
         fig.update_yaxes(range=[nrows_full - 0.5, -0.5], scaleanchor="x", constrain="domain",
