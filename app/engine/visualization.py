@@ -367,7 +367,7 @@ def generate_3d_comparison_html(
 
         fig.write_html(
             output_html_path,
-            full_html=True,
+            full_html=True, auto_play=False,
             config={"responsive": True},
             default_width="100%",
             default_height="100%",
@@ -590,7 +590,7 @@ def generate_sediment_timeline_html(snapshots, times, shape, output_html_path,
         _add_overlay_lines(fig, overlay_lines, shape, max_dim)
         fig.write_html(
             output_html_path,
-            full_html=True,
+            full_html=True, auto_play=False,
             config={"responsive": True},
             default_width="100%",
             default_height="100%",
@@ -749,7 +749,7 @@ def generate_terrain_timeline_html(snapshots, times, shape, output_html_path, ma
         _add_overlay_lines(fig, overlay_lines, shape, max_dim)
         fig.write_html(
             output_html_path,
-            full_html=True,
+            full_html=True, auto_play=False,
             config={"responsive": True},
             default_width="100%",
             default_height="100%",
@@ -960,7 +960,7 @@ def generate_feature_tracking_timeline_html(snapshots, times, shape, mask, outpu
 
         fig.write_html(
             output_html_path,
-            full_html=True,
+            full_html=True, auto_play=False,
             config={"responsive": True},
             default_width="100%",
             default_height="100%",

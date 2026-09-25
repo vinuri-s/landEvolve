@@ -406,7 +406,7 @@ def generate_tectonics_timeline_html(times, tectonic_change, terrain, shape, cel
 })();
 """ % (json.dumps([float(t) for t in times]), json.dumps(_STRIP_NAME))
 
-        fig.write_html(output_html_path, full_html=True, config={"responsive": True},
+        fig.write_html(output_html_path, full_html=True, auto_play=False, config={"responsive": True},
                        default_width="100%", default_height="100%",
                        post_script=_RESPONSIVE_FILL_SCRIPT + jump_script)
         return True
@@ -513,9 +513,9 @@ def generate_fault_section_html(times, section, total_change, tectonic_change, q
                     buttons=[dict(label="Zoom: tectonics", method="relayout", args=[{"yaxis.range": tect_range}]),
                              dict(label="Zoom: everything", method="relayout", args=[{"yaxis.range": [ylo, yhi]}])])
         fig.update_layout(title=dict(text="Fault cross-section", x=0.01), autosize=True, updatemenus=[buttons, zoom],
-                          sliders=[slider], legend=dict(orientation="h", yanchor="bottom", y=1.09, x=0.0),
-                          margin=dict(l=70, r=40, b=65, t=140), plot_bgcolor="white")
-        fig.write_html(output_html_path, full_html=True, config={"responsive": True},
+                          sliders=[slider], legend=dict(orientation="v", yanchor="top", y=1.0, xanchor="left", x=1.01, font=dict(size=11)),
+                          margin=dict(l=70, r=200, b=65, t=100), plot_bgcolor="white")
+        fig.write_html(output_html_path, full_html=True, auto_play=False, config={"responsive": True},
                        default_width="100%", default_height="100%", post_script=_RESPONSIVE_FILL_SCRIPT)
         return True
     except Exception as e:
