@@ -153,6 +153,38 @@ def _north_up(fig):
             ax.set_xlabel("Distance from west edge (m)")
 
 
+_EDGE_BAND_CELLS = 3
+
+
+def _edge_band(grid, width=_EDGE_BAND_CELLS):
+    """Core nodes within ``width`` cells of the domain edge or of a closed (no-data) cell."""
+    from scipy import ndimage
+    noncore = (grid.status_at_node != grid.BC_NODE_IS_CORE).reshape(grid.shape)
+    near = ndimage.binary_dilation(noncore, iterations=width, border_value=0)
+    return np.nonzero((near & ~noncore).ravel())[0]
+
+
+def _step_protecting_edge(grid, fields, band, step):
+    """Run ``step()`` (a fault or earthquake step that also slides the terrain sideways), then
+    undo the sideways part for the cells in ``band``.
+
+    The sideways ("advection") scheme cannot cope with the fixed boundary: the outermost ring of
+    cells picks up spurious jumps (tens of metres, even >100 m in a corner) that then show up as
+    fake uplift, fake cliffs and fake landslides along the DEM edge. In the band, elevations get
+    only the vertical push; soil depth is left alone. Interior cells still slide, using the band's
+    unshifted values as the edge terrain."""
+    if band.size == 0:
+        step()
+        return
+    at = grid.at_node
+    before = {f: at[f][band].copy() for f in fields if f in at}
+    tz0 = at["total_z__displacement"][band].copy()
+    step()
+    dz = at["total_z__displacement"][band] - tz0
+    for f, old in before.items():
+        at[f][band] = old if f == "soil__depth" else old + dz
+
+
 class _TectonicLedger:
     """Tracks the tectonic-only surface (see the module docstring) and keeps
     ``grid._cumulative_uplift`` in step with it. Shared by the fault and the
@@ -373,6 +405,8 @@ class FaultComponent(SimulationComponent):
         self.fault = self._Fault(grid, tip_location=list(self.tip_location), **self.fault_kwargs)
         self._ledger = _TectonicLedger(grid)
         grid._tectonic_ledger = self._ledger
+        self._edge = _edge_band(grid)
+        grid._tectonic_edge = (self._edge, list(advect))
 
     @staticmethod
     def _chain_offset_to_last(strikes, lengths):
@@ -408,7 +442,8 @@ class FaultComponent(SimulationComponent):
     def run(self, dt):
         if dt <= 0:
             return
-        self.fault.run_one_step(dt)
+        _step_protecting_edge(self.grid, self.fault_kwargs["fields_to_advect"], self._edge,
+                              lambda: self.fault.run_one_step(dt))
         self._ledger.sync()
 
     # ------------------------------------------------------------------
@@ -606,7 +641,8 @@ class EarthquakeComponent(SimulationComponent):
     def run(self, dt):
         if dt <= 0:
             return
-        self.eq.run_one_step(self.dt)
+        edge, fields = getattr(self.grid, "_tectonic_edge", (np.array([], dtype=int), []))
+        _step_protecting_edge(self.grid, fields, edge, lambda: self.eq.run_one_step(self.dt))
         ledger = getattr(self.grid, "_tectonic_ledger", None)
         if ledger is not None:
             ledger.sync()
@@ -923,8 +959,9 @@ class TectonicRecorder:
 
     ARROWS_ACROSS = 16
 
-    def __init__(self, grid, fault_comp):
+    def __init__(self, grid, fault_comp, map_stride=(1, 1)):
         self.grid = grid
+        self._map_stride = map_stride
         rows, cols = grid.shape
         stride = max(1, int(round(max(rows, cols) / self.ARROWS_ACROSS)))
         r = np.arange(stride // 2, rows, stride)
@@ -954,6 +991,7 @@ class TectonicRecorder:
 
         self.times, self.disp_x, self.disp_y = [], [], []
         self.total_change, self.tectonic_change = [], []
+        self.vertical_uplift = []        # map of the fault's vertical push so far, down-sampled by map_stride
         self._z0 = self._ref0 = None
 
     def record(self, t):
@@ -965,6 +1003,9 @@ class TectonicRecorder:
         self.times.append(float(t))
         self.total_change.append(np.where(self._profile_valid, z - self._z0, np.nan))
         self.tectonic_change.append(np.where(self._profile_valid, ref - self._ref0, np.nan))
+        sx, sy = self._map_stride
+        self.vertical_uplift.append(
+            g.at_node["total_z__displacement"].reshape(g.shape)[::sx, ::sy].astype(np.float32).copy())
         self.disp_x.append(g.at_node["total_x__displacement"][self._arrow_nodes].copy())
         self.disp_y.append(g.at_node["total_y__displacement"][self._arrow_nodes].copy())
 

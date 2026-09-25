@@ -353,7 +353,8 @@ class SimulationRunner:
         # Fault / earthquake animation data (only when Fault Tectonics is used):
         # sampled on the same frames as the timelines, so they line up exactly.
         fault_inst = (built.get("FaultComponent") or [None])[0]
-        recorder = TectonicRecorder(grid, fault_inst) if fault_inst is not None else None
+        recorder = (TectonicRecorder(grid, fault_inst, map_stride=stride_for(grid.shape, 250))
+                    if fault_inst is not None else None)
         fault_overlay = fault_inst.overlay_lines(grid) if fault_inst is not None else None
         if recorder:
             recorder.record(0.0)
@@ -503,7 +504,7 @@ class SimulationRunner:
                     overlay_lines=fault_overlay, dip_vector=None if section["vertical"] else section["dip_vector"],
                     trace_mid=section["trace_mid"], arrows=recorder.arrows(), quakes=quakes,
                     landslide_frames=slide_frames, landslide_counts=slide_counts, max_dim=max_dim,
-                    valid_mask=recorder.interior_mask):
+                    valid_mask=recorder.interior_mask, vertical_frames=recorder.vertical_uplift):
                 tectonics_timeline_html = None
             fault_section_html = str(self.output_dir / "fault_section.html")
             if not generate_fault_section_html(

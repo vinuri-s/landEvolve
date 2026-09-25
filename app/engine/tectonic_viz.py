@@ -138,7 +138,7 @@ def _locate_ruptures(quakes, overlay_lines, cell_size, extent):
 def generate_tectonics_timeline_html(times, tectonic_change, terrain, shape, cell_size, output_html_path,
                                      overlay_lines=None, dip_vector=None, trace_mid=None,
                                      arrows=None, quakes=None, landslide_frames=None,
-                                     landslide_counts=None, max_dim=250, valid_mask=None):
+                                     landslide_counts=None, max_dim=250, valid_mask=None, vertical_frames=None):
     """Build the tectonics map animation. Returns True on success, else False.
 
     times            frame times (years); ``tectonic_change[i]`` / ``terrain[i]`` are the
@@ -157,13 +157,25 @@ def generate_tectonics_timeline_html(times, tectonic_change, terrain, shape, cel
         sx, sy = stride_for(shape, max_dim)
         nrows_full, ncols_full = shape
 
-        def prep(a):
-            a = np.asarray(a, dtype=np.float32).copy()
-            if valid_mask is not None:
-                a[~valid_mask] = np.nan          # hide the boundary-artefact strip
-            return a.reshape(shape)[::sx, ::sy]
-
-        frames_z = [prep(a) for a in tectonic_change]
+        # The "raised / lowered" layer is the fault's *vertical* push. (The tectonic-only
+        # surface change also contains the terrain's own relief slid sideways -- a 45 degree
+        # slope moved 1 m sideways changes height by 1 m -- which makes the map look like a
+        # hillshade instead of an uplift pattern; the sideways part is shown by the arrows.)
+        mask_ds = valid_mask.reshape(shape)[::sx, ::sy] if valid_mask is not None else None
+        if vertical_frames is not None:
+            frames_z = []
+            for a in vertical_frames:
+                a = np.asarray(a, dtype=np.float32).copy()
+                if mask_ds is not None:
+                    a[~mask_ds] = np.nan
+                frames_z.append(a)
+        else:
+            def prep(a):
+                a = np.asarray(a, dtype=np.float32).copy()
+                if valid_mask is not None:
+                    a[~valid_mask] = np.nan          # hide the boundary-artefact strip
+                return a.reshape(shape)[::sx, ::sy]
+            frames_z = [prep(a) for a in tectonic_change]
         xs_axis = np.arange(frames_z[0].shape[1]) * sy
         ys_axis = np.arange(frames_z[0].shape[0]) * sx
 
@@ -173,6 +185,16 @@ def generate_tectonics_timeline_html(times, tectonic_change, terrain, shape, cel
         cmax = float(np.percentile(np.abs(allv), 97)) if allv.size else 0.0
         if not np.isfinite(cmax) or cmax < 1e-9:
             cmax = max(float(np.nanmax(np.abs(allv))) if allv.size else 1.0, 1e-6)
+
+        # Colours are rescaled every frame (full colour = the frame's own robust maximum, given in the
+        # frame title and on the colour bar). The change grows from centimetres to metres over the run;
+        # on one fixed scale every early frame is indistinguishable from zero.
+        cmax_i = []
+        for f in frames_z:
+            av = np.abs(f[~np.isnan(f)])
+            c = float(np.percentile(av, 97)) if av.size else 0.0
+            cmax_i.append(c if np.isfinite(c) and c > 1e-4 else 1e-4)
+        frames_c = [np.clip(f / c, -1, 1).astype(np.float32) for f, c in zip(frames_z, cmax_i)]
 
         target = frames_z[0].shape
         try:
@@ -194,22 +216,30 @@ def generate_tectonics_timeline_html(times, tectonic_change, terrain, shape, cel
             slide_scale = float(np.percentile(vals, 98)) if vals.size else 1.0
             slide_scale = slide_scale if slide_scale > 1e-9 else 1.0
 
-        # Arrows: scale so the longest arrow (final displacement) spans ~1.6 arrow spacings.
+        # Arrows: every frame is rescaled so its longest arrow spans ~1.6 arrow spacings (a scale
+        # fixed to the final displacement makes the early frames' arrows into dots). The actual
+        # length of the longest arrow is written in each frame's title.
         arrow_scale, max_disp = None, 0.0
+        arrow_max_cells, arrow_max_m = [], []
         if arrows is not None and len(arrows["rows"]) > 0:
-            mags = [np.hypot(np.asarray(a) / cell_size[0], np.asarray(b) / cell_size[1]).max()
-                    for a, b in zip(arrows["dx"], arrows["dy"])]
-            max_cells = max(mags) if mags else 0.0
-            if max_cells > 1e-12:
-                spacing = float(np.median(np.diff(np.unique(arrows["cols"])))) if len(np.unique(arrows["cols"])) > 1 else 5.0
-                arrow_scale = 1.6 * spacing / max_cells
-                max_disp = max(np.hypot(a, b).max() for a, b in zip(arrows["dx"], arrows["dy"]))
+            arrow_max_cells = [float(np.hypot(np.asarray(a) / cell_size[0], np.asarray(b) / cell_size[1]).max())
+                               for a, b in zip(arrows["dx"], arrows["dy"])]
+            arrow_max_m = [float(np.hypot(np.asarray(a), np.asarray(b)).max()) for a, b in zip(arrows["dx"], arrows["dy"])]
+            if max(arrow_max_cells) > 1e-12:
+                arrow_scale = 1.6 * (float(np.median(np.diff(np.unique(arrows["cols"])))) if len(np.unique(arrows["cols"])) > 1 else 5.0)
+                max_disp = max(arrow_max_m)
 
-        def tect_trace(z):
-            return go.Heatmap(x=xs_axis, y=ys_axis, z=z, zmin=-cmax, zmax=cmax, colorscale="RdBu",
-                              zsmooth="best", opacity=0.65 if uris else 1.0, name="Land raised (blue) / lowered (red)",
-                              showlegend=True, colorbar=dict(title="Tectonic<br>change (m)", len=0.32, y=0.86, thickness=14),
-                              hovertemplate="col %{x}<br>row %{y}<br>Tectonic change %{z:.3f} m<extra></extra>")
+        # Zero is transparent (not white) so the terrain stays visible where little has changed.
+        tect_scale = [[0.0, "rgb(178,24,43)"], [0.25, "rgb(239,138,98)"], [0.5, "rgba(247,247,247,0)"],
+                      [0.75, "rgb(103,169,207)"], [1.0, "rgb(33,102,172)"]]
+
+        def tect_trace(z, c):
+            return go.Heatmap(x=xs_axis, y=ys_axis, z=z, zmin=-1, zmax=1, colorscale=tect_scale,
+                              zsmooth="best", opacity=0.85, name="Land raised (blue) / lowered (red)",
+                              showlegend=True, hoverinfo="skip",
+                              colorbar=dict(title="Vertical<br>change (m)", len=0.32, y=0.86, thickness=14,
+                                            tickmode="array", tickvals=[-1, -0.5, 0, 0.5, 1],
+                                            ticktext=[f"{-c:.2g}", f"{-c / 2:.2g}", "0", f"{c / 2:.2g}", f"{c:.2g}"]))
 
         def slide_trace(z):
             return go.Heatmap(x=xs_axis, y=ys_axis, z=z, zmin=-slide_scale, zmax=slide_scale, zsmooth=False,
@@ -218,10 +248,10 @@ def generate_tectonics_timeline_html(times, tectonic_change, terrain, shape, cel
                               hovertemplate="col %{x}<br>row %{y}<br>Landslide change %{z:.2f} m<extra></extra>")
 
         def arrow_trace(i):
-            if arrow_scale is None:
-                return go.Scatter(x=[], y=[], mode="lines", name="Ground motion (arrows)", showlegend=False)
+            if arrow_scale is None or arrow_max_cells[i] <= 1e-12:
+                return go.Scatter(x=[], y=[], mode="lines", name="Ground motion (arrows)", showlegend=(arrow_scale is not None))
             xs, ys = _arrow_segments(arrows["rows"], arrows["cols"], arrows["dx"][i], arrows["dy"][i],
-                                     cell_size, arrow_scale)
+                                     cell_size, arrow_scale / arrow_max_cells[i])
             return go.Scatter(x=xs, y=ys, mode="lines", line=dict(color="black", width=1.6),
                               name="Ground motion (arrows)", showlegend=True, hoverinfo="skip")
 
@@ -271,7 +301,7 @@ def generate_tectonics_timeline_html(times, tectonic_change, terrain, shape, cel
             earlier, current, rupture = quake_traces(i)
             slide = slide_trace(landslide_frames[i]) if has_slides else \
                 go.Heatmap(x=[0], y=[0], z=[[np.nan]], showscale=False, showlegend=False, name="Landslides")
-            return [tect_trace(frames_z[i]), slide, arrow_trace(i), earlier, current, rupture]
+            return [tect_trace(frames_c[i], cmax_i[i]), slide, arrow_trace(i), earlier, current, rupture]
 
         for tr in dynamic(0):
             fig.add_trace(tr, row=1, col=1)          # trace indices 0..5 are the animated ones
@@ -286,7 +316,7 @@ def generate_tectonics_timeline_html(times, tectonic_change, terrain, shape, cel
         # timeline strip
         peak = [float(np.percentile(np.abs(f[~np.isnan(f)]), 99)) if np.any(~np.isnan(f)) else 0.0 for f in frames_z]
         fig.add_trace(go.Scatter(x=list(times), y=peak, mode="lines", line=dict(color="#1f77b4", width=2),
-                                 name="Typical peak tectonic change (m)", hovertemplate="%{y:.3f} m<extra></extra>"),
+                                 name="Typical peak vertical change (m)", hovertemplate="%{y:.3f} m<extra></extra>"),
                       row=2, col=1, **({"secondary_y": True} if has_quakes else {}))
         mw_floor = None
         if has_quakes:
@@ -308,8 +338,12 @@ def generate_tectonics_timeline_html(times, tectonic_change, terrain, shape, cel
             t = times[i]
             t_prev = times[i - 1] if i > 0 else -np.inf
             qtext, _ = _quake_text(t_prev, t, quakes)
-            slides = f" &nbsp;·&nbsp; {landslide_counts[i]} landslides so far" if (has_slides and landslide_counts) else ""
-            title = f"Tectonics — year {t:,.0f}" + (f" &nbsp;·&nbsp; {qtext}" if qtext else "") + slides
+            slides = f" &nbsp;·&nbsp; {landslide_counts[i]:,} slides" if (has_slides and landslide_counts) else ""
+            arrow_txt = ""
+            if arrow_scale is not None and arrow_max_m[i] > 1e-9:
+                arrow_txt = f" &nbsp;·&nbsp; arrow {arrow_max_m[i]:.3f} m" if arrow_max_m[i] < 0.1 else f" &nbsp;·&nbsp; arrow {arrow_max_m[i]:.2f} m"
+            title = (f"Tectonics — year {t:,.0f}" + (f" &nbsp;·&nbsp; {qtext}" if qtext else "") + slides + arrow_txt
+                     + f" &nbsp;·&nbsp; colour ±{cmax_i[i]:.2g} m")
             layout = go.Layout(
                 title=dict(text=title, x=0.01),
                 shapes=[dict(type="line", xref="x2", yref="y2 domain", x0=t, x1=t, y0=0, y1=1,
@@ -333,7 +367,7 @@ def generate_tectonics_timeline_html(times, tectonic_change, terrain, shape, cel
         if arrow_scale is not None:
             annotations.append(dict(xref="paper", yref="paper", x=1.075, y=0.115, xanchor="left", yanchor="top",
                                     showarrow=False, align="left", font=dict(size=11, color="#444"),
-                                    text=f"Arrows show sideways ground motion<br>since the start. Longest arrow at<br>the end = {max_disp:.2f} m."))
+                                    text="Colours and arrows are rescaled<br>every frame so early change is<br>visible; the title gives the real<br>size: arrow = longest arrow,<br>colour = full colour."))
         fig.update_layout(
             title=dict(text="Tectonics", x=0.01), autosize=True, annotations=annotations,
             images=[bg_image(uris[0])] if uris else [], updatemenus=[buttons], sliders=[slider],
