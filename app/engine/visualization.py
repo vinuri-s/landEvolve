@@ -470,8 +470,17 @@ def _hillshade_data_uri(elevation, shape, target_shape):
     from matplotlib.colors import LightSource
 
     z = np.asarray(elevation, dtype=float).reshape(shape)
-    sx = max(1, shape[0] // target_shape[0])
-    sy = max(1, shape[1] // target_shape[1])
+
+    def _stride(n, target):
+        # the step that gives exactly `target` samples (floor division picks 1 for 515 -> 258,
+        # which crops the corner of the DEM instead of sampling all of it)
+        for st in range(1, n + 1):
+            if len(range(0, n, st)) <= target:
+                return st
+        return n
+
+    sx = _stride(shape[0], target_shape[0])
+    sy = _stride(shape[1], target_shape[1])
     z = z[::sx, ::sy][:target_shape[0], :target_shape[1]]
 
     ls = LightSource(azdeg=315, altdeg=45)
